@@ -13,6 +13,7 @@ import { makeNode, INPUT_ENTRY } from './nodes.js'
 import { validate, dryRunEdge } from './validator.js'
 import { generate as generateCode } from './codegen.js'
 import { isFullyConcrete, runShapeCheck } from './runtime.js'
+import { resolve } from './shape.js'
 import {
   renderPalette,
   filterPalette,
@@ -237,7 +238,15 @@ function queueValidation() {
   validateTimer = setTimeout(runValidation, 60)
 }
 function runValidation() {
-  state.lastResult = validate(editor)
+  // Validate + back-fill implicit ctor params (e.g. infer in_ch from
+  // resolved C_in after wiring from a previous layer).
+  let result = validate(editor)
+  for (let i = 0; i < 3; i++) {
+    const changed = inferImplicitCtorParams(result)
+    if (!changed) break
+    result = validate(editor)
+  }
+  state.lastResult = result
   editor.__lastValidationSub = state.lastResult.sub
   const concrete =
     state.framework === 'pytorch'
@@ -249,6 +258,25 @@ function runValidation() {
   refreshInspector()
   refreshRuntimePanel()
   applyRuntimeErrorHighlight()
+}
+
+function inferImplicitCtorParams(result) {
+  let changed = false
+  for (const n of editor.getNodes()) {
+    if (!n?.entry || n.entry.kind === 'input') continue
+    const ctorByName = new Map((n.entry.ctor || []).map((p) => [p.name, p]))
+    for (const [axis, paramName] of Object.entries(n.entry.bindings || {})) {
+      const cur = n.values?.[paramName]
+      if (cur !== null && cur !== undefined && cur !== '') continue
+      const param = ctorByName.get(paramName)
+      const resolved = resolve(`${axis}#${n.id}`, result.sub)
+      if (typeof resolved !== 'number' || !Number.isFinite(resolved)) continue
+      if (param?.type === 'float') n.values[paramName] = resolved
+      else n.values[paramName] = Math.trunc(resolved)
+      changed = true
+    }
+  }
+  return changed
 }
 
 function refreshRuntimePanel() {
