@@ -8,7 +8,7 @@
 
 import { generate, planGraph } from './codegen.js'
 import { parseShapeString } from './nodes.js'
-import { isLiteral, isRest, isVariable, resolve } from './shape.js'
+import { resolve } from './shape.js'
 
 export const RUNNER_URL = 'http://127.0.0.1:8765/run'
 
@@ -27,13 +27,11 @@ export function isFullyConcrete(editor, sub, batchSize = 2) {
 
   for (const n of nodes) {
     if (n.entry.kind === 'input') {
+      // Input can remain symbolic here; runtime payload builder back-solves via
+      // substitution constraints and fills remaining unresolved axes with
+      // deterministic defaults.
       const dims = inputShapeToDims(n, batchSize)
-      if (!dims) {
-        return {
-          ok: false,
-          reason: `Input "${n.values?.name || 'x'}" shape is not fully numeric (use literals or B for batch).`,
-        }
-      }
+      if (!dims) continue
       continue
     }
     for (const port of n.entry.ctor) {
@@ -48,51 +46,7 @@ export function isFullyConcrete(editor, sub, batchSize = 2) {
     }
   }
 
-  // Only input ports must be concrete — output axes like H_out/W_out are
-  // derived by the blocks themselves and filled in by the runtime runner.
-  for (const n of nodes) {
-    if (n.entry.kind === 'input') continue
-    for (const port of n.entry.inputs) {
-      const shape = n.freshenedShape(port.name, 'in')
-      if (!shape) continue
-      if (hasRest(shape)) {
-        return { ok: false, reason: 'Variadic/rest (…) shapes cannot be run yet.' }
-      }
-      const dims = resolveShapeToDims(shape, sub, batchSize)
-      if (!dims) {
-        return {
-          ok: false,
-          reason: `${n.entry.name}:${port.name} still has unresolved axes.`,
-        }
-      }
-    }
-  }
-
   return { ok: true }
-}
-
-function hasRest(shape) {
-  return shape.some(isRest)
-}
-
-function resolveShapeToDims(shape, sub, batchSize) {
-  const dims = []
-  for (const tok of shape) {
-    if (isRest(tok)) return null
-    if (isLiteral(tok)) {
-      dims.push(tok)
-      continue
-    }
-    let r = resolve(tok, sub)
-    if (isVariable(r)) {
-      const base = String(r).split('#')[0]
-      if (base === 'B') r = batchSize
-      else return null
-    }
-    if (typeof r === 'number' && Number.isFinite(r)) dims.push(Math.trunc(r))
-    else return null
-  }
-  return dims
 }
 
 function inputShapeToDims(inputNode, batchSize) {
@@ -107,6 +61,51 @@ function inputShapeToDims(inputNode, batchSize) {
   return dims
 }
 
+function defaultForAxis(base) {
+  if (base === 'B') return 2
+  if (base.startsWith('H') || base.startsWith('W')) return 32
+  if (base.startsWith('T')) return 16
+  if (base.startsWith('C')) return 16
+  if (base.startsWith('D')) return 64
+  if (base.startsWith('N')) return 16
+  if (base.startsWith('K')) return 8
+  return 8
+}
+
+function backSolveInputShape(inputNode, sub, batchSize, axisDefaults) {
+  const tokens = parseShapeString(inputNode.values?.shape)
+  if (tokens.length === 0) return null
+  const dims = []
+  for (const tok of tokens) {
+    if (tok === 'B') {
+      dims.push(batchSize)
+      continue
+    }
+    if (/^-?\d+$/.test(tok)) {
+      dims.push(Number(tok))
+      continue
+    }
+    // Try the node-freshened axis first (same naming convention as validator).
+    const fresh = `${tok}#${inputNode.id}`
+    let r = resolve(fresh, sub)
+    if (typeof r === 'string') r = resolve(r, sub)
+    if (typeof r === 'number' && Number.isFinite(r)) {
+      dims.push(Math.trunc(r))
+      continue
+    }
+    const base = String(r ?? tok).split('#')[0]
+    const known = axisDefaults.get(base)
+    if (known != null) {
+      dims.push(known)
+      continue
+    }
+    const fallback = base === 'B' ? batchSize : defaultForAxis(base)
+    axisDefaults.set(base, fallback)
+    dims.push(fallback)
+  }
+  return dims
+}
+
 /** Build POST body for the Python runner. */
 export function buildRunPayload(editor, framework, batchSize = 2) {
   const nodes = editor.getNodes()
@@ -115,11 +114,13 @@ export function buildRunPayload(editor, framework, batchSize = 2) {
   if (!plan) throw new Error('Graph is empty.')
 
   const code = generate(nodes, connections, framework, { trace: true })
+  const sub = (editor && editor.__lastValidationSub) || new Map()
+  const axisDefaults = new Map([['B', batchSize]])
   const inputs = []
   for (const n of plan.ordered) {
     if (n.entry.kind !== 'input') continue
-    const dims = inputShapeToDims(n, batchSize)
-    if (!dims) throw new Error(`Input "${n.values?.name}" shape is not concrete.`)
+    const dims = backSolveInputShape(n, sub, batchSize, axisDefaults)
+    if (!dims) throw new Error(`Input "${n.values?.name}" shape is empty.`)
     inputs.push({
       nodeId: n.id,
       arg: plan.inputArgFor.get(n.id),
@@ -144,7 +145,9 @@ export async function runShapeCheck(editor, framework, batchSize = 2) {
   })
   const body = await res.json().catch(() => ({}))
   if (!res.ok) {
-    throw new Error(body.error || `Runner HTTP ${res.status}`)
+    const err = new Error(body?.error ?? `Runner HTTP ${res.status}`)
+    if (body?.node_id) err.nodeId = body.node_id
+    throw err
   }
   const shapes = new Map(Object.entries(body.shapes ?? {}))
   return { shapes, payload }

@@ -41,6 +41,12 @@ HOST = "127.0.0.1"
 PORT = int(os.environ.get("SHAPE_RUNNER_PORT", "8765"))
 
 
+class NodeExecutionError(RuntimeError):
+    def __init__(self, node_id: str, message: str):
+        super().__init__(message)
+        self.node_id = node_id
+
+
 def _make_tensor(shape: tuple[int, ...], dtype: str):
     import torch
 
@@ -83,8 +89,16 @@ def run_payload(payload: dict[str, Any]) -> dict[str, Any]:
             raise ValueError(f"invalid input spec: {spec!r}")
         kwargs[str(arg)] = _make_tensor(tuple(int(d) for d in shape), spec.get("dtype", "float"))
 
-    with torch.no_grad():
-        out = model(**kwargs)
+    try:
+        with torch.no_grad():
+            out = model(**kwargs)
+    except Exception as exc:
+        msg = str(exc)
+        if msg.startswith("NODE_ERROR::"):
+            rest = msg[len("NODE_ERROR::") :]
+            node_id, _, detail = rest.partition("::")
+            raise NodeExecutionError(node_id=node_id or "unknown", message=detail or msg) from exc
+        raise
 
     if not isinstance(out, dict):
         raise ValueError(f"traced forward must return dict, got {type(out).__name__}")
@@ -118,6 +132,20 @@ class Handler(BaseHTTPRequestHandler):
             result = run_payload(payload)
             body = json.dumps(result).encode("utf-8")
             self.send_response(200)
+            self._cors()
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        except NodeExecutionError as exc:
+            err = {
+                "ok": False,
+                "error": str(exc),
+                "node_id": exc.node_id,
+                "trace": traceback.format_exc(),
+            }
+            body = json.dumps(err).encode("utf-8")
+            self.send_response(400)
             self._cors()
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))

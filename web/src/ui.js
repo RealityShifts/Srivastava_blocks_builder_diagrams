@@ -317,7 +317,7 @@ export function updateRuntimePanel({ framework, lastResult, batchSize, runtimeSh
       'Set Input shape (literals or B) and wire all required inputs.'
     status.className = 'muted'
   } else {
-    status.textContent = 'Ready — all axes are numeric.'
+    status.textContent = 'Ready — graph is valid (unresolved axes are back-solved at runtime).'
     status.className = 'ok'
   }
 }

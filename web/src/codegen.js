@@ -254,28 +254,39 @@ export function generate(nodes, connections, framework, options = {}) {
         : `${n.entry.name}(${callArgs.join(', ')})`
 
     const multi = n.entry.outputs.length > 1
-    if (multi) {
+    if (trace) {
+      lines.push('        try:')
+      if (multi) {
+        const targets = n.entry.outputs
+          .map((p) => outputVarFor.get(`${n.id}/${p.name}`))
+          .join(', ')
+        lines.push(`            ${targets} = ${callExpr}`)
+        for (const port of n.entry.outputs) {
+          const v = outputVarFor.get(`${n.id}/${port.name}`)
+          lines.push(
+            `            _runtime_shapes[${JSON.stringify(`${n.id}/${port.name}`)}] = list(${v}.shape)`
+          )
+        }
+      } else {
+        const v = attrName.get(n.id)
+        const portName = n.entry.outputs[0]?.name ?? 'out'
+        lines.push(`            ${v} = ${callExpr}`)
+        lines.push(
+          `            _runtime_shapes[${JSON.stringify(`${n.id}/${portName}`)}] = list(${v}.shape)`
+        )
+      }
+      lines.push('        except Exception as _e:')
+      lines.push(
+        `            raise RuntimeError(${JSON.stringify(`NODE_ERROR::${n.id}::${n.entry.name}`)} + ': ' + str(_e)) from _e`
+      )
+    } else if (multi) {
       const targets = n.entry.outputs
         .map((p) => outputVarFor.get(`${n.id}/${p.name}`))
         .join(', ')
       lines.push(`        ${targets} = ${callExpr}`)
-      if (trace) {
-        for (const port of n.entry.outputs) {
-          const v = outputVarFor.get(`${n.id}/${port.name}`)
-          lines.push(
-            `        _runtime_shapes[${JSON.stringify(`${n.id}/${port.name}`)}] = list(${v}.shape)`
-          )
-        }
-      }
     } else {
       const v = attrName.get(n.id)
       lines.push(`        ${v} = ${callExpr}`)
-      if (trace) {
-        const portName = n.entry.outputs[0]?.name ?? 'out'
-        lines.push(
-          `        _runtime_shapes[${JSON.stringify(`${n.id}/${portName}`)}] = list(${v}.shape)`
-        )
-      }
     }
   }
 

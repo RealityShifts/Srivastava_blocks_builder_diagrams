@@ -313,6 +313,11 @@ main {
 .rete .node.selected {
   border-color: var(--accent) !important;
 }
+.runtime-error-node {
+  outline: 2px solid var(--err);
+  outline-offset: 2px;
+  border-radius: 10px;
+}
 .rete .node .title {
   color: var(--text) !important;
   font-weight: 500;

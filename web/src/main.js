@@ -34,6 +34,7 @@ const state = {
   batchSize: 2,
   runtimeRunning: false,
   runtimeError: null,
+  runtimeErrorNodeId: null,
 }
 
 let editor, area, connection, render, selector
@@ -121,6 +122,7 @@ async function bootstrap() {
     state.framework = e.target.value
     state.runtimeShapes = null
     state.runtimeError = null
+    state.runtimeErrorNodeId = null
     await loadManifest()
     await clearGraph()
   })
@@ -136,6 +138,7 @@ async function bootstrap() {
     state.batchSize = Math.max(1, Math.trunc(Number(e.target.value) || 2))
     state.runtimeShapes = null
     state.runtimeError = null
+    state.runtimeErrorNodeId = null
     queueValidation()
   })
   document.addEventListener('keydown', (e) => {
@@ -183,6 +186,7 @@ async function clearGraph() {
   state.selectedNodeId = null
   state.runtimeShapes = null
   state.runtimeError = null
+  state.runtimeErrorNodeId = null
   refreshInspector()
   queueValidation()
 }
@@ -209,6 +213,9 @@ async function deleteSelected() {
     await editor.removeNode(id)
   }
   if (ids.has(state.selectedNodeId)) state.selectedNodeId = null
+  state.runtimeShapes = null
+  state.runtimeError = null
+  state.runtimeErrorNodeId = null
   refreshInspector()
   queueValidation()
 }
@@ -231,6 +238,7 @@ function queueValidation() {
 }
 function runValidation() {
   state.lastResult = validate(editor)
+  editor.__lastValidationSub = state.lastResult.sub
   const concrete =
     state.framework === 'pytorch'
       ? isFullyConcrete(editor, state.lastResult.sub, state.batchSize)
@@ -240,6 +248,7 @@ function runValidation() {
   renderDiagnostics(document.getElementById('diag-list'), state.lastResult)
   refreshInspector()
   refreshRuntimePanel()
+  applyRuntimeErrorHighlight()
 }
 
 function refreshRuntimePanel() {
@@ -257,16 +266,21 @@ async function runRuntimeShapeCheck() {
   if (state.runtimeRunning || state.framework !== 'pytorch') return
   state.runtimeRunning = true
   state.runtimeError = null
+  state.runtimeErrorNodeId = null
   refreshRuntimePanel()
+  applyRuntimeErrorHighlight()
   try {
     const { shapes } = await runShapeCheck(editor, state.framework, state.batchSize)
     state.runtimeShapes = shapes
+    state.runtimeErrorNodeId = null
   } catch (e) {
     state.runtimeShapes = null
     state.runtimeError = e.message || String(e)
+    state.runtimeErrorNodeId = e.nodeId || null
   } finally {
     state.runtimeRunning = false
     refreshRuntimePanel()
+    applyRuntimeErrorHighlight()
     refreshInspector()
   }
 }
@@ -280,6 +294,7 @@ function refreshInspector() {
     () => {
       state.runtimeShapes = null
       state.runtimeError = null
+      state.runtimeErrorNodeId = null
       queueValidation()
     },
     state.runtimeShapes
@@ -293,6 +308,19 @@ function flashDiagnostic(text) {
   li.textContent = text
   ul.prepend(li)
   setTimeout(() => li.remove(), 3500)
+}
+
+function applyRuntimeErrorHighlight() {
+  // Remove old markers.
+  for (const [, view] of area.nodeViews) {
+    view.element?.classList?.remove('runtime-error-node')
+  }
+  // Mark the failing node (if any) with a red outline.
+  if (!state.runtimeErrorNodeId) return
+  const v = area.nodeViews.get(state.runtimeErrorNodeId)
+  if (v?.element?.classList) {
+    v.element.classList.add('runtime-error-node')
+  }
 }
 
 function exportGraph() {
