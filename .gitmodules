@@ -1,0 +1,3 @@
+[submodule "models/blocks"]
+	path = models/blocks
+	url = https://github.com/RealityShifts/Srivastava-book-of-Blocks.git
