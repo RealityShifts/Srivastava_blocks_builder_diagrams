@@ -122,7 +122,11 @@ function portList(title, list, node, sub, side) {
     const row = document.createElement('div')
     const resolved = node.freshenedShape(p.name, side)
     const shape = resolved ? prettyShape(resolved, sub) : '·'
-    row.innerHTML = `<code>${p.name}</code> : ${shape} <span class="muted">[${p.dtype}${p.optional ? ', opt' : ''}${p.variadic ? ', var' : ''}]</span>`
+    // Read the live portSpec.dtype off the rete port (InputNode rewrites it
+    // when the user picks a different dtype in the inspector).
+    const rete = side === 'in' ? node.inputs[p.name] : node.outputs[p.name]
+    const dtype = rete?.portSpec?.dtype ?? p.dtype
+    row.innerHTML = `<code>${p.name}</code> : ${shape} <span class="muted">[${dtype}${p.optional ? ', opt' : ''}${p.variadic ? ', var' : ''}]</span>`
     wrap.appendChild(row)
   }
   return wrap
@@ -130,6 +134,18 @@ function portList(title, list, node, sub, side) {
 
 function makeControl(param, value, onChange) {
   const type = param.type
+  if (Array.isArray(param.choices) && param.choices.length > 0) {
+    const el = document.createElement('select')
+    for (const c of param.choices) {
+      const opt = document.createElement('option')
+      opt.value = c
+      opt.textContent = c
+      el.appendChild(opt)
+    }
+    el.value = value ?? param.choices[0]
+    el.addEventListener('change', () => onChange(el.value))
+    return el
+  }
   if (type === 'bool') {
     const el = document.createElement('select')
     for (const o of ['true', 'false']) {

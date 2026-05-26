@@ -83,15 +83,90 @@ function labelFor(port) {
   return `${port.name}${tag}`
 }
 
+// ---------------------------------------------------------------------------
+// Input node - synthetic source node with user-defined shape & dtype.
+// ---------------------------------------------------------------------------
+
+/**
+ * Built-in palette entry for an Input node. Mixed literals and named axes are
+ * fine ("B 3 224 224", "B C H W", "2 3 64 64"). Not tied to any framework.
+ */
+export const INPUT_ENTRY = {
+  name: 'Input',
+  module: '__builtin__',
+  framework: 'any',
+  kind: 'input',
+  ctor: [
+    { name: 'name', type: 'str', default: 'x', required: false },
+    { name: 'shape', type: 'str', default: 'B C H W', required: false },
+    {
+      name: 'dtype',
+      type: 'str',
+      default: 'float',
+      required: false,
+      choices: ['float', 'int', 'bool', 'complex', 'any'],
+    },
+  ],
+  inputs: [],
+  outputs: [
+    {
+      name: 'out',
+      shape: ['B', 'C', 'H', 'W'],
+      dtype: 'float',
+      optional: false,
+      variadic: false,
+    },
+  ],
+  bindings: {},
+}
+
+/** "B, 3,224 224" -> ["B", "3", "224", "224"] */
+export function parseShapeString(s) {
+  if (s == null) return []
+  return String(s)
+    .trim()
+    .split(/[\s,]+/)
+    .filter((tok) => tok.length > 0)
+}
+
+/**
+ * Source node whose output shape and dtype come from user-typed values rather
+ * than a manifest annotation. Inherits everything else from BlockNode so the
+ * inspector / palette / unifier treat it like a normal entry.
+ */
+export class InputNode extends BlockNode {
+  freshenedShape(portName, side) {
+    if (side !== 'out') return null
+    const tokens = normalize(parseShapeString(this.values.shape))
+    // Keep the rete port's dtype tag in sync so the validator's dtype check
+    // sees the latest value the user typed.
+    const port = this.outputs[portName]
+    if (port?.portSpec) port.portSpec.dtype = this.values.dtype || 'any'
+    return freshen(tokens, this.id)
+  }
+}
+
+/** Pick the right node class for a manifest entry. */
+export function makeNode(entry) {
+  if (entry.kind === 'input') return new InputNode(entry)
+  return new BlockNode(entry)
+}
+
 /** Group manifest entries by their submodule for the palette UI. */
 export function groupByModule(entries) {
   const groups = new Map()
   for (const e of entries) {
-    const tail = e.module.split('.').slice(-1)[0]
+    const tail =
+      e.module === '__builtin__' ? 'built-in' : e.module.split('.').slice(-1)[0]
     if (!groups.has(tail)) groups.set(tail, [])
     groups.get(tail).push(e)
   }
   for (const list of groups.values())
     list.sort((a, b) => a.name.localeCompare(b.name))
-  return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b))
+  // Keep "built-in" pinned at the top of the palette.
+  return [...groups.entries()].sort(([a], [b]) => {
+    if (a === 'built-in') return -1
+    if (b === 'built-in') return 1
+    return a.localeCompare(b)
+  })
 }

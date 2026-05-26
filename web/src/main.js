@@ -9,7 +9,7 @@ import { AreaPlugin, AreaExtensions } from 'rete-area-plugin'
 import { ConnectionPlugin, Presets as ConnectionPresets } from 'rete-connection-plugin'
 import { LitPlugin, Presets as LitPresets } from '@retejs/lit-plugin'
 
-import { BlockNode } from './nodes.js'
+import { makeNode, INPUT_ENTRY } from './nodes.js'
 import { validate, dryRunEdge } from './validator.js'
 import { generate as generateCode } from './codegen.js'
 import {
@@ -143,7 +143,9 @@ async function bootstrap() {
 async function loadManifest() {
   const url = `/manifests/${state.framework}.json`
   const res = await fetch(url)
-  state.entries = await res.json()
+  const fetched = await res.json()
+  // Prepend the built-in Input node so it's always available regardless of framework.
+  state.entries = [INPUT_ENTRY, ...fetched]
   state.byName = new Map(state.entries.map((e) => [e.name, e]))
   renderPalette(document.getElementById('palette'), state.entries, (entry) =>
     createNode(entry.name)
@@ -153,7 +155,7 @@ async function loadManifest() {
 async function createNode(name, pos) {
   const entry = state.byName.get(name)
   if (!entry) return
-  const node = new BlockNode(entry)
+  const node = makeNode(entry)
   await editor.addNode(node)
   if (pos) await area.translate(node.id, pos)
   state.selectedNodeId = node.id

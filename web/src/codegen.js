@@ -65,13 +65,38 @@ export function generate(nodes, connections, framework) {
   if (nodes.length === 0) return '# empty graph\n'
   const ordered = topoSort(nodes, connections)
 
-  // Stable per-node Python attribute names: snake_case + index.
-  const attrName = new Map()
-  ordered.forEach((n, i) => attrName.set(n.id, snake(n.entry.name, i)))
+  // Track which Python variable names are taken so Input names and snake_case
+  // attribute names never collide.
+  const usedNames = new Set()
+  const allocate = (base) => {
+    let candidate = base
+    let i = 2
+    while (usedNames.has(candidate)) candidate = `${base}${i++}`
+    usedNames.add(candidate)
+    return candidate
+  }
 
-  // Imports: group by module.
+  // Input nodes' output vars come from their user-typed `name` (sanitized).
+  // They become forward() arguments rather than `self.xxx` attributes.
+  const inputArgFor = new Map() // nodeId -> python arg name
+  for (const n of ordered) {
+    if (n.entry.kind === 'input') {
+      const raw = sanitizePyIdent(n.values?.name, 'x')
+      inputArgFor.set(n.id, allocate(raw))
+    }
+  }
+
+  // Stable per-node Python attribute names for module/function nodes.
+  const attrName = new Map()
+  ordered.forEach((n, i) => {
+    if (n.entry.kind === 'input') return
+    attrName.set(n.id, allocate(snake(n.entry.name, i)))
+  })
+
+  // Imports: group by module. Skip built-in Input.
   const imports = new Map()
   for (const n of ordered) {
+    if (n.entry.kind === 'input') continue
     if (!imports.has(n.entry.module)) imports.set(n.entry.module, new Set())
     imports.get(n.entry.module).add(n.entry.name)
   }
@@ -84,12 +109,13 @@ export function generate(nodes, connections, framework) {
     incoming.get(key).push(c)
   }
 
-  const outVar = (nodeId, portName, isMulti) =>
-    isMulti ? `${attrName.get(nodeId)}_${portName}` : attrName.get(nodeId)
-
   // For each node, record the Python variable holding each of its outputs.
   const outputVarFor = new Map() // `${nodeId}/${portName}` -> python var
   for (const n of ordered) {
+    if (n.entry.kind === 'input') {
+      outputVarFor.set(`${n.id}/out`, inputArgFor.get(n.id))
+      continue
+    }
     const multi = n.entry.outputs.length > 1
     for (const port of n.entry.outputs) {
       outputVarFor.set(
@@ -136,16 +162,23 @@ export function generate(nodes, connections, framework) {
   lines.push('')
 
   // ------- forward / __call__ -------
-  const entryInputs = findEntryInputs(ordered, connections)
-  const entrySig = entryInputs.map((e) => e.portArg).join(', ')
+  // Explicit Input nodes (in topo order) come first; dangling required inputs
+  // on regular nodes still get auto-promoted to forward() args as a fallback.
+  const entryInputs = findEntryInputs(ordered, connections, usedNames)
+  const inputArgs = ordered
+    .filter((n) => n.entry.kind === 'input')
+    .map((n) => inputArgFor.get(n.id))
+  const allArgs = [...inputArgs, ...entryInputs.map((e) => e.portArg)]
   const fwdName = framework === 'pytorch' ? 'forward' : '__call__'
-  lines.push(`    def ${fwdName}(self${entrySig ? ', ' + entrySig : ''}):`)
+  lines.push(`    def ${fwdName}(self${allArgs.length ? ', ' + allArgs.join(', ') : ''}):`)
 
   // Map each entry-input port to a function argument name.
   const argFor = new Map()
   for (const e of entryInputs) argFor.set(`${e.nodeId}/${e.portName}`, e.argName)
 
   for (const n of ordered) {
+    // Input nodes are pure forward() args, not statements in the body.
+    if (n.entry.kind === 'input') continue
     // Build the argument expression for each input port of this node.
     const callArgs = []
     for (const port of n.entry.inputs) {
@@ -246,18 +279,18 @@ function deepEqual(a, b) {
 }
 
 /** Input ports with no incoming edges that aren't optional ⇒ surfaced as forward() args. */
-function findEntryInputs(nodes, connections) {
+function findEntryInputs(nodes, connections, usedNames = new Set()) {
   const incomingKeys = new Set(connections.map((c) => `${c.target}/${c.targetInput}`))
   const out = []
-  const used = new Set()
   const allocate = (base) => {
     let candidate = base
     let i = 2
-    while (used.has(candidate)) candidate = `${base}${i++}`
-    used.add(candidate)
+    while (usedNames.has(candidate)) candidate = `${base}${i++}`
+    usedNames.add(candidate)
     return candidate
   }
   for (const n of nodes) {
+    if (n.entry.kind === 'input') continue
     for (const port of n.entry.inputs) {
       if (port.optional || port.variadic) continue
       const key = `${n.id}/${port.name}`
@@ -273,6 +306,16 @@ function findEntryInputs(nodes, connections) {
     }
   }
   return out
+}
+
+/** Coerce arbitrary user-typed text into a valid Python identifier. */
+function sanitizePyIdent(raw, fallback = 'x') {
+  const s = String(raw ?? '').trim()
+  if (!s) return fallback
+  // Replace non-word chars with underscore, prefix digit-starting with underscore.
+  let out = s.replace(/[^A-Za-z0-9_]/g, '_')
+  if (/^[0-9]/.test(out)) out = '_' + out
+  return out || fallback
 }
 
 /** Output ports that have no outgoing edges ⇒ return values. */
