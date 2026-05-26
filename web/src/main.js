@@ -131,8 +131,30 @@ async function bootstrap() {
     filterPalette(document.getElementById('palette'), e.target.value)
   })
   document.getElementById('clear-btn').addEventListener('click', () => clearGraph())
+  document.getElementById('import-btn').addEventListener('click', () => {
+    document.getElementById('import-file-input').click()
+  })
+  document.getElementById('import-file-input').addEventListener('change', async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      const text = await file.text()
+      const data = JSON.parse(text)
+      const stats = await importGraph(data)
+      flashDiagnostic(
+        `Imported ${stats.nodes} node(s), ${stats.connections} connection(s)${
+          stats.dropped > 0 ? `, dropped ${stats.dropped}` : ''
+        }`
+      )
+    } catch (err) {
+      flashDiagnostic(`Import failed: ${err.message || String(err)}`)
+    } finally {
+      e.target.value = ''
+    }
+  })
   document.getElementById('export-btn').addEventListener('click', exportGraph)
   document.getElementById('codegen-btn').addEventListener('click', runCodegen)
+  document.getElementById('focus-input-btn').addEventListener('click', () => focusInputNode())
   document.getElementById('delete-btn').addEventListener('click', () => deleteSelected())
   document.getElementById('run-shapes-btn').addEventListener('click', () => runRuntimeShapeCheck())
   document.getElementById('batch-size').addEventListener('input', (e) => {
@@ -173,12 +195,13 @@ async function loadManifest() {
 
 async function createNode(name, pos) {
   const entry = state.byName.get(name)
-  if (!entry) return
+  if (!entry) return null
   const node = makeNode(entry)
   await editor.addNode(node)
   if (pos) await area.translate(node.id, pos)
   state.selectedNodeId = node.id
   refreshInspector()
+  return node
 }
 
 async function clearGraph() {
@@ -190,6 +213,77 @@ async function clearGraph() {
   state.runtimeErrorNodeId = null
   refreshInspector()
   queueValidation()
+}
+
+async function importGraph(data) {
+  if (!data || typeof data !== 'object') {
+    throw new Error('Invalid graph JSON: expected object')
+  }
+  const nodesIn = Array.isArray(data.nodes) ? data.nodes : []
+  const connsIn = Array.isArray(data.connections) ? data.connections : []
+  const frameworkIn = data.framework
+
+  if (frameworkIn && frameworkIn !== state.framework) {
+    if (!['pytorch', 'flax'].includes(frameworkIn)) {
+      throw new Error(`Unsupported framework in file: ${frameworkIn}`)
+    }
+    state.framework = frameworkIn
+    document.getElementById('framework-select').value = frameworkIn
+    await loadManifest()
+  }
+
+  await clearGraph()
+
+  const idMap = new Map()
+  let dropped = 0
+  for (const spec of nodesIn) {
+    const name = spec?.name
+    if (typeof name !== 'string') {
+      dropped++
+      continue
+    }
+    const pos =
+      spec?.position &&
+      Number.isFinite(spec.position.x) &&
+      Number.isFinite(spec.position.y)
+        ? { x: spec.position.x, y: spec.position.y }
+        : undefined
+    const node = await createNode(name, pos)
+    if (!node) {
+      dropped++
+      continue
+    }
+    if (spec?.values && typeof spec.values === 'object') {
+      Object.assign(node.values, spec.values)
+    }
+    idMap.set(spec.id, node.id)
+  }
+
+  let restoredConnections = 0
+  for (const c of connsIn) {
+    const source = idMap.get(c?.source)
+    const target = idMap.get(c?.target)
+    if (!source || !target) {
+      dropped++
+      continue
+    }
+    const srcNode = editor.getNode(source)
+    const tgtNode = editor.getNode(target)
+    if (!srcNode || !tgtNode) {
+      dropped++
+      continue
+    }
+    try {
+      const conn = new ClassicPreset.Connection(srcNode, c.sourceOutput, tgtNode, c.targetInput)
+      await editor.addConnection(conn)
+      restoredConnections++
+    } catch {
+      dropped++
+    }
+  }
+
+  queueValidation()
+  return { nodes: idMap.size, connections: restoredConnections, dropped }
 }
 
 /** Delete every selected node (and the picked node as a fallback). */
@@ -338,6 +432,19 @@ function flashDiagnostic(text) {
   setTimeout(() => li.remove(), 3500)
 }
 
+async function focusInputNode() {
+  const nodes = editor.getNodes()
+  const input = nodes.find((n) => n.entry?.kind === 'input')
+  if (!input) {
+    flashDiagnostic('No Input node found')
+    return
+  }
+  state.selectedNodeId = input.id
+  refreshInspector()
+  // Zoom and center view around the input node.
+  await AreaExtensions.zoomAt(area, [input])
+}
+
 function applyRuntimeErrorHighlight() {
   // Remove old markers.
   for (const [, view] of area.nodeViews) {
@@ -352,12 +459,28 @@ function applyRuntimeErrorHighlight() {
 }
 
 function exportGraph() {
-  const data = {
+  const data = getGraphData()
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = `graph-${state.framework}.json`
+  a.click()
+  URL.revokeObjectURL(a.href)
+}
+
+function getGraphData() {
+  return {
     framework: state.framework,
     nodes: editor.getNodes().map((n) => ({
       id: n.id,
       name: n.entry.name,
       values: n.values,
+      position: (() => {
+        const view = area?.nodeViews?.get(n.id)
+        const p = view?.position
+        if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return undefined
+        return { x: p.x, y: p.y }
+      })(),
     })),
     connections: editor.getConnections().map((c) => ({
       source: c.source,
@@ -366,12 +489,6 @@ function exportGraph() {
       targetInput: c.targetInput,
     })),
   }
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-  const a = document.createElement('a')
-  a.href = URL.createObjectURL(blob)
-  a.download = `graph-${state.framework}.json`
-  a.click()
-  URL.revokeObjectURL(a.href)
 }
 
 function runCodegen() {
@@ -400,6 +517,8 @@ if (typeof window !== 'undefined') {
     deleteSelected,
     runValidation,
     runRuntimeShapeCheck,
+    getGraphData,
+    importGraph,
     runCodegen: () =>
       generateCode(editor.getNodes(), editor.getConnections(), state.framework),
     addConnection: async (source, sourceOutput, target, targetInput) => {
