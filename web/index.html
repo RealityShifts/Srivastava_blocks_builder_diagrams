@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Blocks Builder</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%236cb6ff'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header id="toolbar">
+      <div class="brand">Blocks Builder</div>
+      <label class="select">
+        Framework
+        <select id="framework-select">
+          <option value="pytorch">pytorch_blocks</option>
+          <option value="flax">flax_blocks</option>
+        </select>
+      </label>
+      <input id="search" type="search" placeholder="Search blocks (Ctrl-K)" />
+      <button id="delete-btn" title="Delete selected nodes (Del / Backspace)">Delete</button>
+      <button id="clear-btn">Clear graph</button>
+      <button id="export-btn">Export JSON</button>
+      <button id="codegen-btn">Generate Python</button>
+    </header>
+
+    <main>
+      <aside id="palette" aria-label="Block palette"></aside>
+      <section id="editor"></section>
+      <aside id="sidebar">
+        <div id="diagnostics">
+          <h3>Diagnostics</h3>
+          <ul id="diag-list"><li class="ok">Graph is empty.</li></ul>
+        </div>
+        <div id="inspector">
+          <h3>Inspector</h3>
+          <div id="inspector-body"><p class="muted">Select a node to edit its parameters.</p></div>
+        </div>
+      </aside>
+    </main>
+
+    <dialog id="codegen-dialog">
+      <header>
+        <strong>Generated Python</strong>
+        <span class="grow"></span>
+        <button id="copy-code-btn">Copy</button>
+        <button id="close-code-btn">Close</button>
+      </header>
+      <pre><code id="codegen-output"></code></pre>
+    </dialog>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

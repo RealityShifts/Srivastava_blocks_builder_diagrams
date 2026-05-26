@@ -1,0 +1,6230 @@
+[
+  {
+    "name": "AttentionPooling",
+    "module": "flax_blocks.attention_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "num_heads",
+        "type": "int",
+        "default": 8,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "CrossAttention",
+    "module": "flax_blocks.attention_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "ctx_dim",
+        "type": "int",
+        "default": null,
+        "required": false
+      },
+      {
+        "name": "num_heads",
+        "type": "int",
+        "default": 8,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "Tq",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      },
+      {
+        "shape": [
+          "B",
+          "Tk",
+          "D_ctx"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "context"
+      },
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "any",
+        "optional": true,
+        "variadic": false,
+        "name": "mask"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "Tq",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "LinearAttention",
+    "module": "flax_blocks.attention_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "num_heads",
+        "type": "int",
+        "default": 8,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "MultiHeadAttention",
+    "module": "flax_blocks.attention_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "num_heads",
+        "type": "int",
+        "default": 8,
+        "required": false
+      },
+      {
+        "name": "use_bias",
+        "type": "bool",
+        "default": true,
+        "required": false
+      },
+      {
+        "name": "causal",
+        "type": "bool",
+        "default": false,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      },
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "any",
+        "optional": true,
+        "variadic": false,
+        "name": "mask"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "RelativePositionBias",
+    "module": "flax_blocks.attention_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "num_heads",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "num_buckets",
+        "type": "int",
+        "default": 32,
+        "required": false
+      },
+      {
+        "name": "max_distance",
+        "type": "int",
+        "default": 128,
+        "required": false
+      },
+      {
+        "name": "bidirectional",
+        "type": "bool",
+        "default": true,
+        "required": false
+      }
+    ],
+    "inputs": [],
+    "outputs": [
+      {
+        "shape": [
+          "H",
+          "Tq",
+          "Tk"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "RotaryEmbedding",
+    "module": "flax_blocks.attention_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "head_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "base",
+        "type": "float",
+        "default": 10000.0,
+        "required": false
+      }
+    ],
+    "inputs": [],
+    "outputs": [
+      {
+        "shape": [
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out0"
+      },
+      {
+        "shape": [
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out1"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "WindowAttention",
+    "module": "flax_blocks.attention_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "num_heads",
+        "type": "int",
+        "default": 8,
+        "required": false
+      },
+      {
+        "name": "window",
+        "type": "int",
+        "default": 64,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "apply_rotary",
+    "module": "flax_blocks.attention_blocks",
+    "framework": "flax",
+    "kind": "function",
+    "ctor": [],
+    "inputs": [
+      {
+        "shape": [
+          "...",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      },
+      {
+        "shape": [
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "cos"
+      },
+      {
+        "shape": [
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "sin"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "...",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "scaled_dot_product_attention",
+    "module": "flax_blocks.attention_blocks",
+    "framework": "flax",
+    "kind": "function",
+    "ctor": [],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "Tq",
+          "H",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "q"
+      },
+      {
+        "shape": [
+          "B",
+          "Tk",
+          "H",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "k"
+      },
+      {
+        "shape": [
+          "B",
+          "Tk",
+          "H",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "v"
+      },
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "any",
+        "optional": true,
+        "variadic": false,
+        "name": "mask"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "Tq",
+          "H",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "ASPP",
+    "module": "flax_blocks.cnn_vision_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_ch",
+        "type": "int",
+        "default": 256,
+        "required": false
+      },
+      {
+        "name": "dilations",
+        "type": "any",
+        "default": [
+          1,
+          6,
+          12,
+          18
+        ],
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C_in": "in_ch",
+      "C_out": "out_ch"
+    }
+  },
+  {
+    "name": "CBAM",
+    "module": "flax_blocks.cnn_vision_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "channels",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "ratio",
+        "type": "int",
+        "default": 16,
+        "required": false
+      },
+      {
+        "name": "kernel",
+        "type": "int",
+        "default": 7,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C": "channels"
+    }
+  },
+  {
+    "name": "DeformableAttention",
+    "module": "flax_blocks.cnn_vision_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "num_heads",
+        "type": "int",
+        "default": 8,
+        "required": false
+      },
+      {
+        "name": "num_points",
+        "type": "int",
+        "default": 4,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "DeformableConv2d",
+    "module": "flax_blocks.cnn_vision_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "kernel_size",
+        "type": "int",
+        "default": 3,
+        "required": false
+      },
+      {
+        "name": "strides",
+        "type": "int",
+        "default": 1,
+        "required": false
+      },
+      {
+        "name": "padding",
+        "type": "int",
+        "default": 1,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "H_out",
+          "W_out",
+          "C_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C_in": "in_ch",
+      "C_out": "out_ch"
+    }
+  },
+  {
+    "name": "DenseBlock",
+    "module": "flax_blocks.cnn_vision_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "num_layers",
+        "type": "int",
+        "default": 4,
+        "required": false
+      },
+      {
+        "name": "growth",
+        "type": "int",
+        "default": 32,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C_in": "in_ch"
+    }
+  },
+  {
+    "name": "FeaturePyramidNetwork",
+    "module": "flax_blocks.cnn_vision_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_channels",
+        "type": "any",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_ch",
+        "type": "int",
+        "default": 256,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": true,
+        "name": "feats"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": true,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "InceptionBlock",
+    "module": "flax_blocks.cnn_vision_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "c1",
+        "type": "int",
+        "default": 64,
+        "required": false
+      },
+      {
+        "name": "c3",
+        "type": "int",
+        "default": 96,
+        "required": false
+      },
+      {
+        "name": "c5",
+        "type": "int",
+        "default": 16,
+        "required": false
+      },
+      {
+        "name": "pool",
+        "type": "int",
+        "default": 32,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C_in": "in_ch"
+    }
+  },
+  {
+    "name": "PixelShuffleUpsample",
+    "module": "flax_blocks.cnn_vision_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "channels",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "scale",
+        "type": "int",
+        "default": 2,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "H_out",
+          "W_out",
+          "C"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C": "channels"
+    }
+  },
+  {
+    "name": "SpatialPyramidPooling",
+    "module": "flax_blocks.cnn_vision_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "output_sizes",
+        "type": "any",
+        "default": [
+          1,
+          2,
+          4
+        ],
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "D_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "SqueezeExcitation",
+    "module": "flax_blocks.cnn_vision_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "channels",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "ratio",
+        "type": "int",
+        "default": 16,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C": "channels"
+    }
+  },
+  {
+    "name": "pixel_shuffle",
+    "module": "flax_blocks.cnn_vision_blocks",
+    "framework": "flax",
+    "kind": "function",
+    "ctor": [],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C_packed"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "H_out",
+          "W_out",
+          "C_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "AdaIN",
+    "module": "flax_blocks.core_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "num_features",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "style_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      },
+      {
+        "shape": [
+          "B",
+          "D_style"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "style"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "ConvBlock",
+    "module": "flax_blocks.core_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "kernel_size",
+        "type": "int",
+        "default": 3,
+        "required": false
+      },
+      {
+        "name": "strides",
+        "type": "int",
+        "default": 1,
+        "required": false
+      },
+      {
+        "name": "padding",
+        "type": "str",
+        "default": "SAME",
+        "required": false
+      },
+      {
+        "name": "dilation",
+        "type": "int",
+        "default": 1,
+        "required": false
+      },
+      {
+        "name": "groups",
+        "type": "int",
+        "default": 1,
+        "required": false
+      },
+      {
+        "name": "use_bias",
+        "type": "bool",
+        "default": false,
+        "required": false
+      },
+      {
+        "name": "norm",
+        "type": "str",
+        "default": "batch",
+        "required": false
+      },
+      {
+        "name": "activation",
+        "type": "str",
+        "default": "relu",
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "H_out",
+          "W_out",
+          "C_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C_in": "in_ch",
+      "C_out": "out_ch"
+    }
+  },
+  {
+    "name": "DepthwiseSeparableConv",
+    "module": "flax_blocks.core_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "kernel_size",
+        "type": "int",
+        "default": 3,
+        "required": false
+      },
+      {
+        "name": "strides",
+        "type": "int",
+        "default": 1,
+        "required": false
+      },
+      {
+        "name": "dilation",
+        "type": "int",
+        "default": 1,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "H_out",
+          "W_out",
+          "C_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C_in": "in_ch",
+      "C_out": "out_ch"
+    }
+  },
+  {
+    "name": "InstanceNorm",
+    "module": "flax_blocks.core_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "num_features",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "epsilon",
+        "type": "float",
+        "default": 1e-05,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "ResidualBlock",
+    "module": "flax_blocks.core_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "strides",
+        "type": "int",
+        "default": 1,
+        "required": false
+      },
+      {
+        "name": "norm",
+        "type": "str",
+        "default": "batch",
+        "required": false
+      },
+      {
+        "name": "activation",
+        "type": "str",
+        "default": "relu",
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "H_out",
+          "W_out",
+          "C_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C_in": "in_ch",
+      "C_out": "out_ch"
+    }
+  },
+  {
+    "name": "SPADE",
+    "module": "flax_blocks.core_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "num_features",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "label_nc",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "hidden",
+        "type": "int",
+        "default": 128,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      },
+      {
+        "shape": [
+          "B",
+          "H_seg",
+          "W_seg",
+          "C_seg"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "segmap"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "SkipConnection",
+    "module": "flax_blocks.core_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "fn",
+        "type": "Module",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "mode",
+        "type": "str",
+        "default": "add",
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "SpectralNorm",
+    "module": "flax_blocks.core_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "base",
+        "type": "Linear",
+        "default": null,
+        "required": true
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "D_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "D_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "WeightNorm",
+    "module": "flax_blocks.core_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "base",
+        "type": "Module",
+        "default": null,
+        "required": true
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "ColumnParallelLinear",
+    "module": "flax_blocks.efficient_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_features",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_features",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "use_bias",
+        "type": "bool",
+        "default": true,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "*B",
+          "D_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "*B",
+          "D_local_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D_in": "in_features"
+    }
+  },
+  {
+    "name": "LowRankLinear",
+    "module": "flax_blocks.efficient_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_features",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_features",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "rank",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "use_bias",
+        "type": "bool",
+        "default": true,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "*B",
+          "D_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "*B",
+          "D_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D_in": "in_features",
+      "D_out": "out_features"
+    }
+  },
+  {
+    "name": "PipelineStage",
+    "module": "flax_blocks.efficient_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "module",
+        "type": "Module",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "stage_id",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "num_stages",
+        "type": "int",
+        "default": null,
+        "required": true
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "QuantizedLinear4bit",
+    "module": "flax_blocks.efficient_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_features",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_features",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "use_bias",
+        "type": "bool",
+        "default": true,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "*B",
+          "D_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "*B",
+          "D_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D_in": "in_features",
+      "D_out": "out_features"
+    }
+  },
+  {
+    "name": "QuantizedLinearInt8",
+    "module": "flax_blocks.efficient_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_features",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_features",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "use_bias",
+        "type": "bool",
+        "default": true,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "*B",
+          "D_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "*B",
+          "D_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D_in": "in_features",
+      "D_out": "out_features"
+    }
+  },
+  {
+    "name": "RowParallelLinear",
+    "module": "flax_blocks.efficient_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_features",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_features",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "use_bias",
+        "type": "bool",
+        "default": true,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "*B",
+          "D_local_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "*B",
+          "D_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D_out": "out_features"
+    }
+  },
+  {
+    "name": "TokenPruner",
+    "module": "flax_blocks.efficient_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "keep_ratio",
+        "type": "float",
+        "default": 0.7,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      },
+      {
+        "shape": [
+          "B",
+          "T"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "scores"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "T_kept",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "dequantize_int8",
+    "module": "flax_blocks.efficient_blocks",
+    "framework": "flax",
+    "kind": "function",
+    "ctor": [],
+    "inputs": [
+      {
+        "shape": [
+          "D_in",
+          "D_out"
+        ],
+        "dtype": "int8",
+        "optional": false,
+        "variadic": false,
+        "name": "qweight"
+      },
+      {
+        "shape": [
+          "D_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "scale"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "D_in",
+          "D_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "quantize_int8",
+    "module": "flax_blocks.efficient_blocks",
+    "framework": "flax",
+    "kind": "function",
+    "ctor": [],
+    "inputs": [
+      {
+        "shape": [
+          "D_in",
+          "D_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "weight"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "D_in",
+          "D_out"
+        ],
+        "dtype": "int8",
+        "optional": false,
+        "variadic": false,
+        "name": "out0"
+      },
+      {
+        "shape": [
+          "D_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out1"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "CLIPLoss",
+    "module": "flax_blocks.embedding_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "init_temperature",
+        "type": "float",
+        "default": 0.07,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "image_emb"
+      },
+      {
+        "shape": [
+          "B",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "text_emb"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "LearnedPositionalEmbedding",
+    "module": "flax_blocks.embedding_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "max_len",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "ProjectionHead",
+    "module": "flax_blocks.embedding_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "hidden",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "D_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "D_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D_in": "in_dim",
+      "D_out": "out_dim"
+    }
+  },
+  {
+    "name": "SinusoidalPositionalEmbedding",
+    "module": "flax_blocks.embedding_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "max_len",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "info_nce",
+    "module": "flax_blocks.embedding_blocks",
+    "framework": "flax",
+    "kind": "function",
+    "ctor": [],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "z1"
+      },
+      {
+        "shape": [
+          "B",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "z2"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "DiscriminatorBlock",
+    "module": "flax_blocks.gan_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "strides",
+        "type": "int",
+        "default": 2,
+        "required": false
+      },
+      {
+        "name": "use_norm",
+        "type": "bool",
+        "default": true,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "H_out",
+          "W_out",
+          "C_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C_in": "in_ch",
+      "C_out": "out_ch"
+    }
+  },
+  {
+    "name": "EqualConv2d",
+    "module": "flax_blocks.gan_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "kernel_size",
+        "type": "int",
+        "default": 3,
+        "required": false
+      },
+      {
+        "name": "strides",
+        "type": "any",
+        "default": 1,
+        "required": false
+      },
+      {
+        "name": "padding",
+        "type": "str",
+        "default": "SAME",
+        "required": false
+      },
+      {
+        "name": "use_bias",
+        "type": "bool",
+        "default": true,
+        "required": false
+      },
+      {
+        "name": "gain",
+        "type": "float",
+        "default": 1.0,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "H_out",
+          "W_out",
+          "C_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C_in": "in_ch",
+      "C_out": "out_ch"
+    }
+  },
+  {
+    "name": "EqualLinear",
+    "module": "flax_blocks.gan_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_features",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_features",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "use_bias",
+        "type": "bool",
+        "default": true,
+        "required": false
+      },
+      {
+        "name": "gain",
+        "type": "float",
+        "default": 1.0,
+        "required": false
+      },
+      {
+        "name": "lr_mul",
+        "type": "float",
+        "default": 1.0,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "*B",
+          "D_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "*B",
+          "D_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D_in": "in_features",
+      "D_out": "out_features"
+    }
+  },
+  {
+    "name": "GeneratorBlock",
+    "module": "flax_blocks.gan_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "scale",
+        "type": "int",
+        "default": 2,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "H_out",
+          "W_out",
+          "C_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C_in": "in_ch",
+      "C_out": "out_ch"
+    }
+  },
+  {
+    "name": "MappingNetwork",
+    "module": "flax_blocks.gan_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "z_dim",
+        "type": "int",
+        "default": 512,
+        "required": false
+      },
+      {
+        "name": "w_dim",
+        "type": "int",
+        "default": 512,
+        "required": false
+      },
+      {
+        "name": "num_layers",
+        "type": "int",
+        "default": 8,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "D_z"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "z"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "D_w"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D_z": "z_dim",
+      "D_w": "w_dim"
+    }
+  },
+  {
+    "name": "MinibatchStdDev",
+    "module": "flax_blocks.gan_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "group_size",
+        "type": "int",
+        "default": 4,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "ModulatedConv2d",
+    "module": "flax_blocks.gan_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "kernel_size",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "w_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "demodulate",
+        "type": "bool",
+        "default": true,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      },
+      {
+        "shape": [
+          "B",
+          "D_w"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "w"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C_in": "in_ch",
+      "C_out": "out_ch",
+      "D_w": "w_dim"
+    }
+  },
+  {
+    "name": "ProgressiveGrowing",
+    "module": "flax_blocks.gan_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "low_res_block",
+        "type": "Module",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "high_res_block",
+        "type": "Module",
+        "default": null,
+        "required": true
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "H_out",
+          "W_out",
+          "C_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "StyleBlock",
+    "module": "flax_blocks.gan_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "w_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "kernel_size",
+        "type": "int",
+        "default": 3,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      },
+      {
+        "shape": [
+          "B",
+          "D_w"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "w"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C_in": "in_ch",
+      "C_out": "out_ch",
+      "D_w": "w_dim"
+    }
+  },
+  {
+    "name": "AffineCouplingLayer",
+    "module": "flax_blocks.generative_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "hidden",
+        "type": "int",
+        "default": 128,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out0"
+      },
+      {
+        "shape": [
+          "B"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out1"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "AutoregressiveBlock",
+    "module": "flax_blocks.generative_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "channels",
+        "type": "int",
+        "default": null,
+        "required": true
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C": "channels"
+    }
+  },
+  {
+    "name": "EnergyBasedModel",
+    "module": "flax_blocks.generative_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "backbone",
+        "type": "Module",
+        "default": null,
+        "required": true
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "*spatial"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "MaskedConv2d",
+    "module": "flax_blocks.generative_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "mask_type",
+        "type": "str",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "in_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "kernel_size",
+        "type": "int",
+        "default": 3,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C_in": "in_ch",
+      "C_out": "out_ch"
+    }
+  },
+  {
+    "name": "VAE",
+    "module": "flax_blocks.generative_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_ch",
+        "type": "int",
+        "default": 3,
+        "required": false
+      },
+      {
+        "name": "latent",
+        "type": "int",
+        "default": 64,
+        "required": false
+      },
+      {
+        "name": "channels",
+        "type": "any",
+        "default": [
+          32,
+          64,
+          128,
+          256
+        ],
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out0"
+      },
+      {
+        "shape": [
+          "B",
+          "H_z",
+          "W_z",
+          "D_z"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out1"
+      },
+      {
+        "shape": [
+          "B",
+          "H_z",
+          "W_z",
+          "D_z"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out2"
+      }
+    ],
+    "bindings": {
+      "C": "channels"
+    }
+  },
+  {
+    "name": "reparameterize",
+    "module": "flax_blocks.generative_blocks",
+    "framework": "flax",
+    "kind": "function",
+    "ctor": [],
+    "inputs": [
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "mu"
+      },
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "logvar"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "GraphAttention",
+    "module": "flax_blocks.gnn_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "heads",
+        "type": "int",
+        "default": 4,
+        "required": false
+      },
+      {
+        "name": "negative_slope",
+        "type": "float",
+        "default": 0.2,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "N",
+          "D_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      },
+      {
+        "shape": [
+          "2",
+          "E"
+        ],
+        "dtype": "int",
+        "optional": false,
+        "variadic": false,
+        "name": "edge_index"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "N",
+          "D_out_times_H"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D_in": "in_dim"
+    }
+  },
+  {
+    "name": "GraphConv",
+    "module": "flax_blocks.gnn_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "N",
+          "D_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      },
+      {
+        "shape": [
+          "2",
+          "E"
+        ],
+        "dtype": "int",
+        "optional": false,
+        "variadic": false,
+        "name": "edge_index"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "N",
+          "D_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D_in": "in_dim",
+      "D_out": "out_dim"
+    }
+  },
+  {
+    "name": "MessagePassing",
+    "module": "flax_blocks.gnn_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [],
+    "inputs": [
+      {
+        "shape": [
+          "N",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      },
+      {
+        "shape": [
+          "2",
+          "E"
+        ],
+        "dtype": "int",
+        "optional": false,
+        "variadic": false,
+        "name": "edge_index"
+      },
+      {
+        "shape": [
+          "E",
+          "D_edge"
+        ],
+        "dtype": "float",
+        "optional": true,
+        "variadic": false,
+        "name": "edge_attr"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "N",
+          "D_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "scatter_max",
+    "module": "flax_blocks.gnn_blocks",
+    "framework": "flax",
+    "kind": "function",
+    "ctor": [],
+    "inputs": [
+      {
+        "shape": [
+          "E",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "msg"
+      },
+      {
+        "shape": [
+          "E"
+        ],
+        "dtype": "int",
+        "optional": false,
+        "variadic": false,
+        "name": "dst"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "N",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "scatter_mean",
+    "module": "flax_blocks.gnn_blocks",
+    "framework": "flax",
+    "kind": "function",
+    "ctor": [],
+    "inputs": [
+      {
+        "shape": [
+          "E",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "msg"
+      },
+      {
+        "shape": [
+          "E"
+        ],
+        "dtype": "int",
+        "optional": false,
+        "variadic": false,
+        "name": "dst"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "N",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "scatter_sum",
+    "module": "flax_blocks.gnn_blocks",
+    "framework": "flax",
+    "kind": "function",
+    "ctor": [],
+    "inputs": [
+      {
+        "shape": [
+          "E",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "msg"
+      },
+      {
+        "shape": [
+          "E"
+        ],
+        "dtype": "int",
+        "optional": false,
+        "variadic": false,
+        "name": "dst"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "N",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "ExternalMemory",
+    "module": "flax_blocks.memory_retrieval_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "num_slots",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "key_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "value_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "*B",
+          "D_key"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "query"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "*B",
+          "D_value"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "MemoryAttention",
+    "module": "flax_blocks.multimodal_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "mem_dim",
+        "type": "int",
+        "default": null,
+        "required": false
+      },
+      {
+        "name": "num_heads",
+        "type": "int",
+        "default": 8,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "Tq",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      },
+      {
+        "shape": [
+          "B",
+          "Tm",
+          "D_mem"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "memory"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "Tq",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "PerceiverResampler",
+    "module": "flax_blocks.multimodal_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "num_latents",
+        "type": "int",
+        "default": 64,
+        "required": false
+      },
+      {
+        "name": "num_heads",
+        "type": "int",
+        "default": 8,
+        "required": false
+      },
+      {
+        "name": "depth",
+        "type": "int",
+        "default": 6,
+        "required": false
+      },
+      {
+        "name": "mlp_ratio",
+        "type": "float",
+        "default": 4.0,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "K",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim",
+      "K": "num_latents"
+    }
+  },
+  {
+    "name": "QFormer",
+    "module": "flax_blocks.multimodal_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": 768,
+        "required": false
+      },
+      {
+        "name": "num_queries",
+        "type": "int",
+        "default": 32,
+        "required": false
+      },
+      {
+        "name": "num_heads",
+        "type": "int",
+        "default": 12,
+        "required": false
+      },
+      {
+        "name": "depth",
+        "type": "int",
+        "default": 6,
+        "required": false
+      },
+      {
+        "name": "image_dim",
+        "type": "int",
+        "default": null,
+        "required": false
+      },
+      {
+        "name": "llm_dim",
+        "type": "int",
+        "default": 4096,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D_img"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "image_feats"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "K",
+          "D_llm"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "clip_grad_norm",
+    "module": "flax_blocks.optimization_blocks",
+    "framework": "flax",
+    "kind": "function",
+    "ctor": [],
+    "inputs": [],
+    "outputs": [
+      {
+        "shape": [],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "ActorCritic",
+    "module": "flax_blocks.rl_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "state_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "action_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "hidden",
+        "type": "any",
+        "default": [
+          128,
+          128
+        ],
+        "required": false
+      },
+      {
+        "name": "discrete",
+        "type": "bool",
+        "default": true,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "D_state"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "s"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "D_action"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out0"
+      },
+      {
+        "shape": [
+          "B"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out1"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "PolicyNetwork",
+    "module": "flax_blocks.rl_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "state_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "action_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "hidden",
+        "type": "any",
+        "default": [
+          128,
+          128
+        ],
+        "required": false
+      },
+      {
+        "name": "discrete",
+        "type": "bool",
+        "default": true,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "D_state"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "s"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "*action"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "QNetwork",
+    "module": "flax_blocks.rl_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "state_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "action_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "hidden",
+        "type": "any",
+        "default": [
+          128,
+          128
+        ],
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "D_state"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "s"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "D_action"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "ValueNetwork",
+    "module": "flax_blocks.rl_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "state_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "hidden",
+        "type": "any",
+        "default": [
+          128,
+          128
+        ],
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "D_state"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "s"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "GRUCell",
+    "module": "flax_blocks.sequence_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "hidden",
+        "type": "int",
+        "default": null,
+        "required": true
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "D_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      },
+      {
+        "shape": [
+          "B",
+          "D_hidden"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "h"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "D_hidden"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D_in": "in_dim"
+    }
+  },
+  {
+    "name": "LSTMCell",
+    "module": "flax_blocks.sequence_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "hidden",
+        "type": "int",
+        "default": null,
+        "required": true
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "D_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "D_hidden"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out0"
+      },
+      {
+        "shape": [
+          "B",
+          "D_hidden"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out1"
+      }
+    ],
+    "bindings": {
+      "D_in": "in_dim"
+    }
+  },
+  {
+    "name": "MambaBlock",
+    "module": "flax_blocks.sequence_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "state_dim",
+        "type": "int",
+        "default": 16,
+        "required": false
+      },
+      {
+        "name": "conv_kernel",
+        "type": "int",
+        "default": 4,
+        "required": false
+      },
+      {
+        "name": "expand",
+        "type": "int",
+        "default": 2,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "RNNCell",
+    "module": "flax_blocks.sequence_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "hidden",
+        "type": "int",
+        "default": null,
+        "required": true
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "D_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      },
+      {
+        "shape": [
+          "B",
+          "D_hidden"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "h"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "D_hidden"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D_in": "in_dim"
+    }
+  },
+  {
+    "name": "StateSpaceModel",
+    "module": "flax_blocks.sequence_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "state_dim",
+        "type": "int",
+        "default": 64,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "u"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "run_recurrent",
+    "module": "flax_blocks.sequence_blocks",
+    "framework": "flax",
+    "kind": "function",
+    "ctor": [],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D_hidden"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "selective_scan",
+    "module": "flax_blocks.sequence_blocks",
+    "framework": "flax",
+    "kind": "function",
+    "ctor": [],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "u"
+      },
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "delta"
+      },
+      {
+        "shape": [
+          "D",
+          "N"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "A"
+      },
+      {
+        "shape": [
+          "B",
+          "T",
+          "N"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "B"
+      },
+      {
+        "shape": [
+          "B",
+          "T",
+          "N"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "C"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "CapsuleLayer",
+    "module": "flax_blocks.specialized_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "num_in",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "dim_in",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "num_out",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "dim_out",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "routing_iters",
+        "type": "int",
+        "default": 3,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "N_in",
+          "D_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "N_out",
+          "D_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "N_in": "num_in",
+      "N_out": "num_out"
+    }
+  },
+  {
+    "name": "FNOBlock",
+    "module": "flax_blocks.specialized_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "channels",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "modes_h",
+        "type": "int",
+        "default": 12,
+        "required": false
+      },
+      {
+        "name": "modes_w",
+        "type": "int",
+        "default": 12,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C": "channels"
+    }
+  },
+  {
+    "name": "KANLayer",
+    "module": "flax_blocks.specialized_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "num_grid",
+        "type": "int",
+        "default": 8,
+        "required": false
+      },
+      {
+        "name": "grid_range",
+        "type": "list",
+        "default": [
+          -1.0,
+          1.0
+        ],
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "D_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "D_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D_in": "in_dim",
+      "D_out": "out_dim"
+    }
+  },
+  {
+    "name": "NeuralODE",
+    "module": "flax_blocks.specialized_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dynamics",
+        "type": "Module",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "num_steps",
+        "type": "int",
+        "default": 16,
+        "required": false
+      },
+      {
+        "name": "t0",
+        "type": "float",
+        "default": 0.0,
+        "required": false
+      },
+      {
+        "name": "t1",
+        "type": "float",
+        "default": 1.0,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "*features"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "*features"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "SlotAttention",
+    "module": "flax_blocks.specialized_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "num_slots",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "iters",
+        "type": "int",
+        "default": 3,
+        "required": false
+      },
+      {
+        "name": "hidden_mlp",
+        "type": "int",
+        "default": null,
+        "required": false
+      },
+      {
+        "name": "eps",
+        "type": "float",
+        "default": 1e-08,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "K",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "K": "num_slots",
+      "D": "dim"
+    }
+  },
+  {
+    "name": "SpectralConv2d",
+    "module": "flax_blocks.specialized_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "modes_h",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "modes_w",
+        "type": "int",
+        "default": null,
+        "required": true
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C_in": "in_ch",
+      "C_out": "out_ch"
+    }
+  },
+  {
+    "name": "dynamic_routing",
+    "module": "flax_blocks.specialized_blocks",
+    "framework": "flax",
+    "kind": "function",
+    "ctor": [],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "O",
+          "I",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "votes"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "O",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "squash",
+    "module": "flax_blocks.specialized_blocks",
+    "framework": "flax",
+    "kind": "function",
+    "ctor": [],
+    "inputs": [
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "s"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "FeedForward",
+    "module": "flax_blocks.transformer_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "hidden",
+        "type": "int",
+        "default": null,
+        "required": false
+      },
+      {
+        "name": "activation",
+        "type": "str",
+        "default": "gelu",
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "*B",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "*B",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "GEGLU",
+    "module": "flax_blocks.transformer_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "hidden",
+        "type": "int",
+        "default": null,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "*B",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "*B",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "MixtureOfExperts",
+    "module": "flax_blocks.transformer_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "num_experts",
+        "type": "int",
+        "default": 8,
+        "required": false
+      },
+      {
+        "name": "top_k",
+        "type": "int",
+        "default": 2,
+        "required": false
+      },
+      {
+        "name": "hidden",
+        "type": "int",
+        "default": null,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "SwiGLU",
+    "module": "flax_blocks.transformer_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "hidden",
+        "type": "int",
+        "default": null,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "*B",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "*B",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "TransformerDecoderBlock",
+    "module": "flax_blocks.transformer_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "num_heads",
+        "type": "int",
+        "default": 8,
+        "required": false
+      },
+      {
+        "name": "mlp_ratio",
+        "type": "float",
+        "default": 4.0,
+        "required": false
+      },
+      {
+        "name": "ctx_dim",
+        "type": "int",
+        "default": null,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      },
+      {
+        "shape": [
+          "B",
+          "Tk",
+          "D_ctx"
+        ],
+        "dtype": "float",
+        "optional": true,
+        "variadic": false,
+        "name": "context"
+      },
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "any",
+        "optional": true,
+        "variadic": false,
+        "name": "mask"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "TransformerEncoderBlock",
+    "module": "flax_blocks.transformer_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "num_heads",
+        "type": "int",
+        "default": 8,
+        "required": false
+      },
+      {
+        "name": "mlp_ratio",
+        "type": "float",
+        "default": 4.0,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      },
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "any",
+        "optional": true,
+        "variadic": false,
+        "name": "mask"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "ControlNetBlock",
+    "module": "flax_blocks.unet_diffusion_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "hint_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "hidden",
+        "type": "int",
+        "default": 64,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C_hint"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "hint"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "H_out",
+          "W_out",
+          "C_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C_out": "out_ch"
+    }
+  },
+  {
+    "name": "DownsampleBlock",
+    "module": "flax_blocks.unet_diffusion_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "channels",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "mode",
+        "type": "str",
+        "default": "conv",
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "H_out",
+          "W_out",
+          "C"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C": "channels"
+    }
+  },
+  {
+    "name": "HyperNetwork",
+    "module": "flax_blocks.unet_diffusion_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "code_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "in_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "hidden",
+        "type": "int",
+        "default": 128,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "*B",
+          "D_code"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "code"
+      },
+      {
+        "shape": [
+          "*B",
+          "D_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "*B",
+          "D_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D_code": "code_dim",
+      "D_in": "in_dim",
+      "D_out": "out_dim"
+    }
+  },
+  {
+    "name": "IPAdapterCrossAttention",
+    "module": "flax_blocks.unet_diffusion_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "text_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "image_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "num_heads",
+        "type": "int",
+        "default": 8,
+        "required": false
+      },
+      {
+        "name": "scale",
+        "type": "float",
+        "default": 1.0,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "Tq",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      },
+      {
+        "shape": [
+          "B",
+          "T_text",
+          "D_text"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "text"
+      },
+      {
+        "shape": [
+          "B",
+          "T_img",
+          "D_img"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "image"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "Tq",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "LoRAConv2d",
+    "module": "flax_blocks.unet_diffusion_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "base",
+        "type": "Conv",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "rank",
+        "type": "int",
+        "default": 4,
+        "required": false
+      },
+      {
+        "name": "alpha",
+        "type": "float",
+        "default": 8.0,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "H_out",
+          "W_out",
+          "C_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "LoRALinear",
+    "module": "flax_blocks.unet_diffusion_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "base",
+        "type": "Linear",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "rank",
+        "type": "int",
+        "default": 8,
+        "required": false
+      },
+      {
+        "name": "alpha",
+        "type": "float",
+        "default": 16.0,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "*B",
+          "D_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "*B",
+          "D_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "NoisePredictor",
+    "module": "flax_blocks.unet_diffusion_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "backbone",
+        "type": "Module",
+        "default": null,
+        "required": true
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x_t"
+      },
+      {
+        "shape": [
+          "B"
+        ],
+        "dtype": "int",
+        "optional": false,
+        "variadic": false,
+        "name": "t"
+      },
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "float",
+        "optional": true,
+        "variadic": false,
+        "name": "cond"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "SinusoidalTimeEmbedding",
+    "module": "flax_blocks.unet_diffusion_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B"
+        ],
+        "dtype": "int",
+        "optional": false,
+        "variadic": false,
+        "name": "t"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "TimestepMLP",
+    "module": "flax_blocks.unet_diffusion_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "hidden",
+        "type": "int",
+        "default": null,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B"
+        ],
+        "dtype": "int",
+        "optional": false,
+        "variadic": false,
+        "name": "t"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "D_hidden"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "UNet",
+    "module": "flax_blocks.unet_diffusion_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_ch",
+        "type": "int",
+        "default": 4,
+        "required": false
+      },
+      {
+        "name": "out_ch",
+        "type": "int",
+        "default": 4,
+        "required": false
+      },
+      {
+        "name": "base",
+        "type": "int",
+        "default": 64,
+        "required": false
+      },
+      {
+        "name": "ch_mults",
+        "type": "any",
+        "default": [
+          1,
+          2,
+          4,
+          4
+        ],
+        "required": false
+      },
+      {
+        "name": "t_dim",
+        "type": "int",
+        "default": 256,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      },
+      {
+        "shape": [
+          "B"
+        ],
+        "dtype": "int",
+        "optional": false,
+        "variadic": false,
+        "name": "t"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C_in": "in_ch",
+      "C_out": "out_ch"
+    }
+  },
+  {
+    "name": "UNetResBlock",
+    "module": "flax_blocks.unet_diffusion_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "t_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      },
+      {
+        "shape": [
+          "B",
+          "D_t"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "t_emb"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C_in": "in_ch",
+      "C_out": "out_ch"
+    }
+  },
+  {
+    "name": "UpsampleBlock",
+    "module": "flax_blocks.unet_diffusion_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "channels",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "mode",
+        "type": "str",
+        "default": "interp",
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "H_out",
+          "W_out",
+          "C"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C": "channels"
+    }
+  },
+  {
+    "name": "classifier_free_guidance",
+    "module": "flax_blocks.unet_diffusion_blocks",
+    "framework": "flax",
+    "kind": "function",
+    "ctor": [],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "eps_cond"
+      },
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "eps_uncond"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "CLSToken",
+    "module": "flax_blocks.vit_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "N",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "N_plus_1",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "PatchEmbedding",
+    "module": "flax_blocks.vit_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_ch",
+        "type": "int",
+        "default": 3,
+        "required": false
+      },
+      {
+        "name": "patch_size",
+        "type": "int",
+        "default": 16,
+        "required": false
+      },
+      {
+        "name": "dim",
+        "type": "int",
+        "default": 768,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "N",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "ShiftedWindowAttention",
+    "module": "flax_blocks.vit_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "input_resolution",
+        "type": "list",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "num_heads",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "window",
+        "type": "int",
+        "default": 7,
+        "required": false
+      },
+      {
+        "name": "shift",
+        "type": "int",
+        "default": null,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "N",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "N",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "SwinWindowAttention",
+    "module": "flax_blocks.vit_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "num_heads",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "window",
+        "type": "int",
+        "default": 7,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "N",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      },
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "float",
+        "optional": true,
+        "variadic": false,
+        "name": "mask"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "N",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  }
+]

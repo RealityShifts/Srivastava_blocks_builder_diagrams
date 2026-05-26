@@ -1,0 +1,299 @@
+:root {
+  --bg: #0f1115;
+  --panel: #161922;
+  --panel-2: #1c2030;
+  --line: #2a2f42;
+  --text: #d7dbe7;
+  --muted: #8089a3;
+  --accent: #6cb6ff;
+  --ok: #5eba7d;
+  --warn: #e2b54a;
+  --err: #ff6166;
+  --shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+}
+
+body {
+  display: grid;
+  grid-template-rows: 48px 1fr;
+}
+
+#toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+#toolbar .brand {
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  margin-right: 14px;
+}
+
+#toolbar label.select {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--muted);
+}
+
+#toolbar select,
+#toolbar input[type='search'],
+#toolbar button {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font: inherit;
+}
+
+#toolbar input[type='search'] {
+  flex: 1;
+  min-width: 200px;
+  max-width: 360px;
+}
+
+#toolbar button {
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+#toolbar button:hover {
+  background: #232844;
+}
+
+main {
+  display: grid;
+  grid-template-columns: 240px 1fr 320px;
+  height: 100%;
+  overflow: hidden;
+}
+
+#palette,
+#sidebar {
+  background: var(--panel);
+  border-color: var(--line);
+  overflow-y: auto;
+}
+#palette {
+  border-right: 1px solid var(--line);
+  padding: 8px;
+}
+#sidebar {
+  border-left: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+}
+
+#palette .group-title {
+  margin: 8px 6px 4px;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+#palette .block-item {
+  padding: 5px 8px;
+  border-radius: 5px;
+  cursor: grab;
+  user-select: none;
+  font-size: 12px;
+  color: var(--text);
+}
+#palette .block-item:hover {
+  background: var(--panel-2);
+  color: var(--accent);
+}
+#palette .block-item .meta {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+#editor {
+  position: relative;
+  background: radial-gradient(
+      circle at center,
+      #1a1d28 1px,
+      transparent 1px
+    )
+    0 0 / 22px 22px;
+  overflow: hidden;
+}
+
+#diagnostics,
+#inspector {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+#diagnostics h3,
+#inspector h3 {
+  margin: 0 0 8px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+}
+#diag-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 30vh;
+  overflow-y: auto;
+}
+#diag-list li {
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+#diag-list li.ok {
+  background: rgba(94, 186, 125, 0.12);
+  color: var(--ok);
+}
+#diag-list li.warn {
+  background: rgba(226, 181, 74, 0.12);
+  color: var(--warn);
+}
+#diag-list li.err {
+  background: rgba(255, 97, 102, 0.14);
+  color: var(--err);
+}
+
+#inspector {
+  flex: 1;
+  overflow-y: auto;
+}
+#inspector-body .muted {
+  color: var(--muted);
+}
+#inspector .row {
+  display: grid;
+  grid-template-columns: 1fr 130px;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+#inspector .row label {
+  font-size: 11px;
+  color: var(--muted);
+}
+#inspector .row input,
+#inspector .row select {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 3px 6px;
+  font: inherit;
+}
+#inspector .header {
+  margin-bottom: 8px;
+}
+#inspector .header strong {
+  font-size: 13px;
+  color: var(--text);
+}
+#inspector .header .module {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  margin-top: 2px;
+}
+#inspector .ports {
+  margin-top: 12px;
+  font-size: 11px;
+}
+#inspector .ports h4 {
+  margin: 6px 0 2px;
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+#inspector .ports code {
+  color: var(--accent);
+}
+
+/* Rete classic node visual tweaks (lit preset uses these CSS hooks) */
+.rete .node {
+  background: var(--panel-2) !important;
+  border: 1px solid var(--line) !important;
+  border-radius: 8px !important;
+  box-shadow: var(--shadow);
+  min-width: 160px !important;
+}
+.rete .node.selected {
+  border-color: var(--accent) !important;
+}
+.rete .node .title {
+  color: var(--text) !important;
+  font-weight: 500;
+  background: rgba(108, 182, 255, 0.08);
+  border-bottom: 1px solid var(--line);
+  padding: 6px 10px !important;
+}
+
+/* Code dialog */
+#codegen-dialog {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 0;
+  width: 70vw;
+  max-width: 900px;
+  height: 70vh;
+  box-shadow: var(--shadow);
+}
+#codegen-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.5);
+}
+#codegen-dialog header {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+}
+#codegen-dialog header .grow {
+  flex: 1;
+}
+#codegen-dialog header button {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font: inherit;
+}
+#codegen-dialog pre {
+  margin: 0;
+  height: calc(100% - 50px);
+  overflow: auto;
+  padding: 12px 16px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  background: var(--bg);
+}

@@ -1,0 +1,6062 @@
+[
+  {
+    "name": "AttentionPooling",
+    "module": "pytorch_blocks.attention_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "num_heads",
+        "type": "int",
+        "default": 8,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "CrossAttention",
+    "module": "pytorch_blocks.attention_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "ctx_dim",
+        "type": "int",
+        "default": null,
+        "required": false
+      },
+      {
+        "name": "num_heads",
+        "type": "int",
+        "default": 8,
+        "required": false
+      },
+      {
+        "name": "dropout",
+        "type": "float",
+        "default": 0.0,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "Tq",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      },
+      {
+        "shape": [
+          "B",
+          "Tk",
+          "D_ctx"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "context"
+      },
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "any",
+        "optional": true,
+        "variadic": false,
+        "name": "mask"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "Tq",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "LinearAttention",
+    "module": "pytorch_blocks.attention_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "num_heads",
+        "type": "int",
+        "default": 8,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "MultiHeadAttention",
+    "module": "pytorch_blocks.attention_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "num_heads",
+        "type": "int",
+        "default": 8,
+        "required": false
+      },
+      {
+        "name": "dropout",
+        "type": "float",
+        "default": 0.0,
+        "required": false
+      },
+      {
+        "name": "bias",
+        "type": "bool",
+        "default": true,
+        "required": false
+      },
+      {
+        "name": "causal",
+        "type": "bool",
+        "default": false,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      },
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "any",
+        "optional": true,
+        "variadic": false,
+        "name": "mask"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "RelativePositionBias",
+    "module": "pytorch_blocks.attention_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "num_heads",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "num_buckets",
+        "type": "int",
+        "default": 32,
+        "required": false
+      },
+      {
+        "name": "max_distance",
+        "type": "int",
+        "default": 128,
+        "required": false
+      },
+      {
+        "name": "bidirectional",
+        "type": "bool",
+        "default": true,
+        "required": false
+      }
+    ],
+    "inputs": [],
+    "outputs": [
+      {
+        "shape": [
+          "H",
+          "Tq",
+          "Tk"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "RotaryEmbedding",
+    "module": "pytorch_blocks.attention_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "head_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "base",
+        "type": "float",
+        "default": 10000.0,
+        "required": false
+      }
+    ],
+    "inputs": [],
+    "outputs": [
+      {
+        "shape": [
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out0"
+      },
+      {
+        "shape": [
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out1"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "WindowAttention",
+    "module": "pytorch_blocks.attention_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "num_heads",
+        "type": "int",
+        "default": 8,
+        "required": false
+      },
+      {
+        "name": "window",
+        "type": "int",
+        "default": 64,
+        "required": false
+      },
+      {
+        "name": "dropout",
+        "type": "float",
+        "default": 0.0,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "apply_rotary",
+    "module": "pytorch_blocks.attention_blocks",
+    "framework": "pytorch",
+    "kind": "function",
+    "ctor": [],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      },
+      {
+        "shape": [
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "cos"
+      },
+      {
+        "shape": [
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "sin"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "scaled_dot_product_attention",
+    "module": "pytorch_blocks.attention_blocks",
+    "framework": "pytorch",
+    "kind": "function",
+    "ctor": [],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "Tq",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "q"
+      },
+      {
+        "shape": [
+          "B",
+          "H",
+          "Tk",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "k"
+      },
+      {
+        "shape": [
+          "B",
+          "H",
+          "Tk",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "v"
+      },
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "any",
+        "optional": true,
+        "variadic": false,
+        "name": "mask"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "Tq",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "ASPP",
+    "module": "pytorch_blocks.cnn_vision_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_ch",
+        "type": "int",
+        "default": 256,
+        "required": false
+      },
+      {
+        "name": "dilations",
+        "type": "any",
+        "default": [
+          1,
+          6,
+          12,
+          18
+        ],
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "C_in",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "C_out",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C_in": "in_ch",
+      "C_out": "out_ch"
+    }
+  },
+  {
+    "name": "CBAM",
+    "module": "pytorch_blocks.cnn_vision_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "channels",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "ratio",
+        "type": "int",
+        "default": 16,
+        "required": false
+      },
+      {
+        "name": "kernel",
+        "type": "int",
+        "default": 7,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "C",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "C",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C": "channels"
+    }
+  },
+  {
+    "name": "DeformableAttention",
+    "module": "pytorch_blocks.cnn_vision_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "num_heads",
+        "type": "int",
+        "default": 8,
+        "required": false
+      },
+      {
+        "name": "num_points",
+        "type": "int",
+        "default": 4,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "DeformableConv2d",
+    "module": "pytorch_blocks.cnn_vision_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "kernel_size",
+        "type": "int",
+        "default": 3,
+        "required": false
+      },
+      {
+        "name": "stride",
+        "type": "int",
+        "default": 1,
+        "required": false
+      },
+      {
+        "name": "padding",
+        "type": "int",
+        "default": 1,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "C_in",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "C_out",
+          "H_out",
+          "W_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C_in": "in_ch",
+      "C_out": "out_ch"
+    }
+  },
+  {
+    "name": "FeaturePyramidNetwork",
+    "module": "pytorch_blocks.cnn_vision_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_channels",
+        "type": "any",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_ch",
+        "type": "int",
+        "default": 256,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": true,
+        "name": "feats"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": true,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "InceptionBlock",
+    "module": "pytorch_blocks.cnn_vision_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "c1",
+        "type": "int",
+        "default": 64,
+        "required": false
+      },
+      {
+        "name": "c3",
+        "type": "int",
+        "default": 96,
+        "required": false
+      },
+      {
+        "name": "c5",
+        "type": "int",
+        "default": 16,
+        "required": false
+      },
+      {
+        "name": "pool",
+        "type": "int",
+        "default": 32,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "C_in",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "C_out",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C_in": "in_ch"
+    }
+  },
+  {
+    "name": "PixelShuffleUpsample",
+    "module": "pytorch_blocks.cnn_vision_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "channels",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "scale",
+        "type": "int",
+        "default": 2,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "C",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "C",
+          "H_out",
+          "W_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C": "channels"
+    }
+  },
+  {
+    "name": "SpatialPyramidPooling",
+    "module": "pytorch_blocks.cnn_vision_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "output_sizes",
+        "type": "any",
+        "default": [
+          1,
+          2,
+          4
+        ],
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "C",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "D_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "SqueezeExcitation",
+    "module": "pytorch_blocks.cnn_vision_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "channels",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "ratio",
+        "type": "int",
+        "default": 16,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "C",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "C",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C": "channels"
+    }
+  },
+  {
+    "name": "AdaIN",
+    "module": "pytorch_blocks.core_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "num_features",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "style_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "C",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      },
+      {
+        "shape": [
+          "B",
+          "D_style"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "style"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "C",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "ConvBlock",
+    "module": "pytorch_blocks.core_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "kernel_size",
+        "type": "int",
+        "default": 3,
+        "required": false
+      },
+      {
+        "name": "stride",
+        "type": "int",
+        "default": 1,
+        "required": false
+      },
+      {
+        "name": "padding",
+        "type": "int",
+        "default": null,
+        "required": false
+      },
+      {
+        "name": "dilation",
+        "type": "int",
+        "default": 1,
+        "required": false
+      },
+      {
+        "name": "groups",
+        "type": "int",
+        "default": 1,
+        "required": false
+      },
+      {
+        "name": "bias",
+        "type": "bool",
+        "default": false,
+        "required": false
+      },
+      {
+        "name": "norm",
+        "type": "str",
+        "default": "batch",
+        "required": false
+      },
+      {
+        "name": "activation",
+        "type": "str",
+        "default": "relu",
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "C_in",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "C_out",
+          "H_out",
+          "W_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C_in": "in_ch",
+      "C_out": "out_ch"
+    }
+  },
+  {
+    "name": "DepthwiseSeparableConv2d",
+    "module": "pytorch_blocks.core_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "kernel_size",
+        "type": "int",
+        "default": 3,
+        "required": false
+      },
+      {
+        "name": "stride",
+        "type": "int",
+        "default": 1,
+        "required": false
+      },
+      {
+        "name": "dilation",
+        "type": "int",
+        "default": 1,
+        "required": false
+      },
+      {
+        "name": "bias",
+        "type": "bool",
+        "default": false,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "C_in",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "C_out",
+          "H_out",
+          "W_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C_in": "in_ch",
+      "C_out": "out_ch"
+    }
+  },
+  {
+    "name": "Mish",
+    "module": "pytorch_blocks.core_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [],
+    "inputs": [
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "RMSNorm",
+    "module": "pytorch_blocks.core_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "eps",
+        "type": "float",
+        "default": 1e-06,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "...",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "...",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "ResidualBlock",
+    "module": "pytorch_blocks.core_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "stride",
+        "type": "int",
+        "default": 1,
+        "required": false
+      },
+      {
+        "name": "norm",
+        "type": "str",
+        "default": "batch",
+        "required": false
+      },
+      {
+        "name": "activation",
+        "type": "str",
+        "default": "relu",
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "C_in",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "C_out",
+          "H_out",
+          "W_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C_in": "in_ch",
+      "C_out": "out_ch"
+    }
+  },
+  {
+    "name": "SPADE",
+    "module": "pytorch_blocks.core_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "num_features",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "label_nc",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "hidden",
+        "type": "int",
+        "default": 128,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "C",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      },
+      {
+        "shape": [
+          "B",
+          "C_seg",
+          "H_seg",
+          "W_seg"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "segmap"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "C",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "SkipConnection",
+    "module": "pytorch_blocks.core_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "fn",
+        "type": "Module",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "mode",
+        "type": "str",
+        "default": "add",
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "ColumnParallelLinear",
+    "module": "pytorch_blocks.efficient_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_features",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_features",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "bias",
+        "type": "bool",
+        "default": true,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "*B",
+          "I"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "*B",
+          "O_local"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "I": "in_features"
+    }
+  },
+  {
+    "name": "LowRankLinear",
+    "module": "pytorch_blocks.efficient_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_features",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_features",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "rank",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "bias",
+        "type": "bool",
+        "default": true,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "*B",
+          "I"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "*B",
+          "O"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "I": "in_features",
+      "O": "out_features"
+    }
+  },
+  {
+    "name": "PipelineStage",
+    "module": "pytorch_blocks.efficient_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "module",
+        "type": "Module",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "stage_id",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "num_stages",
+        "type": "int",
+        "default": null,
+        "required": true
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "QuantizedLinear4bit",
+    "module": "pytorch_blocks.efficient_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_features",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_features",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "bias",
+        "type": "bool",
+        "default": true,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "*B",
+          "I"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "*B",
+          "O"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "I": "in_features",
+      "O": "out_features"
+    }
+  },
+  {
+    "name": "QuantizedLinearInt8",
+    "module": "pytorch_blocks.efficient_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_features",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_features",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "bias",
+        "type": "bool",
+        "default": true,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "*B",
+          "I"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "*B",
+          "O"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "I": "in_features",
+      "O": "out_features"
+    }
+  },
+  {
+    "name": "RowParallelLinear",
+    "module": "pytorch_blocks.efficient_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_features",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_features",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "bias",
+        "type": "bool",
+        "default": true,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "*B",
+          "I_local"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "*B",
+          "O"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "O": "out_features"
+    }
+  },
+  {
+    "name": "TokenPruner",
+    "module": "pytorch_blocks.efficient_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "keep_ratio",
+        "type": "float",
+        "default": 0.7,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      },
+      {
+        "shape": [
+          "B",
+          "T"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "scores"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "T_kept",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "dequantize_int8",
+    "module": "pytorch_blocks.efficient_blocks",
+    "framework": "pytorch",
+    "kind": "function",
+    "ctor": [],
+    "inputs": [
+      {
+        "shape": [
+          "O",
+          "I"
+        ],
+        "dtype": "int8",
+        "optional": false,
+        "variadic": false,
+        "name": "qweight"
+      },
+      {
+        "shape": [
+          "O"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "scale"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "O",
+          "I"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "quantize_int8",
+    "module": "pytorch_blocks.efficient_blocks",
+    "framework": "pytorch",
+    "kind": "function",
+    "ctor": [],
+    "inputs": [
+      {
+        "shape": [
+          "O",
+          "I"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "weight"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "O",
+          "I"
+        ],
+        "dtype": "int8",
+        "optional": false,
+        "variadic": false,
+        "name": "out0"
+      },
+      {
+        "shape": [
+          "O"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out1"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "CLIPLoss",
+    "module": "pytorch_blocks.embedding_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "init_temperature",
+        "type": "float",
+        "default": 0.07,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "image_emb"
+      },
+      {
+        "shape": [
+          "B",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "text_emb"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "LearnedPositionalEmbedding",
+    "module": "pytorch_blocks.embedding_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "max_len",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "ProjectionHead",
+    "module": "pytorch_blocks.embedding_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "hidden",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "D_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "D_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D_in": "in_dim",
+      "D_out": "out_dim"
+    }
+  },
+  {
+    "name": "SinusoidalPositionalEmbedding",
+    "module": "pytorch_blocks.embedding_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "max_len",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "info_nce",
+    "module": "pytorch_blocks.embedding_blocks",
+    "framework": "pytorch",
+    "kind": "function",
+    "ctor": [],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "z1"
+      },
+      {
+        "shape": [
+          "B",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "z2"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "DiscriminatorBlock",
+    "module": "pytorch_blocks.gan_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "stride",
+        "type": "int",
+        "default": 2,
+        "required": false
+      },
+      {
+        "name": "use_norm",
+        "type": "bool",
+        "default": true,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "C_in",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "C_out",
+          "H_out",
+          "W_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C_in": "in_ch",
+      "C_out": "out_ch"
+    }
+  },
+  {
+    "name": "EqualConv2d",
+    "module": "pytorch_blocks.gan_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "kernel_size",
+        "type": "int",
+        "default": 3,
+        "required": false
+      },
+      {
+        "name": "stride",
+        "type": "int",
+        "default": 1,
+        "required": false
+      },
+      {
+        "name": "padding",
+        "type": "int",
+        "default": null,
+        "required": false
+      },
+      {
+        "name": "bias",
+        "type": "bool",
+        "default": true,
+        "required": false
+      },
+      {
+        "name": "gain",
+        "type": "float",
+        "default": 1.0,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "C_in",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "C_out",
+          "H_out",
+          "W_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C_in": "in_ch",
+      "C_out": "out_ch"
+    }
+  },
+  {
+    "name": "EqualLinear",
+    "module": "pytorch_blocks.gan_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_features",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_features",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "bias",
+        "type": "bool",
+        "default": true,
+        "required": false
+      },
+      {
+        "name": "gain",
+        "type": "float",
+        "default": 1.0,
+        "required": false
+      },
+      {
+        "name": "lr_mul",
+        "type": "float",
+        "default": 1.0,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "*B",
+          "D_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "*B",
+          "D_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D_in": "in_features",
+      "D_out": "out_features"
+    }
+  },
+  {
+    "name": "GeneratorBlock",
+    "module": "pytorch_blocks.gan_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "scale",
+        "type": "int",
+        "default": 2,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "C_in",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "C_out",
+          "H_out",
+          "W_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C_in": "in_ch",
+      "C_out": "out_ch"
+    }
+  },
+  {
+    "name": "MappingNetwork",
+    "module": "pytorch_blocks.gan_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "z_dim",
+        "type": "int",
+        "default": 512,
+        "required": false
+      },
+      {
+        "name": "w_dim",
+        "type": "int",
+        "default": 512,
+        "required": false
+      },
+      {
+        "name": "num_layers",
+        "type": "int",
+        "default": 8,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "D_z"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "z"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "D_w"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D_z": "z_dim",
+      "D_w": "w_dim"
+    }
+  },
+  {
+    "name": "MinibatchStdDev",
+    "module": "pytorch_blocks.gan_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "group_size",
+        "type": "int",
+        "default": 4,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "C",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "C_out",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "ModulatedConv2d",
+    "module": "pytorch_blocks.gan_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "kernel_size",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "w_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "demodulate",
+        "type": "bool",
+        "default": true,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "C_in",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      },
+      {
+        "shape": [
+          "B",
+          "D_w"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "w"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "C_out",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C_in": "in_ch",
+      "C_out": "out_ch",
+      "D_w": "w_dim"
+    }
+  },
+  {
+    "name": "ProgressiveGrowing",
+    "module": "pytorch_blocks.gan_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "low_res_block",
+        "type": "Module",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "high_res_block",
+        "type": "Module",
+        "default": null,
+        "required": true
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "C",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "C_out",
+          "H_out",
+          "W_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "StyleBlock",
+    "module": "pytorch_blocks.gan_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "w_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "kernel_size",
+        "type": "int",
+        "default": 3,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "C_in",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      },
+      {
+        "shape": [
+          "B",
+          "D_w"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "w"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "C_out",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C_in": "in_ch",
+      "C_out": "out_ch",
+      "D_w": "w_dim"
+    }
+  },
+  {
+    "name": "AffineCouplingLayer",
+    "module": "pytorch_blocks.generative_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "hidden",
+        "type": "int",
+        "default": 128,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out0"
+      },
+      {
+        "shape": [
+          "B"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out1"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "AutoregressiveBlock",
+    "module": "pytorch_blocks.generative_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "channels",
+        "type": "int",
+        "default": null,
+        "required": true
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "C",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "C",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C": "channels"
+    }
+  },
+  {
+    "name": "EnergyBasedModel",
+    "module": "pytorch_blocks.generative_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "backbone",
+        "type": "Module",
+        "default": null,
+        "required": true
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "..."
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "MaskedConv2d",
+    "module": "pytorch_blocks.generative_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "mask_type",
+        "type": "str",
+        "default": null,
+        "required": true
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "C_in",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "C_out",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "VAE",
+    "module": "pytorch_blocks.generative_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_ch",
+        "type": "int",
+        "default": 3,
+        "required": false
+      },
+      {
+        "name": "latent",
+        "type": "int",
+        "default": 64,
+        "required": false
+      },
+      {
+        "name": "channels",
+        "type": "any",
+        "default": [
+          32,
+          64,
+          128,
+          256
+        ],
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "C",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "C",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out0"
+      },
+      {
+        "shape": [
+          "B",
+          "Z",
+          "H_z",
+          "W_z"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out1"
+      },
+      {
+        "shape": [
+          "B",
+          "Z",
+          "H_z",
+          "W_z"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out2"
+      }
+    ],
+    "bindings": {
+      "Z": "latent",
+      "C": "channels"
+    }
+  },
+  {
+    "name": "reparameterize",
+    "module": "pytorch_blocks.generative_blocks",
+    "framework": "pytorch",
+    "kind": "function",
+    "ctor": [],
+    "inputs": [
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "mu"
+      },
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "logvar"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "GraphAttention",
+    "module": "pytorch_blocks.gnn_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "heads",
+        "type": "int",
+        "default": 4,
+        "required": false
+      },
+      {
+        "name": "dropout",
+        "type": "float",
+        "default": 0.0,
+        "required": false
+      },
+      {
+        "name": "negative_slope",
+        "type": "float",
+        "default": 0.2,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "N",
+          "D_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      },
+      {
+        "shape": [
+          "2",
+          "E"
+        ],
+        "dtype": "int",
+        "optional": false,
+        "variadic": false,
+        "name": "edge_index"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "N",
+          "D_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D_in": "in_dim",
+      "D_out": "out_dim"
+    }
+  },
+  {
+    "name": "GraphConv",
+    "module": "pytorch_blocks.gnn_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "N",
+          "D_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      },
+      {
+        "shape": [
+          "2",
+          "E"
+        ],
+        "dtype": "int",
+        "optional": false,
+        "variadic": false,
+        "name": "edge_index"
+      },
+      {
+        "shape": [
+          "E",
+          "D_e"
+        ],
+        "dtype": "float",
+        "optional": true,
+        "variadic": false,
+        "name": "edge_attr"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "N",
+          "D_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D_in": "in_dim",
+      "D_out": "out_dim"
+    }
+  },
+  {
+    "name": "MessagePassing",
+    "module": "pytorch_blocks.gnn_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [],
+    "inputs": [
+      {
+        "shape": [
+          "N",
+          "D_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      },
+      {
+        "shape": [
+          "2",
+          "E"
+        ],
+        "dtype": "int",
+        "optional": false,
+        "variadic": false,
+        "name": "edge_index"
+      },
+      {
+        "shape": [
+          "E",
+          "D_e"
+        ],
+        "dtype": "float",
+        "optional": true,
+        "variadic": false,
+        "name": "edge_attr"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "N",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "ExternalMemory",
+    "module": "pytorch_blocks.memory_retrieval_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "num_slots",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "key_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "value_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "*B",
+          "D_k"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "query"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "*B",
+          "D_v"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D_k": "key_dim",
+      "D_v": "value_dim"
+    }
+  },
+  {
+    "name": "MemoryAttention",
+    "module": "pytorch_blocks.multimodal_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "mem_dim",
+        "type": "int",
+        "default": null,
+        "required": false
+      },
+      {
+        "name": "num_heads",
+        "type": "int",
+        "default": 8,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      },
+      {
+        "shape": [
+          "B",
+          "M",
+          "D_mem"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "memory"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "PerceiverResampler",
+    "module": "pytorch_blocks.multimodal_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "num_latents",
+        "type": "int",
+        "default": 64,
+        "required": false
+      },
+      {
+        "name": "num_heads",
+        "type": "int",
+        "default": 8,
+        "required": false
+      },
+      {
+        "name": "depth",
+        "type": "int",
+        "default": 6,
+        "required": false
+      },
+      {
+        "name": "mlp_ratio",
+        "type": "float",
+        "default": 4.0,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "K",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim",
+      "K": "num_latents"
+    }
+  },
+  {
+    "name": "QFormer",
+    "module": "pytorch_blocks.multimodal_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": 768,
+        "required": false
+      },
+      {
+        "name": "num_queries",
+        "type": "int",
+        "default": 32,
+        "required": false
+      },
+      {
+        "name": "num_heads",
+        "type": "int",
+        "default": 12,
+        "required": false
+      },
+      {
+        "name": "depth",
+        "type": "int",
+        "default": 6,
+        "required": false
+      },
+      {
+        "name": "image_dim",
+        "type": "int",
+        "default": null,
+        "required": false
+      },
+      {
+        "name": "llm_dim",
+        "type": "int",
+        "default": 4096,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D_img"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "image_feats"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "Q",
+          "D_llm"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "Q": "num_queries"
+    }
+  },
+  {
+    "name": "CheckpointedSequential",
+    "module": "pytorch_blocks.optimization_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [],
+    "inputs": [
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "clip_grad_norm",
+    "module": "pytorch_blocks.optimization_blocks",
+    "framework": "pytorch",
+    "kind": "function",
+    "ctor": [],
+    "inputs": [],
+    "outputs": [
+      {
+        "shape": [],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "ActorCritic",
+    "module": "pytorch_blocks.rl_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "state_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "action_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "hidden",
+        "type": "any",
+        "default": [
+          128,
+          128
+        ],
+        "required": false
+      },
+      {
+        "name": "discrete",
+        "type": "bool",
+        "default": true,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "D_s"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "s"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "PolicyNetwork",
+    "module": "pytorch_blocks.rl_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "state_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "action_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "hidden",
+        "type": "any",
+        "default": [
+          128,
+          128
+        ],
+        "required": false
+      },
+      {
+        "name": "discrete",
+        "type": "bool",
+        "default": true,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "D_s"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "s"
+      }
+    ],
+    "outputs": [],
+    "bindings": {}
+  },
+  {
+    "name": "QNetwork",
+    "module": "pytorch_blocks.rl_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "state_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "action_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "hidden",
+        "type": "any",
+        "default": [
+          128,
+          128
+        ],
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "D_s"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "s"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "D_a"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "ValueNetwork",
+    "module": "pytorch_blocks.rl_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "state_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "hidden",
+        "type": "any",
+        "default": [
+          128,
+          128
+        ],
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "D_s"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "s"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "GRUCell",
+    "module": "pytorch_blocks.sequence_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "hidden",
+        "type": "int",
+        "default": null,
+        "required": true
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "D_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      },
+      {
+        "shape": [
+          "B",
+          "D_h"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "h"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "D_h"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D_in": "in_dim",
+      "D_h": "hidden"
+    }
+  },
+  {
+    "name": "LSTMCell",
+    "module": "pytorch_blocks.sequence_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "hidden",
+        "type": "int",
+        "default": null,
+        "required": true
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "D_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "D_h"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out0"
+      },
+      {
+        "shape": [
+          "B",
+          "D_h"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out1"
+      }
+    ],
+    "bindings": {
+      "D_in": "in_dim",
+      "D_h": "hidden"
+    }
+  },
+  {
+    "name": "MambaBlock",
+    "module": "pytorch_blocks.sequence_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "state_dim",
+        "type": "int",
+        "default": 16,
+        "required": false
+      },
+      {
+        "name": "conv_kernel",
+        "type": "int",
+        "default": 4,
+        "required": false
+      },
+      {
+        "name": "expand",
+        "type": "int",
+        "default": 2,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "RNNCell",
+    "module": "pytorch_blocks.sequence_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "hidden",
+        "type": "int",
+        "default": null,
+        "required": true
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "D_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      },
+      {
+        "shape": [
+          "B",
+          "D_h"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "h"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "D_h"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D_in": "in_dim",
+      "D_h": "hidden"
+    }
+  },
+  {
+    "name": "StateSpaceModel",
+    "module": "pytorch_blocks.sequence_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "state_dim",
+        "type": "int",
+        "default": 64,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "u"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "run_recurrent",
+    "module": "pytorch_blocks.sequence_blocks",
+    "framework": "pytorch",
+    "kind": "function",
+    "ctor": [],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D_h"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "selective_scan",
+    "module": "pytorch_blocks.sequence_blocks",
+    "framework": "pytorch",
+    "kind": "function",
+    "ctor": [],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "u"
+      },
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "delta"
+      },
+      {
+        "shape": [
+          "D",
+          "N"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "A"
+      },
+      {
+        "shape": [
+          "B",
+          "T",
+          "N"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "B"
+      },
+      {
+        "shape": [
+          "B",
+          "T",
+          "N"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "C"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "CapsuleLayer",
+    "module": "pytorch_blocks.specialized_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "num_in",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "dim_in",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "num_out",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "dim_out",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "routing_iters",
+        "type": "int",
+        "default": 3,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "N_in",
+          "D_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "N_out",
+          "D_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "N_in": "num_in",
+      "N_out": "num_out"
+    }
+  },
+  {
+    "name": "FNOBlock",
+    "module": "pytorch_blocks.specialized_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "channels",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "modes_h",
+        "type": "int",
+        "default": 12,
+        "required": false
+      },
+      {
+        "name": "modes_w",
+        "type": "int",
+        "default": 12,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "C",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "C",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C": "channels"
+    }
+  },
+  {
+    "name": "KANLayer",
+    "module": "pytorch_blocks.specialized_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "num_grid",
+        "type": "int",
+        "default": 8,
+        "required": false
+      },
+      {
+        "name": "grid_range",
+        "type": "list",
+        "default": [
+          -1.0,
+          1.0
+        ],
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "D_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "D_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D_in": "in_dim",
+      "D_out": "out_dim"
+    }
+  },
+  {
+    "name": "NeuralODE",
+    "module": "pytorch_blocks.specialized_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dynamics",
+        "type": "Module",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "num_steps",
+        "type": "int",
+        "default": 16,
+        "required": false
+      },
+      {
+        "name": "t0",
+        "type": "float",
+        "default": 0.0,
+        "required": false
+      },
+      {
+        "name": "t1",
+        "type": "float",
+        "default": 1.0,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "..."
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "..."
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "SlotAttention",
+    "module": "pytorch_blocks.specialized_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "num_slots",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "iters",
+        "type": "int",
+        "default": 3,
+        "required": false
+      },
+      {
+        "name": "hidden_mlp",
+        "type": "any",
+        "default": null,
+        "required": false
+      },
+      {
+        "name": "eps",
+        "type": "float",
+        "default": 1e-08,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "N",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "K",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "K": "num_slots",
+      "D": "dim"
+    }
+  },
+  {
+    "name": "SpectralConv2d",
+    "module": "pytorch_blocks.specialized_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "modes_h",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "modes_w",
+        "type": "int",
+        "default": null,
+        "required": true
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "C_in",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "C_out",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C_in": "in_ch",
+      "C_out": "out_ch"
+    }
+  },
+  {
+    "name": "dynamic_routing",
+    "module": "pytorch_blocks.specialized_blocks",
+    "framework": "pytorch",
+    "kind": "function",
+    "ctor": [],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "O",
+          "I",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "votes"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "O",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "squash",
+    "module": "pytorch_blocks.specialized_blocks",
+    "framework": "pytorch",
+    "kind": "function",
+    "ctor": [],
+    "inputs": [
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "s"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "FeedForward",
+    "module": "pytorch_blocks.transformer_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "hidden",
+        "type": "int",
+        "default": null,
+        "required": false
+      },
+      {
+        "name": "dropout",
+        "type": "float",
+        "default": 0.0,
+        "required": false
+      },
+      {
+        "name": "activation",
+        "type": "str",
+        "default": "gelu",
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "*B",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "*B",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "GEGLU",
+    "module": "pytorch_blocks.transformer_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "hidden",
+        "type": "int",
+        "default": null,
+        "required": false
+      },
+      {
+        "name": "dropout",
+        "type": "float",
+        "default": 0.0,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "*B",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "*B",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "MixtureOfExperts",
+    "module": "pytorch_blocks.transformer_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "num_experts",
+        "type": "int",
+        "default": 8,
+        "required": false
+      },
+      {
+        "name": "top_k",
+        "type": "int",
+        "default": 2,
+        "required": false
+      },
+      {
+        "name": "hidden",
+        "type": "int",
+        "default": null,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "SwiGLU",
+    "module": "pytorch_blocks.transformer_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "hidden",
+        "type": "int",
+        "default": null,
+        "required": false
+      },
+      {
+        "name": "dropout",
+        "type": "float",
+        "default": 0.0,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "*B",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "*B",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "TransformerDecoderBlock",
+    "module": "pytorch_blocks.transformer_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "num_heads",
+        "type": "int",
+        "default": 8,
+        "required": false
+      },
+      {
+        "name": "mlp_ratio",
+        "type": "float",
+        "default": 4.0,
+        "required": false
+      },
+      {
+        "name": "ctx_dim",
+        "type": "int",
+        "default": null,
+        "required": false
+      },
+      {
+        "name": "dropout",
+        "type": "float",
+        "default": 0.0,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      },
+      {
+        "shape": [
+          "B",
+          "Tk",
+          "D_ctx"
+        ],
+        "dtype": "float",
+        "optional": true,
+        "variadic": false,
+        "name": "context"
+      },
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "any",
+        "optional": true,
+        "variadic": false,
+        "name": "mask"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "TransformerEncoderBlock",
+    "module": "pytorch_blocks.transformer_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "num_heads",
+        "type": "int",
+        "default": 8,
+        "required": false
+      },
+      {
+        "name": "mlp_ratio",
+        "type": "float",
+        "default": 4.0,
+        "required": false
+      },
+      {
+        "name": "dropout",
+        "type": "float",
+        "default": 0.0,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      },
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "any",
+        "optional": true,
+        "variadic": false,
+        "name": "mask"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "ControlNetBlock",
+    "module": "pytorch_blocks.unet_diffusion_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "hint_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "hidden",
+        "type": "int",
+        "default": 64,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "C_hint",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "hint"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "C_out",
+          "H_out",
+          "W_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C_out": "out_ch"
+    }
+  },
+  {
+    "name": "DownsampleBlock",
+    "module": "pytorch_blocks.unet_diffusion_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "channels",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "mode",
+        "type": "str",
+        "default": "conv",
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "C",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "C",
+          "H_out",
+          "W_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C": "channels"
+    }
+  },
+  {
+    "name": "HyperNetwork",
+    "module": "pytorch_blocks.unet_diffusion_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "code_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "in_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "hidden",
+        "type": "int",
+        "default": 128,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "*B",
+          "D_code"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "code"
+      },
+      {
+        "shape": [
+          "*B",
+          "D_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "*B",
+          "D_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D_code": "code_dim",
+      "D_in": "in_dim",
+      "D_out": "out_dim"
+    }
+  },
+  {
+    "name": "IPAdapterCrossAttention",
+    "module": "pytorch_blocks.unet_diffusion_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "text_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "image_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "num_heads",
+        "type": "int",
+        "default": 8,
+        "required": false
+      },
+      {
+        "name": "scale",
+        "type": "float",
+        "default": 1.0,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      },
+      {
+        "shape": [
+          "B",
+          "T_txt",
+          "D_txt"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "text"
+      },
+      {
+        "shape": [
+          "B",
+          "T_img",
+          "D_img"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "image"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "T",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "LoRAConv2d",
+    "module": "pytorch_blocks.unet_diffusion_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "base",
+        "type": "Conv2d",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "rank",
+        "type": "int",
+        "default": 4,
+        "required": false
+      },
+      {
+        "name": "alpha",
+        "type": "float",
+        "default": 8.0,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "C_in",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "C_out",
+          "H_out",
+          "W_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "LoRALinear",
+    "module": "pytorch_blocks.unet_diffusion_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "base",
+        "type": "Linear",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "rank",
+        "type": "int",
+        "default": 8,
+        "required": false
+      },
+      {
+        "name": "alpha",
+        "type": "float",
+        "default": 16.0,
+        "required": false
+      },
+      {
+        "name": "dropout",
+        "type": "float",
+        "default": 0.0,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "*B",
+          "D_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "*B",
+          "D_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "NoisePredictor",
+    "module": "pytorch_blocks.unet_diffusion_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "backbone",
+        "type": "Module",
+        "default": null,
+        "required": true
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "C",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x_t"
+      },
+      {
+        "shape": [
+          "B"
+        ],
+        "dtype": "int",
+        "optional": false,
+        "variadic": false,
+        "name": "t"
+      },
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "float",
+        "optional": true,
+        "variadic": false,
+        "name": "cond"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "C",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "SinusoidalTimeEmbedding",
+    "module": "pytorch_blocks.unet_diffusion_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B"
+        ],
+        "dtype": "int",
+        "optional": false,
+        "variadic": false,
+        "name": "t"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "TimestepMLP",
+    "module": "pytorch_blocks.unet_diffusion_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "hidden",
+        "type": "int",
+        "default": null,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B"
+        ],
+        "dtype": "int",
+        "optional": false,
+        "variadic": false,
+        "name": "t"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "D_hidden"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "UNet",
+    "module": "pytorch_blocks.unet_diffusion_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_ch",
+        "type": "int",
+        "default": 4,
+        "required": false
+      },
+      {
+        "name": "out_ch",
+        "type": "int",
+        "default": 4,
+        "required": false
+      },
+      {
+        "name": "base",
+        "type": "int",
+        "default": 64,
+        "required": false
+      },
+      {
+        "name": "ch_mults",
+        "type": "any",
+        "default": [
+          1,
+          2,
+          4,
+          4
+        ],
+        "required": false
+      },
+      {
+        "name": "t_dim",
+        "type": "int",
+        "default": 256,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "C_in",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      },
+      {
+        "shape": [
+          "B"
+        ],
+        "dtype": "int",
+        "optional": false,
+        "variadic": false,
+        "name": "t"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "C_out",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C_in": "in_ch",
+      "C_out": "out_ch"
+    }
+  },
+  {
+    "name": "UNetResBlock",
+    "module": "pytorch_blocks.unet_diffusion_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "t_dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "dropout",
+        "type": "float",
+        "default": 0.0,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "C_in",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      },
+      {
+        "shape": [
+          "B",
+          "D_t"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "t_emb"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "C_out",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C_in": "in_ch",
+      "C_out": "out_ch"
+    }
+  },
+  {
+    "name": "UpsampleBlock",
+    "module": "pytorch_blocks.unet_diffusion_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "channels",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "mode",
+        "type": "str",
+        "default": "interp",
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "C",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "C",
+          "H_out",
+          "W_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C": "channels"
+    }
+  },
+  {
+    "name": "classifier_free_guidance",
+    "module": "pytorch_blocks.unet_diffusion_blocks",
+    "framework": "pytorch",
+    "kind": "function",
+    "ctor": [],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "C",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "eps_cond"
+      },
+      {
+        "shape": [
+          "B",
+          "C",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "eps_uncond"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "C",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "CLSToken",
+    "module": "pytorch_blocks.vit_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "N",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "N1",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "PatchEmbedding",
+    "module": "pytorch_blocks.vit_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_ch",
+        "type": "int",
+        "default": 3,
+        "required": false
+      },
+      {
+        "name": "patch_size",
+        "type": "int",
+        "default": 16,
+        "required": false
+      },
+      {
+        "name": "dim",
+        "type": "int",
+        "default": 768,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "C",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "N",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "ShiftedWindowAttention",
+    "module": "pytorch_blocks.vit_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "input_resolution",
+        "type": "list",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "num_heads",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "window",
+        "type": "int",
+        "default": 7,
+        "required": false
+      },
+      {
+        "name": "shift",
+        "type": "int",
+        "default": null,
+        "required": false
+      },
+      {
+        "name": "dropout",
+        "type": "float",
+        "default": 0.0,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "N",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "N",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  },
+  {
+    "name": "SwinWindowAttention",
+    "module": "pytorch_blocks.vit_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "dim",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "num_heads",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "window",
+        "type": "int",
+        "default": 7,
+        "required": false
+      },
+      {
+        "name": "dropout",
+        "type": "float",
+        "default": 0.0,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "BnW",
+          "N",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      },
+      {
+        "shape": [
+          "nW",
+          "N",
+          "N"
+        ],
+        "dtype": "float",
+        "optional": true,
+        "variadic": false,
+        "name": "mask"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "BnW",
+          "N",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D": "dim"
+    }
+  }
+]
