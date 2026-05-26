@@ -52,7 +52,16 @@ npm run dev    # http://127.0.0.1:5173/
 ```bash
 npm run test:logic   # pure-JS shape parser + unifier + codegen
 npm run test:e2e     # headless puppeteer; expects `npm run dev` running
+npm run test:runtime # traced codegen + HTTP runner; start runner first
 ```
+
+Run the Python shape runner (PyTorch only, separate terminal)::
+
+```bash
+python tools/shape_runner.py   # http://127.0.0.1:8765/run
+```
+
+Then in the UI sidebar **Runtime shapes → Run shape check** once every axis is numeric.
 
 ## File map
 

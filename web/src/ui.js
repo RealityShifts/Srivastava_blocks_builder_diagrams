@@ -66,15 +66,15 @@ export function filterPalette(rootEl, query) {
 // after validation runs without blowing away focused <input> elements.
 let _currentNodeId = null
 
-function buildPortsSection(node, sub) {
+function buildPortsSection(node, sub, runtimeShapes) {
   const ports = document.createElement('div')
   ports.className = 'ports'
-  ports.appendChild(portList('Inputs', node.entry.inputs, node, sub, 'in'))
-  ports.appendChild(portList('Outputs', node.entry.outputs, node, sub, 'out'))
+  ports.appendChild(portList('Inputs', node.entry.inputs, node, sub, 'in', runtimeShapes))
+  ports.appendChild(portList('Outputs', node.entry.outputs, node, sub, 'out', runtimeShapes))
   return ports
 }
 
-export function renderInspector(rootEl, node, sub, onChange) {
+export function renderInspector(rootEl, node, sub, onChange, runtimeShapes) {
   if (!node) {
     _currentNodeId = null
     rootEl.replaceChildren()
@@ -89,7 +89,7 @@ export function renderInspector(rootEl, node, sub, onChange) {
   // so the user's focus on a control is preserved across validation runs.
   if (node.id === _currentNodeId) {
     const existing = rootEl.querySelector('.ports')
-    const fresh = buildPortsSection(node, sub)
+    const fresh = buildPortsSection(node, sub, runtimeShapes)
     if (existing) {
       existing.replaceWith(fresh)
     } else {
@@ -131,10 +131,10 @@ export function renderInspector(rootEl, node, sub, onChange) {
     }
   }
 
-  rootEl.appendChild(buildPortsSection(node, sub))
+  rootEl.appendChild(buildPortsSection(node, sub, runtimeShapes))
 }
 
-function portList(title, list, node, sub, side) {
+function portList(title, list, node, sub, side, runtimeShapes) {
   const wrap = document.createElement('div')
   const h = document.createElement('h4')
   h.textContent = title
@@ -154,7 +154,13 @@ function portList(title, list, node, sub, side) {
     // when the user picks a different dtype in the inspector).
     const rete = side === 'in' ? node.inputs[p.name] : node.outputs[p.name]
     const dtype = rete?.portSpec?.dtype ?? p.dtype
-    row.innerHTML = `<code>${p.name}</code> : ${shape} <span class="muted">[${dtype}${p.optional ? ', opt' : ''}${p.variadic ? ', var' : ''}]</span>`
+    const key = `${node.id}/${p.name}`
+    const runtime = runtimeShapes?.get(key)
+    const runtimeTag =
+      side === 'out' && runtime
+        ? ` <span class="runtime-shape">runtime: ${runtime.join(' ')}</span>`
+        : ''
+    row.innerHTML = `<code>${p.name}</code> : ${shape} <span class="muted">[${dtype}${p.optional ? ', opt' : ''}${p.variadic ? ', var' : ''}]</span>${runtimeTag}`
     wrap.appendChild(row)
   }
   return wrap
@@ -269,4 +275,55 @@ export function wireCodeDialog() {
       /* ignore */
     }
   })
+}
+
+export function updateRuntimePanel({ framework, lastResult, batchSize, runtimeShapes, running, lastError }) {
+  const btn = document.getElementById('run-shapes-btn')
+  const status = document.getElementById('runtime-status')
+  const batchInput = document.getElementById('batch-size')
+  if (!btn || !status) return
+
+  if (batchInput && document.activeElement !== batchInput) {
+    batchInput.value = String(batchSize ?? 2)
+  }
+
+  if (framework !== 'pytorch') {
+    btn.disabled = true
+    status.textContent = 'Switch to pytorch_blocks to run shape checks.'
+    status.className = 'muted'
+    return
+  }
+
+  btn.disabled =
+    running ||
+    !(lastResult?.ok ?? false) ||
+    Boolean(lastResult && !isGraphRunnable(lastResult, batchSize))
+
+  if (running) {
+    status.textContent = 'Running forward pass…'
+    status.className = 'muted'
+  } else if (lastError) {
+    status.textContent = lastError
+    status.className = 'err'
+  } else if (runtimeShapes?.size) {
+    status.textContent = `Runtime shapes captured for ${runtimeShapes.size} port(s).`
+    status.className = 'ok'
+  } else if (!(lastResult?.ok ?? false)) {
+    status.textContent = 'Fix graph errors before running.'
+    status.className = 'muted'
+  } else if (lastResult && !isGraphRunnable(lastResult, batchSize)) {
+    status.textContent =
+      lastResult.concreteReason ||
+      'Set Input shape (literals or B) and wire all required inputs.'
+    status.className = 'muted'
+  } else {
+    status.textContent = 'Ready — all axes are numeric.'
+    status.className = 'ok'
+  }
+}
+
+function isGraphRunnable(lastResult, batchSize) {
+  // Button stays disabled until runtime.js isFullyConcrete passes; main.js sets
+  // state.canRunShapes from that on each validation tick.
+  return Boolean(lastResult?.canRunShapes)
 }

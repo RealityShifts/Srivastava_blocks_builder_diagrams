@@ -12,6 +12,7 @@ import { LitPlugin, Presets as LitPresets } from '@retejs/lit-plugin'
 import { makeNode, INPUT_ENTRY } from './nodes.js'
 import { validate, dryRunEdge } from './validator.js'
 import { generate as generateCode } from './codegen.js'
+import { isFullyConcrete, runShapeCheck } from './runtime.js'
 import {
   renderPalette,
   filterPalette,
@@ -19,6 +20,7 @@ import {
   renderDiagnostics,
   showCode,
   wireCodeDialog,
+  updateRuntimePanel,
 } from './ui.js'
 
 // --- state ---
@@ -28,6 +30,10 @@ const state = {
   byName: new Map(),
   selectedNodeId: null,
   lastResult: null,
+  runtimeShapes: null,
+  batchSize: 2,
+  runtimeRunning: false,
+  runtimeError: null,
 }
 
 let editor, area, connection, render, selector
@@ -113,6 +119,8 @@ async function bootstrap() {
   wireCodeDialog()
   document.getElementById('framework-select').addEventListener('change', async (e) => {
     state.framework = e.target.value
+    state.runtimeShapes = null
+    state.runtimeError = null
     await loadManifest()
     await clearGraph()
   })
@@ -123,6 +131,13 @@ async function bootstrap() {
   document.getElementById('export-btn').addEventListener('click', exportGraph)
   document.getElementById('codegen-btn').addEventListener('click', runCodegen)
   document.getElementById('delete-btn').addEventListener('click', () => deleteSelected())
+  document.getElementById('run-shapes-btn').addEventListener('click', () => runRuntimeShapeCheck())
+  document.getElementById('batch-size').addEventListener('input', (e) => {
+    state.batchSize = Math.max(1, Math.trunc(Number(e.target.value) || 2))
+    state.runtimeShapes = null
+    state.runtimeError = null
+    queueValidation()
+  })
   document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
       e.preventDefault()
@@ -166,6 +181,8 @@ async function clearGraph() {
   for (const c of [...editor.getConnections()]) await editor.removeConnection(c.id)
   for (const n of [...editor.getNodes()]) await editor.removeNode(n.id)
   state.selectedNodeId = null
+  state.runtimeShapes = null
+  state.runtimeError = null
   refreshInspector()
   queueValidation()
 }
@@ -214,8 +231,44 @@ function queueValidation() {
 }
 function runValidation() {
   state.lastResult = validate(editor)
+  const concrete =
+    state.framework === 'pytorch'
+      ? isFullyConcrete(editor, state.lastResult.sub, state.batchSize)
+      : { ok: false }
+  state.lastResult.canRunShapes = concrete.ok
+  state.lastResult.concreteReason = concrete.reason
   renderDiagnostics(document.getElementById('diag-list'), state.lastResult)
-  refreshInspector() // refresh resolved shapes
+  refreshInspector()
+  refreshRuntimePanel()
+}
+
+function refreshRuntimePanel() {
+  updateRuntimePanel({
+    framework: state.framework,
+    lastResult: state.lastResult,
+    batchSize: state.batchSize,
+    runtimeShapes: state.runtimeShapes,
+    running: state.runtimeRunning,
+    lastError: state.runtimeError,
+  })
+}
+
+async function runRuntimeShapeCheck() {
+  if (state.runtimeRunning || state.framework !== 'pytorch') return
+  state.runtimeRunning = true
+  state.runtimeError = null
+  refreshRuntimePanel()
+  try {
+    const { shapes } = await runShapeCheck(editor, state.framework, state.batchSize)
+    state.runtimeShapes = shapes
+  } catch (e) {
+    state.runtimeShapes = null
+    state.runtimeError = e.message || String(e)
+  } finally {
+    state.runtimeRunning = false
+    refreshRuntimePanel()
+    refreshInspector()
+  }
 }
 
 function refreshInspector() {
@@ -224,7 +277,12 @@ function refreshInspector() {
     document.getElementById('inspector-body'),
     node,
     state.lastResult?.sub ?? new Map(),
-    () => queueValidation()
+    () => {
+      state.runtimeShapes = null
+      state.runtimeError = null
+      queueValidation()
+    },
+    state.runtimeShapes
   )
 }
 
@@ -285,6 +343,7 @@ if (typeof window !== 'undefined') {
     clearGraph,
     deleteSelected,
     runValidation,
+    runRuntimeShapeCheck,
     runCodegen: () =>
       generateCode(editor.getNodes(), editor.getConnections(), state.framework),
     addConnection: async (source, sourceOutput, target, targetInput) => {

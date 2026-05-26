@@ -36,6 +36,16 @@
           <h3>Inspector</h3>
           <div id="inspector-body"><p class="muted">Select a node to edit its parameters.</p></div>
         </div>
+        <div id="runtime-panel">
+          <h3>Runtime shapes</h3>
+          <p class="muted runtime-hint">PyTorch only. Start the runner first:<br><code>python tools/shape_runner.py</code></p>
+          <label class="row">
+            Batch (B)
+            <input id="batch-size" type="number" min="1" step="1" value="2" />
+          </label>
+          <button id="run-shapes-btn" disabled title="Resolve every axis to a number, then run a real forward pass">Run shape check</button>
+          <p id="runtime-status" class="muted"></p>
+        </div>
       </aside>
     </main>
 

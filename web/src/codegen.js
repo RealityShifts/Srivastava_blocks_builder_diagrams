@@ -56,17 +56,23 @@ function snake(name, suffix) {
   return `${base}_${suffix}`
 }
 
+/** Coerce arbitrary user-typed text into a valid Python identifier. */
+export function sanitizePyIdent(raw, fallback = 'x') {
+  const s = String(raw ?? '').trim()
+  if (!s) return fallback
+  let out = s.replace(/[^A-Za-z0-9_]/g, '_')
+  if (/^[0-9]/.test(out)) out = '_' + out
+  return out || fallback
+}
+
 /**
- * @param {Array} nodes      array of BlockNode
- * @param {Array} connections array of {source, sourceOutput, target, targetInput}
- * @param {'pytorch'|'flax'} framework
+ * Shared graph planning used by generate() and the runtime shape runner.
+ * Returns naming maps, wiring tables, and topo order.
  */
-export function generate(nodes, connections, framework) {
-  if (nodes.length === 0) return '# empty graph\n'
+export function planGraph(nodes, connections) {
+  if (nodes.length === 0) return null
   const ordered = topoSort(nodes, connections)
 
-  // Track which Python variable names are taken so Input names and snake_case
-  // attribute names never collide.
   const usedNames = new Set()
   const allocate = (base) => {
     let candidate = base
@@ -76,24 +82,19 @@ export function generate(nodes, connections, framework) {
     return candidate
   }
 
-  // Input nodes' output vars come from their user-typed `name` (sanitized).
-  // They become forward() arguments rather than `self.xxx` attributes.
-  const inputArgFor = new Map() // nodeId -> python arg name
+  const inputArgFor = new Map()
   for (const n of ordered) {
     if (n.entry.kind === 'input') {
-      const raw = sanitizePyIdent(n.values?.name, 'x')
-      inputArgFor.set(n.id, allocate(raw))
+      inputArgFor.set(n.id, allocate(sanitizePyIdent(n.values?.name, 'x')))
     }
   }
 
-  // Stable per-node Python attribute names for module/function nodes.
   const attrName = new Map()
   ordered.forEach((n, i) => {
     if (n.entry.kind === 'input') return
     attrName.set(n.id, allocate(snake(n.entry.name, i)))
   })
 
-  // Imports: group by module. Skip built-in Input.
   const imports = new Map()
   for (const n of ordered) {
     if (n.entry.kind === 'input') continue
@@ -101,7 +102,6 @@ export function generate(nodes, connections, framework) {
     imports.get(n.entry.module).add(n.entry.name)
   }
 
-  // Connections, indexed by (target, targetInput) -> [(source, sourceOutput)]
   const incoming = new Map()
   for (const c of connections) {
     const key = `${c.target}/${c.targetInput}`
@@ -109,8 +109,7 @@ export function generate(nodes, connections, framework) {
     incoming.get(key).push(c)
   }
 
-  // For each node, record the Python variable holding each of its outputs.
-  const outputVarFor = new Map() // `${nodeId}/${portName}` -> python var
+  const outputVarFor = new Map()
   for (const n of ordered) {
     if (n.entry.kind === 'input') {
       outputVarFor.set(`${n.id}/out`, inputArgFor.get(n.id))
@@ -124,6 +123,39 @@ export function generate(nodes, connections, framework) {
       )
     }
   }
+
+  const entryInputs = findEntryInputs(ordered, connections, usedNames)
+  return {
+    ordered,
+    inputArgFor,
+    attrName,
+    imports,
+    incoming,
+    outputVarFor,
+    entryInputs,
+  }
+}
+
+/**
+ * @param {Array} nodes      array of BlockNode
+ * @param {Array} connections array of {source, sourceOutput, target, targetInput}
+ * @param {'pytorch'|'flax'} framework
+ * @param {{ trace?: boolean }} options  trace=true records tensor.shape per port
+ */
+export function generate(nodes, connections, framework, options = {}) {
+  const trace = options.trace === true
+  const plan = planGraph(nodes, connections)
+  if (!plan) return '# empty graph\n'
+
+  const {
+    ordered,
+    inputArgFor,
+    attrName,
+    imports,
+    incoming,
+    outputVarFor,
+    entryInputs,
+  } = plan
 
   // ------------------- imports -------------------
   const lines = ['from __future__ import annotations', '']
@@ -164,7 +196,6 @@ export function generate(nodes, connections, framework) {
   // ------- forward / __call__ -------
   // Explicit Input nodes (in topo order) come first; dangling required inputs
   // on regular nodes still get auto-promoted to forward() args as a fallback.
-  const entryInputs = findEntryInputs(ordered, connections, usedNames)
   const inputArgs = ordered
     .filter((n) => n.entry.kind === 'input')
     .map((n) => inputArgFor.get(n.id))
@@ -172,13 +203,21 @@ export function generate(nodes, connections, framework) {
   const fwdName = framework === 'pytorch' ? 'forward' : '__call__'
   lines.push(`    def ${fwdName}(self${allArgs.length ? ', ' + allArgs.join(', ') : ''}):`)
 
-  // Map each entry-input port to a function argument name.
+  if (trace) lines.push('        _runtime_shapes = {}')
+
   const argFor = new Map()
   for (const e of entryInputs) argFor.set(`${e.nodeId}/${e.portName}`, e.argName)
 
   for (const n of ordered) {
-    // Input nodes are pure forward() args, not statements in the body.
-    if (n.entry.kind === 'input') continue
+    if (n.entry.kind === 'input') {
+      if (trace) {
+        const arg = inputArgFor.get(n.id)
+        lines.push(
+          `        _runtime_shapes[${JSON.stringify(`${n.id}/out`)}] = list(${arg}.shape)`
+        )
+      }
+      continue
+    }
     // Build the argument expression for each input port of this node.
     const callArgs = []
     for (const port of n.entry.inputs) {
@@ -220,14 +259,30 @@ export function generate(nodes, connections, framework) {
         .map((p) => outputVarFor.get(`${n.id}/${p.name}`))
         .join(', ')
       lines.push(`        ${targets} = ${callExpr}`)
+      if (trace) {
+        for (const port of n.entry.outputs) {
+          const v = outputVarFor.get(`${n.id}/${port.name}`)
+          lines.push(
+            `        _runtime_shapes[${JSON.stringify(`${n.id}/${port.name}`)}] = list(${v}.shape)`
+          )
+        }
+      }
     } else {
-      lines.push(`        ${attrName.get(n.id)} = ${callExpr}`)
+      const v = attrName.get(n.id)
+      lines.push(`        ${v} = ${callExpr}`)
+      if (trace) {
+        const portName = n.entry.outputs[0]?.name ?? 'out'
+        lines.push(
+          `        _runtime_shapes[${JSON.stringify(`${n.id}/${portName}`)}] = list(${v}.shape)`
+        )
+      }
     }
   }
 
-  // Return the terminal node(s)' outputs.
   const terminals = findTerminals(ordered, connections)
-  if (terminals.length === 0) {
+  if (trace) {
+    lines.push('        return _runtime_shapes')
+  } else if (terminals.length === 0) {
     lines.push('        return None')
   } else if (terminals.length === 1) {
     const t = terminals[0]
@@ -306,16 +361,6 @@ function findEntryInputs(nodes, connections, usedNames = new Set()) {
     }
   }
   return out
-}
-
-/** Coerce arbitrary user-typed text into a valid Python identifier. */
-function sanitizePyIdent(raw, fallback = 'x') {
-  const s = String(raw ?? '').trim()
-  if (!s) return fallback
-  // Replace non-word chars with underscore, prefix digit-starting with underscore.
-  let out = s.replace(/[^A-Za-z0-9_]/g, '_')
-  if (/^[0-9]/.test(out)) out = '_' + out
-  return out || fallback
 }
 
 /** Output ports that have no outgoing edges ⇒ return values. */

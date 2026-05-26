@@ -234,6 +234,73 @@ main {
 #inspector .ports code {
   color: var(--accent);
 }
+#inspector .ports .runtime-shape {
+  color: var(--ok);
+  font-size: 10px;
+}
+
+#runtime-panel {
+  padding: 10px 12px;
+  border-top: 1px solid var(--line);
+}
+#runtime-panel h3 {
+  margin: 0 0 8px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+}
+#runtime-panel .runtime-hint {
+  font-size: 10px;
+  line-height: 1.4;
+  margin: 0 0 8px;
+}
+#runtime-panel .runtime-hint code {
+  font-size: 10px;
+  color: var(--accent);
+}
+#runtime-panel label.row {
+  display: grid;
+  grid-template-columns: 1fr 80px;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+#runtime-panel label.row input {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 3px 6px;
+  font: inherit;
+}
+#run-shapes-btn {
+  width: 100%;
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font: inherit;
+  margin-bottom: 6px;
+}
+#run-shapes-btn:hover:not(:disabled) {
+  background: #232844;
+  color: var(--accent);
+}
+#run-shapes-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+#runtime-status.ok {
+  color: var(--ok);
+}
+#runtime-status.err {
+  color: var(--err);
+}
 
 /* Rete classic node visual tweaks (lit preset uses these CSS hooks) */
 .rete .node {
