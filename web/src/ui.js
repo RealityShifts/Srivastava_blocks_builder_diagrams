@@ -62,12 +62,45 @@ export function filterPalette(rootEl, query) {
 
 // ---------- inspector ----------
 
+// Track which node is currently displayed so we can do incremental refreshes
+// after validation runs without blowing away focused <input> elements.
+let _currentNodeId = null
+
+function buildPortsSection(node, sub) {
+  const ports = document.createElement('div')
+  ports.className = 'ports'
+  ports.appendChild(portList('Inputs', node.entry.inputs, node, sub, 'in'))
+  ports.appendChild(portList('Outputs', node.entry.outputs, node, sub, 'out'))
+  return ports
+}
+
 export function renderInspector(rootEl, node, sub, onChange) {
-  rootEl.replaceChildren()
   if (!node) {
-    rootEl.innerHTML = '<p class="muted">Select a node to edit its parameters.</p>'
+    _currentNodeId = null
+    rootEl.replaceChildren()
+    const p = document.createElement('p')
+    p.className = 'muted'
+    p.textContent = 'Select a node to edit its parameters.'
+    rootEl.appendChild(p)
     return
   }
+
+  // Same node still selected: just refresh the read-only ports/shapes section
+  // so the user's focus on a control is preserved across validation runs.
+  if (node.id === _currentNodeId) {
+    const existing = rootEl.querySelector('.ports')
+    const fresh = buildPortsSection(node, sub)
+    if (existing) {
+      existing.replaceWith(fresh)
+    } else {
+      rootEl.appendChild(fresh)
+    }
+    return
+  }
+
+  // Different node (or first render): full rebuild.
+  _currentNodeId = node.id
+  rootEl.replaceChildren()
 
   const header = document.createElement('div')
   header.className = 'header'
@@ -98,12 +131,7 @@ export function renderInspector(rootEl, node, sub, onChange) {
     }
   }
 
-  // Ports + resolved shapes
-  const ports = document.createElement('div')
-  ports.className = 'ports'
-  ports.appendChild(portList('Inputs', node.entry.inputs, node, sub, 'in'))
-  ports.appendChild(portList('Outputs', node.entry.outputs, node, sub, 'out'))
-  rootEl.appendChild(ports)
+  rootEl.appendChild(buildPortsSection(node, sub))
 }
 
 function portList(title, list, node, sub, side) {
