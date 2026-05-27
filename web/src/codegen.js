@@ -193,7 +193,6 @@ export function generate(nodes, connections, framework, options = {}) {
     imports,
     incoming,
     outputVarFor,
-    entryInputs,
   } = plan
 
   // ------------------- imports -------------------
@@ -242,19 +241,15 @@ export function generate(nodes, connections, framework, options = {}) {
   lines.push('')
 
   // ------- forward / __call__ -------
-  // Explicit Input nodes (in topo order) come first; dangling required inputs
-  // on regular nodes still get auto-promoted to forward() args as a fallback.
+  // Only explicit Input nodes become forward() arguments.
   const inputArgs = ordered
     .filter((n) => n.entry.kind === 'input')
     .map((n) => inputArgFor.get(n.id))
-  const allArgs = [...inputArgs, ...entryInputs.map((e) => e.portArg)]
+  const allArgs = [...inputArgs]
   const fwdName = framework === 'pytorch' ? 'forward' : '__call__'
   lines.push(`    def ${fwdName}(self${allArgs.length ? ', ' + allArgs.join(', ') : ''}):`)
 
   if (trace) lines.push('        _runtime_shapes = {}')
-
-  const argFor = new Map()
-  for (const e of entryInputs) argFor.set(`${e.nodeId}/${e.portName}`, e.argName)
 
   for (const n of ordered) {
     if (n.entry.kind === 'input') {
@@ -266,6 +261,22 @@ export function generate(nodes, connections, framework, options = {}) {
       }
       continue
     }
+    if (n.entry.kind === 'output') {
+      if (trace) {
+        const key = `${n.id}/x`
+        const incomingEdges = incoming.get(key) ?? []
+        if (incomingEdges.length > 0) {
+          const c = incomingEdges[0]
+          const srcVar = outputVarFor.get(`${c.source}/${c.sourceOutput}`)
+          if (srcVar) {
+            lines.push(
+              `        _runtime_shapes[${JSON.stringify(`${n.id}/x`)}] = (list(${srcVar}.shape) if hasattr(${srcVar}, 'shape') else [])`
+            )
+          }
+        }
+      }
+      continue
+    }
     // Build the argument expression for each input port of this node.
     const callArgs = []
     for (const port of n.entry.inputs) {
@@ -273,9 +284,7 @@ export function generate(nodes, connections, framework, options = {}) {
       const incomingEdges = incoming.get(key) ?? []
 
       if (incomingEdges.length === 0) {
-        if (argFor.has(key)) {
-          callArgs.push(`${port.name}=${argFor.get(key)}`)
-        } else if (port.optional) {
+        if (port.optional) {
           // skip
         } else {
           callArgs.push(`${port.name}=None  # TODO: dangling required input`)
@@ -335,9 +344,16 @@ export function generate(nodes, connections, framework, options = {}) {
     }
   }
 
+  const explicitOutputs = findExplicitOutputs(ordered, incoming, outputVarFor)
   const terminals = findTerminals(ordered, connections)
   if (trace) {
     lines.push('        return _runtime_shapes')
+  } else if (explicitOutputs.length > 0) {
+    if (explicitOutputs.length === 1) {
+      lines.push(`        return ${explicitOutputs[0]}`)
+    } else {
+      lines.push(`        return (${explicitOutputs.join(', ')})`)
+    }
   } else if (terminals.length === 0) {
     lines.push('        return None')
   } else if (terminals.length === 1) {
@@ -499,7 +515,7 @@ function findEntryInputs(nodes, connections, usedNames = new Set()) {
     return candidate
   }
   for (const n of nodes) {
-    if (n.entry.kind === 'input') continue
+    if (n.entry.kind === 'input' || n.entry.kind === 'output') continue
     for (const port of n.entry.inputs) {
       if (port.optional || port.variadic) continue
       const key = `${n.id}/${port.name}`
@@ -513,6 +529,21 @@ function findEntryInputs(nodes, connections, usedNames = new Set()) {
         })
       }
     }
+  }
+  return out
+}
+
+/** Return vars wired into explicit Output nodes (topo order). */
+function findExplicitOutputs(ordered, incoming, outputVarFor) {
+  const out = []
+  for (const n of ordered) {
+    if (n.entry.kind !== 'output') continue
+    const key = `${n.id}/x`
+    const edges = incoming.get(key) ?? []
+    if (edges.length === 0) continue
+    const c = edges[0]
+    const v = outputVarFor.get(`${c.source}/${c.sourceOutput}`)
+    if (v) out.push(v)
   }
   return out
 }

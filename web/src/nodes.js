@@ -139,6 +139,19 @@ export function applyNodeTag(node, newTag) {
   node.label = computeNodeLabel(node)
 }
 
+/**
+ * Stable colour by tag so weight-tied twins are visually grouped.
+ * Same tag (case-insensitive) -> same HSL colour.
+ */
+export function colorForTag(tag) {
+  const s = String(tag ?? '').trim().toLowerCase()
+  if (!s) return null
+  let h = 5381
+  for (let i = 0; i < s.length; i++) h = (((h << 5) + h) + s.charCodeAt(i)) | 0
+  const hue = ((h % 360) + 360) % 360
+  return `hsl(${hue}, 70%, 62%)`
+}
+
 // ---------------------------------------------------------------------------
 // Input node - synthetic source node with user-defined shape & dtype.
 // ---------------------------------------------------------------------------
@@ -173,6 +186,31 @@ export const INPUT_ENTRY = {
       variadic: false,
     },
   ],
+  bindings: {},
+}
+
+/**
+ * Explicit graph sink. Generated forward() returns only values routed into
+ * Output nodes (in topo order), ignoring ordinary leaf outputs when present.
+ */
+export const OUTPUT_ENTRY = {
+  name: 'Output',
+  module: '__builtin__',
+  framework: 'any',
+  kind: 'output',
+  ctor: [
+    { name: 'name', type: 'str', default: 'y', required: false },
+  ],
+  inputs: [
+    {
+      name: 'x',
+      shape: ['...'],
+      dtype: 'any',
+      optional: false,
+      variadic: false,
+    },
+  ],
+  outputs: [],
   bindings: {},
 }
 
@@ -231,6 +269,14 @@ export class InputNode extends BlockNode {
     const port = this.outputs[portName]
     if (port?.portSpec) port.portSpec.dtype = this.values.dtype || 'any'
     return freshen(tokens, this.id)
+  }
+}
+
+/** Sink node with user-typed label (`name`) and unconstrained input shape. */
+export class OutputNode extends BlockNode {
+  freshenedShape(portName, side) {
+    if (side !== 'in') return null
+    return freshen(normalize(['...']), this.id)
   }
 }
 
@@ -469,6 +515,7 @@ export class ReshapeNode extends BlockNode {
 /** Pick the right node class for a manifest entry. */
 export function makeNode(entry) {
   if (entry.kind === 'input') return new InputNode(entry)
+  if (entry.kind === 'output') return new OutputNode(entry)
   if (entry.kind === 'rearrange') return new RearrangeNode(entry)
   if (entry.kind === 'reshape') return new ReshapeNode(entry)
   return new BlockNode(entry)

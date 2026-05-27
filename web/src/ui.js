@@ -128,6 +128,8 @@ function describePorts(entry) {
         ? 'op'
         : entry.kind === 'input'
           ? 'in'
+          : entry.kind === 'output'
+            ? 'out'
           : 'mod'
   return `${k} · ${i} in / ${o} out`
 }

@@ -9,6 +9,7 @@ import {
   RESHAPE_ENTRY,
   CONCAT_ENTRY,
   STACK_ENTRY,
+  OUTPUT_ENTRY,
   RearrangeNode,
   ReshapeNode,
   paletteGroup,
@@ -489,6 +490,64 @@ console.log('codegen (constant)')
   const code = generate([cInt, cBool], [], 'pytorch')
   check('constant int emits numeric literal', code.includes('= 7'), code)
   check('constant bool emits Python bool literal', code.includes('= True'), code)
+}
+
+console.log('codegen (explicit Output node)')
+{
+  const inputEntry = {
+    name: 'Input',
+    module: '__builtin__',
+    framework: 'any',
+    kind: 'input',
+    ctor: [
+      { name: 'name', type: 'str', default: 'x' },
+      { name: 'shape', type: 'str', default: 'B C H W' },
+      { name: 'dtype', type: 'str', default: 'float' },
+    ],
+    inputs: [],
+    outputs: [{ name: 'out', shape: ['B', 'C', 'H', 'W'], dtype: 'float' }],
+    bindings: {},
+  }
+  const conv = {
+    name: 'ConvBlock',
+    module: 'pytorch_blocks.core_blocks',
+    framework: 'pytorch',
+    kind: 'module',
+    ctor: [
+      { name: 'in_ch', type: 'int', default: null, required: true },
+      { name: 'out_ch', type: 'int', default: null, required: true },
+    ],
+    inputs: [{ name: 'x', shape: ['B', 'C_in', 'H', 'W'], dtype: 'float', optional: false, variadic: false }],
+    outputs: [{ name: 'out', shape: ['B', 'C_out', 'H_out', 'W_out'], dtype: 'float', optional: false, variadic: false }],
+    bindings: { C_in: 'in_ch', C_out: 'out_ch' },
+  }
+  const make = (id, entry, values = {}) => ({
+    id,
+    entry,
+    tag: '',
+    values: { ...Object.fromEntries(entry.ctor.map((p) => [p.name, p.default])), ...values },
+  })
+  const inp = make('inp', inputEntry, { name: 'x' })
+  const c1 = make('c1', conv, { in_ch: 3, out_ch: 16 })
+  const c2 = make('c2', conv, { in_ch: 16, out_ch: 32 })
+  const outNode = make('o1', OUTPUT_ENTRY, { name: 'y' })
+  const conns = [
+    { source: 'inp', sourceOutput: 'out', target: 'c1', targetInput: 'x' },
+    { source: 'c1', sourceOutput: 'out', target: 'c2', targetInput: 'x' },
+    { source: 'c1', sourceOutput: 'out', target: 'o1', targetInput: 'x' },
+  ]
+  const code = generate([inp, c1, c2, outNode], conns, 'pytorch')
+  const ret = (code.match(/return\s+([A-Za-z_][A-Za-z0-9_]*)/) || [])[1] || ''
+  check(
+    'with Output node, return points to Output input source (c1), not leaf c2',
+    /conv_block_1/.test(ret),
+    { ret, code }
+  )
+  check(
+    'with Output node, leaf output is ignored',
+    !/conv_block_2/.test(ret),
+    { ret, code }
+  )
 }
 
 function inputEntryForPalette() {

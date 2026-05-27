@@ -481,6 +481,24 @@ main {
   outline-offset: 2px;
   border-radius: 10px;
 }
+.tagged-node .node {
+  border-color: color-mix(in srgb, var(--tag-color) 65%, #1f2937) !important;
+  box-shadow:
+    inset 6px 0 0 0 var(--tag-color),
+    0 0 0 1px color-mix(in srgb, var(--tag-color) 38%, transparent),
+    var(--shadow) !important;
+}
+.tagged-node .node .title {
+  border-bottom-color: var(--tag-color) !important;
+  background: color-mix(in srgb, var(--tag-color) 26%, transparent) !important;
+}
+.tagged-node .node.selected {
+  border-color: var(--tag-color) !important;
+  box-shadow:
+    inset 6px 0 0 0 var(--tag-color),
+    0 0 0 2px color-mix(in srgb, var(--tag-color) 45%, transparent),
+    var(--shadow) !important;
+}
 .rete .node .title {
   color: var(--text) !important;
   font-weight: 500;

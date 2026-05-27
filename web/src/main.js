@@ -12,12 +12,14 @@ import { LitPlugin, Presets as LitPresets } from '@retejs/lit-plugin'
 import {
   makeNode,
   INPUT_ENTRY,
+  OUTPUT_ENTRY,
   CONST_ENTRY,
   REARRANGE_ENTRY,
   RESHAPE_ENTRY,
   CONCAT_ENTRY,
   STACK_ENTRY,
   applyNodeTag,
+  colorForTag,
   parseShapeString,
 } from './nodes.js'
 import { validate, dryRunEdge } from './validator.js'
@@ -108,6 +110,23 @@ function nodePosition(n) {
   const p = view?.position
   if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return undefined
   return { x: p.x, y: p.y }
+}
+
+function applyTagStyle(node) {
+  const el = area?.nodeViews?.get(node.id)?.element
+  if (!el) return
+  const c = colorForTag(node.tag)
+  if (!c) {
+    el.classList.remove('tagged-node')
+    el.style.removeProperty('--tag-color')
+    return
+  }
+  el.classList.add('tagged-node')
+  el.style.setProperty('--tag-color', c)
+}
+
+function applyAllTagStyles() {
+  for (const n of editor.getNodes()) applyTagStyle(n)
 }
 
 function isParamInput(node, inputName) {
@@ -296,6 +315,7 @@ async function pasteClipboard() {
     if (typeof spec.tag === 'string' && spec.tag) {
       applyNodeTag(node, spec.tag)
       area.update('node', node.id)
+      applyTagStyle(node)
     }
     idMap.set(spec.id, node.id)
   }
@@ -542,6 +562,7 @@ async function loadManifest() {
   // palette so users spawn it explicitly from node params ("+ const").
   state.entries = [
     INPUT_ENTRY,
+    OUTPUT_ENTRY,
     CONST_ENTRY,
     REARRANGE_ENTRY,
     RESHAPE_ENTRY,
@@ -625,6 +646,7 @@ async function importGraph(data) {
     if (typeof spec?.tag === 'string' && spec.tag) {
       applyNodeTag(node, spec.tag)
       area.update('node', node.id)
+      applyTagStyle(node)
     }
     idMap.set(spec.id, node.id)
   }
@@ -726,6 +748,7 @@ function runValidation() {
   state.lastResult.concreteReason = concrete.reason
   renderDiagnostics(document.getElementById('diag-list'), state.lastResult)
   refreshInspector()
+  applyAllTagStyles()
   applyAllConnectionStyles()
   refreshRuntimePanel()
   applyRuntimeErrorHighlight()
@@ -802,6 +825,7 @@ function refreshInspector() {
     (n, newTag) => {
       applyNodeTag(n, newTag)
       area.update('node', n.id)
+      applyTagStyle(n)
       state.runtimeShapes = null
       state.runtimeError = null
       state.runtimeErrorNodeId = null
