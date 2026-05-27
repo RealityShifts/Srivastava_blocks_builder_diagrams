@@ -98,6 +98,7 @@ export function planGraph(nodes, connections) {
   const imports = new Map()
   for (const n of ordered) {
     if (n.entry.kind === 'input') continue
+    if (n.entry.module === '__builtin__') continue // synthetic nodes wire imports separately
     if (!imports.has(n.entry.module)) imports.set(n.entry.module, new Set())
     imports.get(n.entry.module).add(n.entry.name)
   }
@@ -169,6 +170,9 @@ export function generate(nodes, connections, framework, options = {}) {
   }
   for (const [mod, names] of imports) {
     lines.push(`from ${mod} import ${[...names].sort().join(', ')}`)
+  }
+  if (ordered.some((n) => n.entry.kind === 'rearrange')) {
+    lines.push('from einops import rearrange')
   }
   lines.push('')
 
@@ -248,10 +252,7 @@ export function generate(nodes, connections, framework, options = {}) {
       }
     }
 
-    const callExpr =
-      n.entry.kind === 'module'
-        ? `self.${attrName.get(n.id)}(${callArgs.join(', ')})`
-        : `${n.entry.name}(${callArgs.join(', ')})`
+    const callExpr = buildCallExpr(n, callArgs, attrName, framework)
 
     const multi = n.entry.outputs.length > 1
     if (trace) {
@@ -306,6 +307,61 @@ export function generate(nodes, connections, framework, options = {}) {
   lines.push('')
 
   return lines.join('\n')
+}
+
+/**
+ * Decide what `<var> = ...` expression to emit for the forward pass.
+ * Built-in shape ops (rearrange, reshape) use bespoke call shapes;
+ * everything else follows the standard module/function path.
+ */
+function buildCallExpr(node, callArgs, attrName, framework) {
+  if (node.entry.kind === 'rearrange') {
+    const xVar = positionalSource(callArgs, 'x')
+    const pattern = JSON.stringify(String(node.values?.pattern ?? ''))
+    const lenKwargs = parseLengthsKwargs(node.values?.lengths)
+    const tail = lenKwargs ? `, ${lenKwargs}` : ''
+    return `rearrange(${xVar}, ${pattern}${tail})`
+  }
+  if (node.entry.kind === 'reshape') {
+    const xVar = positionalSource(callArgs, 'x')
+    const dims = parseReshapeDims(node.values?.shape)
+    if (framework === 'pytorch') return `${xVar}.reshape(${dims.join(', ')})`
+    return `jnp.reshape(${xVar}, (${dims.join(', ')}${dims.length === 1 ? ',' : ''}))`
+  }
+  return node.entry.kind === 'module'
+    ? `self.${attrName.get(node.id)}(${callArgs.join(', ')})`
+    : `${node.entry.name}(${callArgs.join(', ')})`
+}
+
+function positionalSource(callArgs, portName) {
+  const prefix = `${portName}=`
+  const found = callArgs.find((a) => a.startsWith(prefix))
+  if (!found) return 'None'  // dangling input; runtime will fail loudly
+  return found.slice(prefix.length)
+}
+
+/** "h=8, w=16; b=2" -> "h=8, w=16, b=2" (only valid name=int kwargs). */
+function parseLengthsKwargs(s) {
+  if (!s) return ''
+  const out = []
+  for (const part of String(s).split(/[,;\n]/)) {
+    const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(-?\d+)\s*$/.exec(part)
+    if (m) out.push(`${m[1]}=${m[2]}`)
+  }
+  return out.join(', ')
+}
+
+/** Space/comma-separated int (or -1) tokens. Defaults to "-1" if empty. */
+function parseReshapeDims(s) {
+  const toks = String(s ?? '')
+    .trim()
+    .split(/[\s,]+/)
+    .filter(Boolean)
+  const dims = []
+  for (const t of toks) {
+    if (/^-?\d+$/.test(t)) dims.push(Number(t))
+  }
+  return dims.length ? dims : [-1]
 }
 
 function ctorArgs(node) {

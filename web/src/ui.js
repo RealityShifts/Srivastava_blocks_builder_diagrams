@@ -117,7 +117,14 @@ export function renderPalette(rootEl, entries, onCreate) {
 function describePorts(entry) {
   const i = entry.inputs.length
   const o = entry.outputs.length
-  const k = entry.kind === 'function' ? 'fn' : 'mod'
+  const k =
+    entry.kind === 'function'
+      ? 'fn'
+      : entry.kind === 'rearrange' || entry.kind === 'reshape'
+        ? 'op'
+        : entry.kind === 'input'
+          ? 'in'
+          : 'mod'
   return `${k} · ${i} in / ${o} out`
 }
 

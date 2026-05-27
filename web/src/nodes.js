@@ -146,9 +146,191 @@ export class InputNode extends BlockNode {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Rearrange / Reshape - framework-agnostic shape ops driven by string patterns.
+// Both nodes pipe through to einops.rearrange / .reshape() at codegen time.
+// ---------------------------------------------------------------------------
+
+/**
+ * Built-in einops.rearrange wrapper. The pattern string drives both the codegen
+ * call and the static shape inference: each top-level LHS group becomes an
+ * axis on the input port, each RHS group an axis on the output port. Groups
+ * shared verbatim between sides propagate their binding through unification.
+ */
+export const REARRANGE_ENTRY = {
+  name: 'Rearrange',
+  module: '__builtin__',
+  framework: 'any',
+  kind: 'rearrange',
+  ctor: [
+    {
+      name: 'pattern',
+      type: 'str',
+      default: 'b c h w -> b (h w) c',
+      required: true,
+    },
+    {
+      name: 'lengths',
+      type: 'str',
+      default: '',
+      required: false,
+    },
+  ],
+  inputs: [
+    { name: 'x', shape: ['...'], dtype: 'float', optional: false, variadic: false },
+  ],
+  outputs: [
+    { name: 'out', shape: ['...'], dtype: 'float', optional: false, variadic: false },
+  ],
+  bindings: {},
+}
+
+/**
+ * Built-in .reshape() / jnp.reshape() wrapper. The shape string accepts ints
+ * and -1; symbolic axes are intentionally not supported here (use Rearrange).
+ */
+export const RESHAPE_ENTRY = {
+  name: 'Reshape',
+  module: '__builtin__',
+  framework: 'any',
+  kind: 'reshape',
+  ctor: [
+    {
+      name: 'shape',
+      type: 'str',
+      default: '-1',
+      required: true,
+    },
+  ],
+  inputs: [
+    { name: 'x', shape: ['...'], dtype: 'float', optional: false, variadic: false },
+  ],
+  outputs: [
+    { name: 'out', shape: ['...'], dtype: 'float', optional: false, variadic: false },
+  ],
+  bindings: {},
+}
+
+/**
+ * Split one side of an einops pattern into top-level groups. Each output item
+ * is either a bare identifier ("b"), the rest token "...", a literal int
+ * ("1"), or a normalized parenthesized group ("(h w)"). Throws on unbalanced
+ * parens; whitespace-only sides return [].
+ */
+export function splitEinopsSide(side) {
+  const s = String(side).trim()
+  const out = []
+  let i = 0
+  while (i < s.length) {
+    if (/\s/.test(s[i])) {
+      i++
+      continue
+    }
+    if (s[i] === '(') {
+      const close = s.indexOf(')', i)
+      if (close < 0) throw new Error('unbalanced "(" in einops pattern')
+      const inner = s
+        .slice(i + 1, close)
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean)
+        .join(' ')
+      out.push(`(${inner})`)
+      i = close + 1
+    } else {
+      let j = i
+      while (j < s.length && !/[\s()]/.test(s[j])) j++
+      out.push(s.slice(i, j))
+      i = j
+    }
+  }
+  return out
+}
+
+/** Parse "b c h w -> b (h w) c" into { lhs, rhs }. */
+export function parseEinopsPattern(pattern) {
+  const idx = String(pattern ?? '').indexOf('->')
+  if (idx < 0) throw new Error('einops pattern must contain "->"')
+  return {
+    lhs: splitEinopsSide(String(pattern).slice(0, idx)),
+    rhs: splitEinopsSide(String(pattern).slice(idx + 2)),
+  }
+}
+
+/** "h=8, w=16" -> Map { h:8, w:16 }. Silently skips malformed entries. */
+export function parseLengthsString(s) {
+  const out = new Map()
+  if (!s) return out
+  for (const part of String(s).split(/[,;\n]/)) {
+    const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(-?\d+)\s*$/.exec(part)
+    if (m) out.set(m[1], Number(m[2]))
+  }
+  return out
+}
+
+/**
+ * Resolve a single einops-side token to a shape value:
+ *   - "..."   -> "..." (passes through normalize/freshen as the rest marker)
+ *   - "5"     -> 5 (literal)
+ *   - "h" with lengths.has("h") -> numeric value
+ *   - "(h w)" with all components in lengths -> product of values
+ *   - everything else -> the token text as a symbolic axis (groups keep parens)
+ */
+function einopsItemToToken(item, lengths) {
+  if (item === '...') return '...'
+  if (/^-?\d+$/.test(item)) return Number(item)
+  if (!item.startsWith('(')) {
+    return lengths.has(item) ? lengths.get(item) : item
+  }
+  const components = item.slice(1, -1).split(/\s+/).filter(Boolean)
+  let product = 1
+  let allKnown = true
+  for (const c of components) {
+    if (/^-?\d+$/.test(c)) {
+      product *= Number(c)
+    } else if (lengths.has(c)) {
+      product *= lengths.get(c)
+    } else {
+      allKnown = false
+      break
+    }
+  }
+  return allKnown ? product : item
+}
+
+/** Source/sink node for einops.rearrange. */
+export class RearrangeNode extends BlockNode {
+  freshenedShape(portName, side) {
+    let parts
+    try {
+      const { lhs, rhs } = parseEinopsPattern(this.values.pattern)
+      parts = side === 'in' ? lhs : rhs
+    } catch {
+      return null // invalid pattern; validator will report it elsewhere
+    }
+    const lengths = parseLengthsString(this.values.lengths)
+    const tokens = parts.map((p) => einopsItemToToken(p, lengths))
+    return freshen(tokens, this.id)
+  }
+}
+
+/** Sugar over tensor.reshape() / jnp.reshape(); numeric-only shape literal. */
+export class ReshapeNode extends BlockNode {
+  freshenedShape(portName, side) {
+    if (side === 'in') {
+      // Accept anything coming in - reshape doesn't care about input rank.
+      return freshen(normalize(['...']), this.id)
+    }
+    const tokens = normalize(parseShapeString(this.values.shape))
+    return freshen(tokens, this.id)
+  }
+}
+
 /** Pick the right node class for a manifest entry. */
 export function makeNode(entry) {
   if (entry.kind === 'input') return new InputNode(entry)
+  if (entry.kind === 'rearrange') return new RearrangeNode(entry)
+  if (entry.kind === 'reshape') return new ReshapeNode(entry)
   return new BlockNode(entry)
 }
 

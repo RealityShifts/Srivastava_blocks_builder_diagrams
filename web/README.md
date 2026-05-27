@@ -65,6 +65,27 @@ python tools/shape_runner.py   # http://127.0.0.1:8765/run
 
 Then in the UI sidebar **Runtime shapes → Run shape check** once every axis is numeric.
 
+## Shape-op built-ins (Rearrange / Reshape)
+
+Two framework-agnostic utility nodes ship in the palette alongside `Input`,
+so you can splice shape manipulation into a graph without an explicit block:
+
+- **Rearrange** — einops pattern such as `b c h w -> b (h w) c`. Optional
+  `lengths` field accepts `h=8, w=16` so RHS groups can fold to literal axis
+  values for the static check. The pattern is parsed by the unifier:
+  identifiers shared between LHS and RHS propagate their binding to
+  downstream nodes; opaque groups stay symbolic and get filled in by the
+  runtime check. Codegen emits `from einops import rearrange` and
+  `out = rearrange(x, "...", h=8, w=16)`.
+
+- **Reshape** — comma/space-separated literal shape, e.g. `-1 3 224 224`.
+  Only integers and `-1` are accepted (use Rearrange for symbolic ops).
+  Codegen emits `x.reshape(...)` on PyTorch and `jnp.reshape(x, (...))` on
+  Flax.
+
+Both nodes require `einops>=0.8` in the Python env that runs the shape
+runner; it's listed in `models/blocks/requirements.txt`.
+
 ## Autosave
 
 The current graph is saved to `localStorage` under `blocks-builder:autosave:v1`
