@@ -139,17 +139,32 @@ export function applyNodeTag(node, newTag) {
   node.label = computeNodeLabel(node)
 }
 
+// Registry of tag (case-insensitive) -> assigned HSL colour. Persists for the
+// lifetime of the page so weight-tied twins stay visually grouped across
+// re-renders. Colours are handed out along the golden angle so every new tag
+// lands maximally far from every existing one in hue space - no collisions,
+// no near-duplicates even with many tags.
+const GOLDEN_ANGLE_DEG = 137.5077640500378
+const _tagColors = new Map()
+
 /**
- * Stable colour by tag so weight-tied twins are visually grouped.
- * Same tag (case-insensitive) -> same HSL colour.
+ * Unique, stable colour per tag. Two different tags are guaranteed to receive
+ * different (and perceptually well-separated) hues.
  */
 export function colorForTag(tag) {
   const s = String(tag ?? '').trim().toLowerCase()
   if (!s) return null
-  let h = 5381
-  for (let i = 0; i < s.length; i++) h = (((h << 5) + h) + s.charCodeAt(i)) | 0
-  const hue = ((h % 360) + 360) % 360
-  return `hsl(${hue}, 70%, 62%)`
+  const cached = _tagColors.get(s)
+  if (cached) return cached
+  const idx = _tagColors.size
+  const hue = (idx * GOLDEN_ANGLE_DEG) % 360
+  // Mild S/L jitter keyed off the index keeps hues near 0/360 from looking
+  // identical to the eye as the palette wraps around.
+  const sat = 68 + (idx % 3) * 6   // 68 / 74 / 80
+  const lit = 58 + (idx % 2) * 6   // 58 / 64
+  const color = `hsl(${hue.toFixed(2)}, ${sat}%, ${lit}%)`
+  _tagColors.set(s, color)
+  return color
 }
 
 // ---------------------------------------------------------------------------

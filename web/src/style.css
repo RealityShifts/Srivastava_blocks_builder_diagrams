@@ -481,23 +481,21 @@ main {
   outline-offset: 2px;
   border-radius: 10px;
 }
-.tagged-node .node {
-  border-color: color-mix(in srgb, var(--tag-color) 65%, #1f2937) !important;
-  box-shadow:
-    inset 6px 0 0 0 var(--tag-color),
-    0 0 0 1px color-mix(in srgb, var(--tag-color) 38%, transparent),
-    var(--shadow) !important;
+/* Tagged nodes: <rete-node> renders into a Shadow DOM, so we cannot reach the
+   inner .title or :host rules with a normal class selector. We instead set
+   the CSS custom properties the lit-plugin already uses (--node-color and
+   friends) on the host element from outside the shadow root. These cascade
+   into the shadow DOM and override the plugin's defaults. */
+.tagged-node rete-node {
+  --node-color: color-mix(in srgb, var(--tag-color) 55%, var(--panel-2));
+  --node-color-hover: color-mix(in srgb, var(--tag-color) 70%, var(--panel-2));
+  --node-color-selected: color-mix(in srgb, var(--tag-color) 85%, var(--panel-2));
+  border-color: color-mix(in srgb, var(--tag-color) 70%, #1f2937) !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--tag-color) 40%, transparent), var(--shadow);
 }
-.tagged-node .node .title {
-  border-bottom-color: var(--tag-color) !important;
-  background: color-mix(in srgb, var(--tag-color) 26%, transparent) !important;
-}
-.tagged-node .node.selected {
+.tagged-node rete-node.selected {
   border-color: var(--tag-color) !important;
-  box-shadow:
-    inset 6px 0 0 0 var(--tag-color),
-    0 0 0 2px color-mix(in srgb, var(--tag-color) 45%, transparent),
-    var(--shadow) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--tag-color) 60%, transparent), var(--shadow);
 }
 .rete .node .title {
   color: var(--text) !important;
