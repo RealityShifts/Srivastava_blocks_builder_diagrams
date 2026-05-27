@@ -239,6 +239,78 @@ main {
   font-size: 10px;
 }
 
+/* Inspector tabs (Params / Info) */
+#inspector .tabs {
+  display: flex;
+  gap: 4px;
+  margin: 4px 0 10px;
+  border-bottom: 1px solid var(--line);
+}
+#inspector .tab-btn {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+#inspector .tab-btn:hover {
+  color: var(--text);
+}
+#inspector .tab-btn.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+#inspector .tab-panel[hidden] {
+  display: none;
+}
+
+/* Info tab content */
+#inspector .info-panel {
+  font-size: 12px;
+  line-height: 1.5;
+}
+#inspector .info-desc {
+  margin: 4px 0 8px;
+  color: var(--text);
+}
+#inspector .info-shapes {
+  margin: 0 0 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+#inspector .info-shapes code {
+  color: var(--accent);
+}
+#inspector .info-source {
+  display: inline-block;
+  font-size: 10px;
+  color: var(--muted);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--line);
+  margin-bottom: 8px;
+}
+#inspector .info-source:hover {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+#inspector .info-mermaid {
+  margin-top: 10px;
+  padding: 8px;
+  background: #f8fafc; /* the reference repo's classDefs are tuned for light bg */
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow-x: auto;
+}
+#inspector .info-mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+
 #runtime-panel {
   padding: 10px 12px;
   border-top: 1px solid var(--line);

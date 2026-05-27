@@ -4,8 +4,60 @@
  * Keeps the Rete editor decoupled from raw DOM. main.js wires the events.
  */
 
+import mermaid from 'mermaid'
+
 import { groupByModule } from './nodes.js'
 import { prettyShape } from './shape.js'
+
+// ---------- mermaid helpers (used by the inspector Info tab) ----------
+
+let _mermaidReady = false
+function ensureMermaid() {
+  if (_mermaidReady) return
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: 'default',
+    securityLevel: 'loose',
+    flowchart: { useMaxWidth: true, htmlLabels: false },
+  })
+  _mermaidReady = true
+}
+
+let _mermaidCounter = 0
+const _mermaidCache = new Map() // block name -> rendered svg string
+
+async function renderMermaidInto(container, blockName, definition) {
+  if (!definition) {
+    container.innerHTML = '<p class="muted">No diagram.</p>'
+    return
+  }
+  const cached = _mermaidCache.get(blockName)
+  if (cached) {
+    container.innerHTML = cached
+    return
+  }
+  ensureMermaid()
+  container.innerHTML = '<p class="muted">Rendering diagram…</p>'
+  try {
+    const id = `mmd-${++_mermaidCounter}`
+    const { svg } = await mermaid.render(id, definition)
+    _mermaidCache.set(blockName, svg)
+    container.innerHTML = svg
+  } catch (e) {
+    container.innerHTML = `<pre class="err">Mermaid render failed: ${escapeHtml(
+      e?.message ?? String(e)
+    )}</pre>`
+  }
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
 
 // ---------- palette ----------
 
@@ -65,6 +117,7 @@ export function filterPalette(rootEl, query) {
 // Track which node is currently displayed so we can do incremental refreshes
 // after validation runs without blowing away focused <input> elements.
 let _currentNodeId = null
+let _activeTab = 'params' // 'params' | 'info' — persists across selections
 
 function buildPortsSection(node, sub, runtimeShapes) {
   const ports = document.createElement('div')
@@ -74,44 +127,16 @@ function buildPortsSection(node, sub, runtimeShapes) {
   return ports
 }
 
-export function renderInspector(rootEl, node, sub, onChange, runtimeShapes) {
-  if (!node) {
-    _currentNodeId = null
-    rootEl.replaceChildren()
-    const p = document.createElement('p')
-    p.className = 'muted'
-    p.textContent = 'Select a node to edit its parameters.'
-    rootEl.appendChild(p)
-    return
-  }
-
-  // Same node still selected: just refresh the read-only ports/shapes section
-  // so the user's focus on a control is preserved across validation runs.
-  if (node.id === _currentNodeId) {
-    const existing = rootEl.querySelector('.ports')
-    const fresh = buildPortsSection(node, sub, runtimeShapes)
-    if (existing) {
-      existing.replaceWith(fresh)
-    } else {
-      rootEl.appendChild(fresh)
-    }
-    return
-  }
-
-  // Different node (or first render): full rebuild.
-  _currentNodeId = node.id
-  rootEl.replaceChildren()
-
-  const header = document.createElement('div')
-  header.className = 'header'
-  header.innerHTML = `<strong>${node.entry.name}</strong><span class="module">${node.entry.module} · ${node.entry.kind}</span>`
-  rootEl.appendChild(header)
+function buildParamsPanel(node, sub, runtimeShapes, onChange) {
+  const panel = document.createElement('div')
+  panel.className = 'tab-panel'
+  panel.dataset.tab = 'params'
 
   if (node.entry.ctor.length === 0) {
     const none = document.createElement('p')
     none.className = 'muted'
     none.textContent = 'No constructor parameters.'
-    rootEl.appendChild(none)
+    panel.appendChild(none)
   } else {
     for (const param of node.entry.ctor) {
       const row = document.createElement('div')
@@ -127,11 +152,137 @@ export function renderInspector(rootEl, node, sub, onChange, runtimeShapes) {
       })
       ctrl.id = id
       row.appendChild(ctrl)
-      rootEl.appendChild(row)
+      panel.appendChild(row)
     }
   }
 
-  rootEl.appendChild(buildPortsSection(node, sub, runtimeShapes))
+  panel.appendChild(buildPortsSection(node, sub, runtimeShapes))
+  return panel
+}
+
+function buildInfoPanel(node, blockInfo) {
+  const panel = document.createElement('div')
+  panel.className = 'tab-panel info-panel'
+  panel.dataset.tab = 'info'
+
+  const info = blockInfo?.get?.(node.entry.name) ?? null
+  if (!info) {
+    const p = document.createElement('p')
+    p.className = 'muted'
+    p.innerHTML = `No reference diagram for <code>${escapeHtml(
+      node.entry.name
+    )}</code>. Run <code>python tools/fetch_block_diagrams.py</code> to refresh.`
+    panel.appendChild(p)
+    return panel
+  }
+
+  if (info.description) {
+    const d = document.createElement('p')
+    d.className = 'info-desc'
+    d.textContent = info.description
+    panel.appendChild(d)
+  }
+  if (info.shapes) {
+    const s = document.createElement('p')
+    s.className = 'info-shapes'
+    s.innerHTML = `<strong>Shapes:</strong> <code>${escapeHtml(info.shapes)}</code>`
+    panel.appendChild(s)
+  }
+  if (info.source) {
+    const a = document.createElement('a')
+    a.href = info.source
+    a.target = '_blank'
+    a.rel = 'noopener'
+    a.className = 'info-source'
+    a.textContent = 'View source on GitHub →'
+    panel.appendChild(a)
+  }
+  if (info.mermaid) {
+    const m = document.createElement('div')
+    m.className = 'info-mermaid'
+    panel.appendChild(m)
+    // Fire-and-forget; renderMermaidInto handles its own error states.
+    renderMermaidInto(m, node.entry.name, info.mermaid)
+  }
+  return panel
+}
+
+export function renderInspector(
+  rootEl,
+  node,
+  sub,
+  onChange,
+  runtimeShapes,
+  blockInfo
+) {
+  if (!node) {
+    _currentNodeId = null
+    rootEl.replaceChildren()
+    const p = document.createElement('p')
+    p.className = 'muted'
+    p.textContent = 'Select a node to edit its parameters.'
+    rootEl.appendChild(p)
+    return
+  }
+
+  // Same node selected: just refresh the params panel's ports section so the
+  // user's focus on a control stays put across validation runs. The Info tab
+  // doesn't depend on validation state and is left untouched.
+  if (node.id === _currentNodeId) {
+    const paramsPanel = rootEl.querySelector('.tab-panel[data-tab="params"]')
+    if (paramsPanel) {
+      const oldPorts = paramsPanel.querySelector('.ports')
+      const fresh = buildPortsSection(node, sub, runtimeShapes)
+      if (oldPorts) oldPorts.replaceWith(fresh)
+      else paramsPanel.appendChild(fresh)
+    }
+    return
+  }
+
+  // Different node (or first render): full rebuild.
+  _currentNodeId = node.id
+  rootEl.replaceChildren()
+
+  const header = document.createElement('div')
+  header.className = 'header'
+  header.innerHTML = `<strong>${escapeHtml(
+    node.entry.name
+  )}</strong><span class="module">${escapeHtml(node.entry.module)} · ${escapeHtml(
+    node.entry.kind
+  )}</span>`
+  rootEl.appendChild(header)
+
+  const tabs = document.createElement('div')
+  tabs.className = 'tabs'
+  const paramsBtn = document.createElement('button')
+  paramsBtn.type = 'button'
+  paramsBtn.className = 'tab-btn'
+  paramsBtn.dataset.tab = 'params'
+  paramsBtn.textContent = 'Params'
+  const infoBtn = document.createElement('button')
+  infoBtn.type = 'button'
+  infoBtn.className = 'tab-btn'
+  infoBtn.dataset.tab = 'info'
+  infoBtn.textContent = 'Info'
+  tabs.appendChild(paramsBtn)
+  tabs.appendChild(infoBtn)
+  rootEl.appendChild(tabs)
+
+  const paramsPanel = buildParamsPanel(node, sub, runtimeShapes, onChange)
+  const infoPanel = buildInfoPanel(node, blockInfo)
+  rootEl.appendChild(paramsPanel)
+  rootEl.appendChild(infoPanel)
+
+  const activate = (tab) => {
+    _activeTab = tab
+    paramsBtn.classList.toggle('active', tab === 'params')
+    infoBtn.classList.toggle('active', tab === 'info')
+    paramsPanel.hidden = tab !== 'params'
+    infoPanel.hidden = tab !== 'info'
+  }
+  paramsBtn.addEventListener('click', () => activate('params'))
+  infoBtn.addEventListener('click', () => activate('info'))
+  activate(_activeTab)
 }
 
 function portList(title, list, node, sub, side, runtimeShapes) {

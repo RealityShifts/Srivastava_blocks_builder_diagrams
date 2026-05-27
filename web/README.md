@@ -63,6 +63,31 @@ python tools/shape_runner.py   # http://127.0.0.1:8765/run
 
 Then in the UI sidebar **Runtime shapes → Run shape check** once every axis is numeric.
 
+## Per-block Info tab (description + reference Mermaid)
+
+The Inspector has two tabs: **Params** (constructor controls + resolved port
+shapes) and **Info** (description blockquote, shape line, and rendered
+reference Mermaid scraped from
+[RealityShifts/Srivastava-book-of-Blocks-diagrams](https://github.com/RealityShifts/Srivastava-book-of-Blocks-diagrams)).
+
+Refresh the cached scrape any time the upstream repo updates:
+
+```bash
+python tools/fetch_block_diagrams.py
+# → web/public/block_info.json   (~124 entries, served by Vite)
+```
+
+Coverage on the current manifests: ~90% of PyTorch blocks and ~83% of Flax
+blocks have a reference diagram. Blocks the upstream doesn't document
+(`scaled_dot_product_attention`, `clip_grad_norm`, etc.) show a "No reference
+diagram" fallback. The Mermaid is rendered client-side via `mermaid@^11.15`.
+
+Smoke test::
+
+```bash
+npm run test:info-tab    # expects `npm run dev` running
+```
+
 ## Generate Mermaid For All Blocks
 
 Create one Mermaid markdown file per block (PyTorch + Flax) from the generated

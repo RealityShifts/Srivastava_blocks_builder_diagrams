@@ -10,11 +10,13 @@
     "preview": "vite preview",
     "test:logic": "node test-logic.mjs",
     "test:e2e": "node test-e2e.mjs",
+    "test:info-tab": "node test-info-tab.mjs",
     "test:runtime": "node test-runtime.mjs"
   },
   "dependencies": {
     "@retejs/lit-plugin": "^2.0.5",
     "lit": "^3.2.1",
+    "mermaid": "^11.15.0",
     "rete": "^2.0.6",
     "rete-area-plugin": "^2.1.5",
     "rete-connection-plugin": "^2.0.5",

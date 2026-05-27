@@ -29,6 +29,7 @@ const state = {
   framework: 'pytorch',
   entries: [],
   byName: new Map(),
+  blockInfo: new Map(), // BlockName -> { description, shapes, mermaid, source, category }
   selectedNodeId: null,
   lastResult: null,
   runtimeShapes: null,
@@ -177,8 +178,20 @@ async function bootstrap() {
     }
   })
 
-  await loadManifest()
+  await Promise.all([loadManifest(), loadBlockInfo()])
   queueValidation()
+}
+
+/** Per-block reference docs scraped from RealityShifts/Srivastava-book-of-Blocks-diagrams. */
+async function loadBlockInfo() {
+  try {
+    const res = await fetch('/block_info.json')
+    if (!res.ok) return
+    const obj = await res.json()
+    state.blockInfo = new Map(Object.entries(obj))
+  } catch {
+    state.blockInfo = new Map()
+  }
 }
 
 async function loadManifest() {
@@ -419,7 +432,8 @@ function refreshInspector() {
       state.runtimeErrorNodeId = null
       queueValidation()
     },
-    state.runtimeShapes
+    state.runtimeShapes,
+    state.blockInfo
   )
 }
 
