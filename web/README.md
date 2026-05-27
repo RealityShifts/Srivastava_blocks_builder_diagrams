@@ -66,9 +66,12 @@ Then in the UI sidebar **Runtime shapes → Run shape check** once every axis is
 ## Per-block Info tab (description + reference Mermaid)
 
 The Inspector has two tabs: **Params** (constructor controls + resolved port
-shapes) and **Info** (description blockquote, shape line, and rendered
-reference Mermaid scraped from
+shapes) and **Info** (description blockquote, shape line, rendered reference
+Mermaid, plus collapsible **Used in / Tasks / Common pitfalls / See also**
+sections, all scraped from
 [RealityShifts/Srivastava-book-of-Blocks-diagrams](https://github.com/RealityShifts/Srivastava-book-of-Blocks-diagrams)).
+arXiv links in the **See also** lists are rendered as anchor tags; **See
+also** opens by default, the other three sections start collapsed.
 
 Refresh the cached scrape any time the upstream repo updates:
 

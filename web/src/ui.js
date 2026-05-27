@@ -59,6 +59,34 @@ function escapeHtml(s) {
     .replace(/'/g, '&#39;')
 }
 
+/**
+ * Minimal inline Markdown for section items: convert ``[label](url)`` to a
+ * safe anchor and escape everything else. Only http(s) URLs are linkified so
+ * a malicious feed can't slip in javascript: URLs.
+ */
+function renderInlineMd(text) {
+  const re = /\[([^\]]+?)\]\(([^)]+?)\)/g
+  const out = []
+  let last = 0
+  let m
+  while ((m = re.exec(text)) !== null) {
+    out.push(escapeHtml(text.slice(last, m.index)))
+    const safe = /^https?:\/\//i.test(m[2].trim()) ? m[2].trim() : ''
+    if (safe) {
+      out.push(
+        `<a href="${escapeHtml(safe)}" target="_blank" rel="noopener">${escapeHtml(
+          m[1]
+        )}</a>`
+      )
+    } else {
+      out.push(escapeHtml(m[0]))
+    }
+    last = re.lastIndex
+  }
+  out.push(escapeHtml(text.slice(last)))
+  return out.join('')
+}
+
 // ---------- palette ----------
 
 export function renderPalette(rootEl, entries, onCreate) {
@@ -204,7 +232,32 @@ function buildInfoPanel(node, blockInfo) {
     // Fire-and-forget; renderMermaidInto handles its own error states.
     renderMermaidInto(m, node.entry.name, info.mermaid)
   }
+  if (Array.isArray(info.sections)) {
+    for (const sec of info.sections) {
+      panel.appendChild(buildCollapsibleSection(sec))
+    }
+  }
   return panel
+}
+
+function buildCollapsibleSection(sec) {
+  const details = document.createElement('details')
+  details.className = 'info-section'
+  // "See also" is the most useful at a glance; open it by default.
+  if (sec.heading?.toLowerCase() === 'see also') details.open = true
+
+  const summary = document.createElement('summary')
+  summary.textContent = `${sec.heading}  (${sec.items?.length ?? 0})`
+  details.appendChild(summary)
+
+  const ul = document.createElement('ul')
+  for (const item of sec.items ?? []) {
+    const li = document.createElement('li')
+    li.innerHTML = renderInlineMd(String(item))
+    ul.appendChild(li)
+  }
+  details.appendChild(ul)
+  return details
 }
 
 export function renderInspector(

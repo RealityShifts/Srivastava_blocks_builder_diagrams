@@ -311,6 +311,65 @@ main {
   height: auto;
 }
 
+/* Collapsible sections (Used in / Tasks / Common pitfalls / See also) */
+#inspector .info-section {
+  margin-top: 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 2px 10px;
+}
+#inspector .info-section + .info-section {
+  margin-top: 6px;
+}
+#inspector .info-section summary {
+  cursor: pointer;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  padding: 6px 0;
+  user-select: none;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+#inspector .info-section summary::-webkit-details-marker {
+  display: none;
+}
+#inspector .info-section summary::before {
+  content: '▸';
+  font-size: 9px;
+  color: var(--muted);
+  transition: transform 0.12s ease;
+  display: inline-block;
+}
+#inspector .info-section[open] > summary::before {
+  transform: rotate(90deg);
+}
+#inspector .info-section[open] > summary {
+  color: var(--accent);
+}
+#inspector .info-section ul {
+  margin: 2px 0 8px;
+  padding-left: 18px;
+  font-size: 12px;
+  list-style: disc;
+  color: var(--text);
+}
+#inspector .info-section li {
+  margin: 4px 0;
+  line-height: 1.45;
+}
+#inspector .info-section a {
+  color: var(--accent);
+  text-decoration: none;
+}
+#inspector .info-section a:hover {
+  text-decoration: underline;
+}
+
 #runtime-panel {
   padding: 10px 12px;
   border-top: 1px solid var(--line);

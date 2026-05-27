@@ -75,6 +75,12 @@ _TITLE_RE = re.compile(r"^#\s+(.+?)\s*$", re.MULTILINE)
 _QUOTE_RE = re.compile(r"^>\s?(.*)$", re.MULTILINE)
 _SHAPES_RE = re.compile(r"^\*\*Shapes:\*\*\s*(.+?)\s*$", re.MULTILINE)
 _MERMAID_RE = re.compile(r"```mermaid\s*\n(.*?)\n```", re.DOTALL)
+# Section heading: a bold line on its own, capitalised, no nested bold.
+# Lookbehind ``(?<=^)`` is implicit via MULTILINE + start-of-line anchor.
+_SECTION_HEADING_RE = re.compile(r"^\*\*([A-Z][^*\n]+?)\*\*\s*$")
+
+# Section headings we already capture above; never re-emit as a section.
+_RESERVED_HEADINGS = {"shapes"}
 
 
 def _strip_backticks(text: str) -> str:
@@ -84,8 +90,44 @@ def _strip_backticks(text: str) -> str:
     return t
 
 
-def parse_block_md(text: str) -> dict[str, str]:
-    """Pull title/description/shapes/mermaid out of a single block markdown."""
+def _parse_sections(post_mermaid: str) -> list[dict[str, Any]]:
+    """Extract ``**Heading**`` / bulleted-body sections appearing after the mermaid.
+
+    Used in / Tasks / Common pitfalls / See also are the four the upstream
+    currently ships. Markdown links ``[label](url)`` are preserved verbatim
+    inside each item; the UI converts them to anchor tags.
+    """
+    sections: list[dict[str, Any]] = []
+    cur_heading: str | None = None
+    cur_items: list[str] = []
+
+    def flush() -> None:
+        if cur_heading and cur_items:
+            sections.append({"heading": cur_heading, "items": list(cur_items)})
+
+    for raw in post_mermaid.splitlines():
+        line = raw.rstrip()
+        head = _SECTION_HEADING_RE.match(line)
+        if head:
+            flush()
+            cur_heading = head.group(1).strip()
+            cur_items = []
+            if cur_heading.lower() in _RESERVED_HEADINGS:
+                cur_heading = None
+            continue
+        if not line:
+            continue
+        if line.startswith("- "):
+            cur_items.append(line[2:].strip())
+        elif cur_heading and cur_items and not line.startswith("**"):
+            # Continuation of the previous bullet (rare but supported).
+            cur_items[-1] += " " + line.strip()
+    flush()
+    return sections
+
+
+def parse_block_md(text: str) -> dict[str, Any]:
+    """Pull title/description/shapes/mermaid/sections out of a single block markdown."""
     title_match = _TITLE_RE.search(text)
     title = title_match.group(1).strip() if title_match else ""
 
@@ -105,11 +147,15 @@ def parse_block_md(text: str) -> dict[str, str]:
     mermaid_match = _MERMAID_RE.search(text)
     mermaid = mermaid_match.group(1).strip() if mermaid_match else ""
 
+    post_mermaid = text[mermaid_match.end():] if mermaid_match else ""
+    sections = _parse_sections(post_mermaid)
+
     return {
         "title": title,
         "description": description,
         "shapes": shapes,
         "mermaid": mermaid,
+        "sections": sections,
     }
 
 

@@ -81,6 +81,30 @@ try {
   }))
   check('mermaid rendered to SVG with nodes', svgInfo.nodeCount >= 3, svgInfo)
 
+  // 6b. Collapsible sections render (Used in / Tasks / Common pitfalls / See also).
+  const sectionHeadings = await page.$$eval(
+    '#inspector-body .info-section summary',
+    (els) => els.map((el) => el.textContent.trim())
+  )
+  check('>= 3 collapsible sections rendered', sectionHeadings.length >= 3, sectionHeadings)
+  check('includes "See also"', sectionHeadings.some((h) => /See also/i.test(h)))
+
+  // 6c. "See also" is open by default.
+  const seeAlsoOpen = await page.$$eval('#inspector-body .info-section', (sections) => {
+    const sec = sections.find((s) =>
+      /See also/i.test(s.querySelector('summary')?.textContent ?? '')
+    )
+    return sec ? sec.hasAttribute('open') : false
+  })
+  check('"See also" is open by default', seeAlsoOpen)
+
+  // 6d. arXiv markdown links converted to <a href="https://...">.
+  const arxivLinks = await page.$$eval(
+    '#inspector-body .info-section a[href*="arxiv.org"]',
+    (els) => els.length
+  )
+  check('arXiv links rendered as anchors', arxivLinks >= 1, arxivLinks)
+
   // 7. Switch back to Params tab; Info panel hides.
   await page.click('#inspector-body .tabs .tab-btn[data-tab="params"]')
   const infoHidden = await page.$eval(
