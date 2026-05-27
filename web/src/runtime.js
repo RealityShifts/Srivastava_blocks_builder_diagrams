@@ -37,6 +37,10 @@ export function isFullyConcrete(editor, sub, batchSize = 2) {
     for (const port of n.entry.ctor) {
       if (!port.required) continue
       const v = n.values[port.name]
+      const wired = editor.getConnections().some(
+        (c) => c.target === n.id && c.targetInput === `__param__${port.name}`
+      )
+      if (wired) continue
       if (v === null || v === undefined || v === '') {
         return {
           ok: false,

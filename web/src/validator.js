@@ -36,6 +36,8 @@ export function validate(editor) {
     const src = editor.getNode(c.source)
     const tgt = editor.getNode(c.target)
     if (!src || !tgt) continue
+    const targetSpec = tgt.inputs?.[c.targetInput]?.portSpec
+    if (targetSpec?.kind === 'param') continue
     const outShape = src.freshenedShape(c.sourceOutput, 'out')
     const inShape = tgt.freshenedShape(c.targetInput, 'in')
     if (!outShape || !inShape) {
@@ -171,6 +173,8 @@ export function validate(editor) {
  * live substitution. Used to gate connection creation in the editor pipe.
  */
 export function dryRunEdge(editor, sourceNode, sourcePort, targetNode, targetPort) {
+  const targetSpec = targetNode.inputs?.[targetPort]?.portSpec
+  if (targetSpec?.kind === 'param') return { ok: true }
   const { sub } = validate(editor)
   const trial = cloneSub(sub)
   const outShape = sourceNode.freshenedShape(sourcePort, 'out')

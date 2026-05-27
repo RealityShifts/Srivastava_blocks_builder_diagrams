@@ -123,7 +123,8 @@ function describePorts(entry) {
       : entry.kind === 'rearrange' ||
           entry.kind === 'reshape' ||
           entry.kind === 'concat' ||
-          entry.kind === 'stack'
+          entry.kind === 'stack' ||
+          entry.kind === 'const'
         ? 'op'
         : entry.kind === 'input'
           ? 'in'
@@ -165,7 +166,7 @@ function buildPortsSection(node, sub, runtimeShapes) {
   return ports
 }
 
-function buildParamsPanel(node, sub, runtimeShapes, onChange) {
+function buildParamsPanel(node, sub, runtimeShapes, onChange, onAddConst, onToggleParamPort) {
   const panel = document.createElement('div')
   panel.className = 'tab-panel'
   panel.dataset.tab = 'params'
@@ -184,12 +185,35 @@ function buildParamsPanel(node, sub, runtimeShapes, onChange) {
       label.htmlFor = id
       label.textContent = `${param.name}${param.required ? ' *' : ''}`
       row.appendChild(label)
+      const controls = document.createElement('div')
+      controls.className = 'param-controls'
       const ctrl = makeControl(param, node.values[param.name], (v) => {
         node.values[param.name] = v
         onChange()
       })
       ctrl.id = id
-      row.appendChild(ctrl)
+      controls.appendChild(ctrl)
+      if (typeof onAddConst === 'function' && node.inputs?.[`__param__${param.name}`]) {
+        const addBtn = document.createElement('button')
+        addBtn.type = 'button'
+        addBtn.className = 'mini-btn'
+        addBtn.textContent = '+ const'
+        addBtn.title = `Create Constant and connect to 🔴 ${param.name}`
+        addBtn.addEventListener('click', () => onAddConst(node, param))
+        controls.appendChild(addBtn)
+      }
+      if (typeof onToggleParamPort === 'function') {
+        const key = `__param__${param.name}`
+        const exposed = Boolean(node.inputs?.[key])
+        const toggleBtn = document.createElement('button')
+        toggleBtn.type = 'button'
+        toggleBtn.className = 'mini-btn'
+        toggleBtn.textContent = exposed ? 'Hide port' : 'Expose port'
+        toggleBtn.title = `${exposed ? 'Hide' : 'Show'} 🔴 ${param.name}`
+        toggleBtn.addEventListener('click', () => onToggleParamPort(node, param, !exposed))
+        controls.appendChild(toggleBtn)
+      }
+      row.appendChild(controls)
       panel.appendChild(row)
     }
   }
@@ -277,7 +301,9 @@ export function renderInspector(
   onChange,
   runtimeShapes,
   blockInfo,
-  onTagChange
+  onTagChange,
+  onAddConst,
+  onToggleParamPort
 ) {
   if (!node) {
     _currentNodeId = null
@@ -358,7 +384,14 @@ export function renderInspector(
   tabs.appendChild(infoBtn)
   rootEl.appendChild(tabs)
 
-  const paramsPanel = buildParamsPanel(node, sub, runtimeShapes, onChange)
+  const paramsPanel = buildParamsPanel(
+    node,
+    sub,
+    runtimeShapes,
+    onChange,
+    onAddConst,
+    onToggleParamPort
+  )
   const infoPanel = buildInfoPanel(node, blockInfo)
   rootEl.appendChild(paramsPanel)
   rootEl.appendChild(infoPanel)

@@ -309,7 +309,7 @@ export function generate(nodes, connections, framework, options = {}) {
         for (const port of n.entry.outputs) {
           const v = outputVarFor.get(`${n.id}/${port.name}`)
           lines.push(
-            `            _runtime_shapes[${JSON.stringify(`${n.id}/${port.name}`)}] = list(${v}.shape)`
+            `            _runtime_shapes[${JSON.stringify(`${n.id}/${port.name}`)}] = (list(${v}.shape) if hasattr(${v}, 'shape') else [])`
           )
         }
       } else {
@@ -317,7 +317,7 @@ export function generate(nodes, connections, framework, options = {}) {
         const portName = n.entry.outputs[0]?.name ?? 'out'
         lines.push(`            ${v} = ${callExpr}`)
         lines.push(
-          `            _runtime_shapes[${JSON.stringify(`${n.id}/${portName}`)}] = list(${v}.shape)`
+          `            _runtime_shapes[${JSON.stringify(`${n.id}/${portName}`)}] = (list(${v}.shape) if hasattr(${v}, 'shape') else [])`
         )
       }
       lines.push('        except Exception as _e:')
@@ -359,6 +359,9 @@ export function generate(nodes, connections, framework, options = {}) {
  * everything else follows the standard module/function path.
  */
 function buildCallExpr(node, callArgs, attrName, framework) {
+  if (node.entry.kind === 'const') {
+    return constLiteral(node)
+  }
   if (node.entry.kind === 'rearrange') {
     const xVar = positionalSource(callArgs, 'x')
     const pattern = JSON.stringify(String(node.values?.pattern ?? ''))
@@ -387,6 +390,20 @@ function buildCallExpr(node, callArgs, attrName, framework) {
   return node.entry.kind === 'module'
     ? `self.${attrName.get(node.id)}(${callArgs.join(', ')})`
     : `${node.entry.name}(${callArgs.join(', ')})`
+}
+
+function constLiteral(node) {
+  const type = String(node.values?.value_type ?? 'int')
+  const raw = node.values?.value
+  if (type === 'bool') {
+    if (raw === true || raw === 'true' || raw === '1' || raw === 1) return 'True'
+    if (raw === false || raw === 'false' || raw === '0' || raw === 0) return 'False'
+    return 'False'
+  }
+  if (type === 'str') return pyRepr(String(raw ?? ''))
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return '0'
+  return type === 'int' ? String(Math.trunc(n)) : String(n)
 }
 
 function positionalSource(callArgs, portName) {

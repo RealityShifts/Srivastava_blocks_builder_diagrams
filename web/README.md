@@ -117,6 +117,15 @@ manual edits).
 
 Graph entry point with custom shape/dtype.
 
+### Constant (`built-in`)
+
+Init-time scalar source for constructor wiring:
+- `value_type`: `int | float | bool | str`
+- `value`: literal text parsed by `value_type`
+
+Connect `Constant.out` into a node's red `🔴 <param>` port to drive constructor
+arguments from the graph instead of typing them in the inspector.
+
 ### Utility palette
 
 Framework-agnostic ops in the **utility** group:
@@ -141,6 +150,18 @@ Framework-agnostic ops in the **utility** group:
 Static shape checking requires all wired inputs to unify; exact concat/stack
 output ranks are resolved by **Run shape check** when axes are numeric.
 Rearrange requires `einops>=0.8` in the Python env (`models/blocks/requirements.txt`).
+
+### Constructor parameter ports
+
+Every block exposes ctor params as red inputs on the node body:
+- label format: `🔴 <param_name>`
+- these are **init-time** (not runtime tensor flow)
+- edges targeting them are rendered dashed + translucent red
+
+You can wire:
+- `Constant -> 🔴param` (direct literal value), or
+- `Input -> 🔴param` (best-effort dimension guess from input shape, e.g. `C` for
+  `in_ch`)
 
 ## Autosave
 

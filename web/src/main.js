@@ -12,11 +12,13 @@ import { LitPlugin, Presets as LitPresets } from '@retejs/lit-plugin'
 import {
   makeNode,
   INPUT_ENTRY,
+  CONST_ENTRY,
   REARRANGE_ENTRY,
   RESHAPE_ENTRY,
   CONCAT_ENTRY,
   STACK_ENTRY,
   applyNodeTag,
+  parseShapeString,
 } from './nodes.js'
 import { validate, dryRunEdge } from './validator.js'
 import { generate as generateCode } from './codegen.js'
@@ -106,6 +108,116 @@ function nodePosition(n) {
   const p = view?.position
   if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return undefined
   return { x: p.x, y: p.y }
+}
+
+function isParamInput(node, inputName) {
+  return node?.inputs?.[inputName]?.portSpec?.kind === 'param'
+}
+
+function reverseBindings(entry) {
+  const out = new Map()
+  for (const [axis, param] of Object.entries(entry.bindings || {})) out.set(param, axis)
+  return out
+}
+
+function guessDimFromTokens(tokens, axisHint) {
+  if (!tokens?.length) return null
+  const asNum = (v) => {
+    const n = Number(v)
+    return Number.isFinite(n) ? Math.trunc(n) : null
+  }
+  const axis = String(axisHint || '').toUpperCase()
+  const byIdx = { B: 0, C: 1, H: 2, W: 3, T: 1, D: 1, N: 1 }
+  if (axis && byIdx[axis[0]] != null) {
+    const n = asNum(tokens[byIdx[axis[0]]])
+    if (n != null) return n
+  }
+  for (const t of tokens) {
+    const n = asNum(t)
+    if (n != null) return n
+  }
+  return null
+}
+
+function parseConstValue(sourceNode, targetParamType = 'int') {
+  if (sourceNode?.entry?.kind !== 'const') return null
+  const raw = sourceNode.values?.value
+  const declared = sourceNode.values?.value_type || targetParamType
+  if (declared === 'bool') {
+    if (raw === true || raw === 'true' || raw === '1' || raw === 1) return true
+    if (raw === false || raw === 'false' || raw === '0' || raw === 0) return false
+    return null
+  }
+  if (declared === 'str') return String(raw ?? '')
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return null
+  if (declared === 'int') return Math.trunc(n)
+  return n
+}
+
+/**
+ * Pull ctor param values from dedicated parameter edges.
+ * - Constant -> 🔴param: direct value
+ * - Input    -> 🔴param: best-effort pick from input shape tokens using binding hint
+ */
+function applyCtorValuesFromParamEdges(result) {
+  let changed = false
+  for (const c of editor.getConnections()) {
+    const target = editor.getNode(c.target)
+    const source = editor.getNode(c.source)
+    if (!target || !source) continue
+    const spec = target.inputs?.[c.targetInput]?.portSpec
+    if (spec?.kind !== 'param') continue
+    const paramName = spec.paramName
+    const paramDef = (target.entry.ctor || []).find((p) => p.name === paramName)
+    if (!paramDef) continue
+
+    let next = parseConstValue(source, paramDef.type)
+    if (next == null && source.entry.kind === 'input') {
+      const axisHint = reverseBindings(target.entry).get(paramName) || ''
+      const toks = parseShapeString(source.values?.shape)
+      next = guessDimFromTokens(toks, axisHint)
+    }
+    if (next == null && result?.sub) {
+      const axisHint = reverseBindings(target.entry).get(paramName)
+      const outShape = source.freshenedShape?.(c.sourceOutput, 'out')
+      if (outShape) {
+        const resolved = outShape.map((t) => resolve(t, result.sub))
+        next = guessDimFromTokens(resolved, axisHint)
+      }
+    }
+    if (next == null) continue
+    if (target.values[paramName] !== next) {
+      target.values[paramName] = next
+      changed = true
+    }
+  }
+  return changed
+}
+
+function styleConnectionPath(connectionId, isParam) {
+  const view = area?.connectionViews?.get(connectionId)
+  const path = view?.element
+    ?.querySelector('rete-connection-wrapper')
+    ?.shadowRoot?.querySelector('rete-connection')
+    ?.shadowRoot?.querySelector('path')
+  if (!path) return
+  if (isParam) {
+    path.style.strokeDasharray = '6 5'
+    path.style.opacity = '0.45'
+    path.style.stroke = '#ef4444'
+  } else {
+    path.style.strokeDasharray = ''
+    path.style.opacity = ''
+    path.style.stroke = ''
+  }
+}
+
+function applyAllConnectionStyles() {
+  for (const c of editor.getConnections()) {
+    const target = editor.getNode(c.target)
+    styleConnectionPath(c.id, isParamInput(target, c.targetInput))
+  }
 }
 
 /** Snapshot selection (or focused node) into in-memory + localStorage. */
@@ -287,6 +399,12 @@ async function bootstrap() {
     if (structuralSignals.has(context.type)) {
       queueValidation()
       queueAutosave()
+      if (context.type === 'connectioncreated') {
+        const c = context.data
+        const target = editor.getNode(c.target)
+        const param = isParamInput(target, c.targetInput)
+        setTimeout(() => styleConnectionPath(c.id, param), 0)
+      }
     }
     return context
   })
@@ -298,6 +416,7 @@ async function bootstrap() {
       refreshInspector()
     } else if (context.type === 'nodetranslated') {
       queueAutosave()
+      applyAllConnectionStyles()
     }
     return context
   })
@@ -419,10 +538,20 @@ async function loadManifest() {
   const url = `/manifests/${state.framework}.json`
   const res = await fetch(url)
   const fetched = await res.json()
-  // Prepend the built-in Input node so it's always available regardless of framework.
-  state.entries = [INPUT_ENTRY, REARRANGE_ENTRY, RESHAPE_ENTRY, CONCAT_ENTRY, STACK_ENTRY, ...fetched]
+  // Keep Constant available for createNode/import, but hide it from the
+  // palette so users spawn it explicitly from node params ("+ const").
+  state.entries = [
+    INPUT_ENTRY,
+    CONST_ENTRY,
+    REARRANGE_ENTRY,
+    RESHAPE_ENTRY,
+    CONCAT_ENTRY,
+    STACK_ENTRY,
+    ...fetched,
+  ]
   state.byName = new Map(state.entries.map((e) => [e.name, e]))
-  renderPalette(document.getElementById('palette'), state.entries, (entry) =>
+  const paletteEntries = state.entries.filter((e) => e.kind !== 'const')
+  renderPalette(document.getElementById('palette'), paletteEntries, (entry) =>
     createNode(entry.name)
   )
 }
@@ -490,6 +619,9 @@ async function importGraph(data) {
     if (spec?.values && typeof spec.values === 'object') {
       Object.assign(node.values, spec.values)
     }
+    for (const p of spec?.exposedParams || []) {
+      node.exposeParam?.(p)
+    }
     if (typeof spec?.tag === 'string' && spec.tag) {
       applyNodeTag(node, spec.tag)
       area.update('node', node.id)
@@ -510,6 +642,10 @@ async function importGraph(data) {
     if (!srcNode || !tgtNode) {
       dropped++
       continue
+    }
+    if (String(c.targetInput || '').startsWith('__param__')) {
+      const pName = String(c.targetInput).replace(/^__param__/, '')
+      tgtNode.exposeParam?.(pName)
     }
     try {
       const conn = new ClassicPreset.Connection(srcNode, c.sourceOutput, tgtNode, c.targetInput)
@@ -574,7 +710,9 @@ function runValidation() {
   // resolved C_in after wiring from a previous layer).
   let result = validate(editor)
   for (let i = 0; i < 3; i++) {
-    const changed = inferImplicitCtorParams(result)
+    const fromEdges = applyCtorValuesFromParamEdges(result)
+    const fromBindings = inferImplicitCtorParams(result)
+    const changed = fromEdges || fromBindings
     if (!changed) break
     result = validate(editor)
   }
@@ -588,6 +726,7 @@ function runValidation() {
   state.lastResult.concreteReason = concrete.reason
   renderDiagnostics(document.getElementById('diag-list'), state.lastResult)
   refreshInspector()
+  applyAllConnectionStyles()
   refreshRuntimePanel()
   applyRuntimeErrorHighlight()
 }
@@ -668,8 +807,59 @@ function refreshInspector() {
       state.runtimeErrorNodeId = null
       queueValidation()
       queueAutosave()
+    },
+    async (targetNode, param) => {
+      await addConstantForParam(targetNode, param)
+    },
+    async (targetNode, param, shouldExpose) => {
+      const key = `__param__${param.name}`
+      if (shouldExpose) {
+        targetNode.exposeParam?.(param.name)
+      } else {
+        for (const c of [...editor.getConnections()]) {
+          if (c.target === targetNode.id && c.targetInput === key) {
+            await editor.removeConnection(c.id)
+          }
+        }
+        targetNode.hideParam?.(param.name)
+      }
+      await area.update('node', targetNode.id)
+      queueValidation()
+      queueAutosave()
+      refreshInspector()
     }
   )
+}
+
+async function addConstantForParam(targetNode, param) {
+  const host = area?.nodeViews?.get(targetNode.id)?.position ?? { x: 0, y: 0 }
+  const pos = { x: host.x - 260, y: host.y + 22 * Math.max(0, targetNode.entry.ctor.indexOf(param)) }
+  const c = await createNode('Constant', pos)
+  if (!c) return
+  targetNode.exposeParam?.(param.name)
+  await area.update('node', targetNode.id)
+
+  const t = param?.type || 'int'
+  c.values.value_type = t === 'float' || t === 'bool' || t === 'str' ? t : 'int'
+  const existing = targetNode.values?.[param.name]
+  if (existing !== null && existing !== undefined && existing !== '') {
+    c.values.value = String(existing)
+  } else if (c.values.value_type === 'bool') {
+    c.values.value = 'false'
+  } else if (c.values.value_type === 'str') {
+    c.values.value = ''
+  } else {
+    c.values.value = '1'
+  }
+  const targetInput = `__param__${param.name}`
+  try {
+    const conn = new ClassicPreset.Connection(c, 'out', targetNode, targetInput)
+    await editor.addConnection(conn)
+  } catch (e) {
+    flashDiagnostic(`Failed to wire constant: ${e.message || String(e)}`)
+  }
+  queueValidation()
+  queueAutosave()
 }
 
 function flashDiagnostic(text) {
@@ -725,6 +915,9 @@ function getGraphData() {
       name: n.entry.name,
       tag: n.tag ?? '',
       values: n.values,
+      exposedParams: Object.keys(n.inputs || {})
+        .filter((k) => k.startsWith('__param__'))
+        .map((k) => k.replace(/^__param__/, '')),
       position: (() => {
         const view = area?.nodeViews?.get(n.id)
         const p = view?.position

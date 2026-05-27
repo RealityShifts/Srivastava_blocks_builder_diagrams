@@ -34,6 +34,7 @@ export class BlockNode extends ClassicPreset.Node {
     this._outputShapes = Object.fromEntries(
       entry.outputs.map((p) => [p.name, normalize(p.shape)])
     )
+    this._paramSpecs = new Map()
 
     for (const p of entry.inputs) {
       const input = new ClassicPreset.Input(
@@ -45,6 +46,11 @@ export class BlockNode extends ClassicPreset.Node {
       // Stash the manifest port spec for later inspection.
       input.portSpec = p
       this.addInput(p.name, input)
+    }
+    // Ctor parameters are init-time values (not runtime tensor flow). They are
+    // hidden by default and can be explicitly exposed per-param from inspector.
+    if (entry.kind !== 'input' && entry.kind !== 'const') {
+      for (const p of entry.ctor) this._paramSpecs.set(p.name, p)
     }
     for (const p of entry.outputs) {
       const output = new ClassicPreset.Output(tensorSocket, labelFor(p))
@@ -79,6 +85,35 @@ export class BlockNode extends ClassicPreset.Node {
       }
       sub.set(freshAxis, v)
     }
+  }
+
+  paramInputKey(paramName) {
+    return `__param__${paramName}`
+  }
+
+  isParamExposed(paramName) {
+    return Boolean(this.inputs[this.paramInputKey(paramName)])
+  }
+
+  exposeParam(paramName) {
+    if (!this._paramSpecs.has(paramName) || this.isParamExposed(paramName)) return
+    const p = this._paramSpecs.get(paramName)
+    const key = this.paramInputKey(paramName)
+    const input = new ClassicPreset.Input(tensorSocket, `🔴 ${p.name}`, false)
+    input.multipleConnections = false
+    input.portSpec = {
+      kind: 'param',
+      paramName: p.name,
+      required: Boolean(p.required),
+      paramType: p.type,
+    }
+    this.addInput(key, input)
+  }
+
+  hideParam(paramName) {
+    const key = this.paramInputKey(paramName)
+    if (!this.inputs[key]) return
+    this.removeInput(key)
   }
 }
 
@@ -134,6 +169,38 @@ export const INPUT_ENTRY = {
       name: 'out',
       shape: ['B', 'C', 'H', 'W'],
       dtype: 'float',
+      optional: false,
+      variadic: false,
+    },
+  ],
+  bindings: {},
+}
+
+/**
+ * Scalar constant for init-time parameter wiring.
+ * Connect `out` to a node's `🔴 <param>` input.
+ */
+export const CONST_ENTRY = {
+  name: 'Constant',
+  module: '__builtin__',
+  framework: 'any',
+  kind: 'const',
+  ctor: [
+    {
+      name: 'value_type',
+      type: 'str',
+      default: 'int',
+      required: false,
+      choices: ['int', 'float', 'bool', 'str'],
+    },
+    { name: 'value', type: 'str', default: '1', required: true },
+  ],
+  inputs: [],
+  outputs: [
+    {
+      name: 'out',
+      shape: [],
+      dtype: 'any',
       optional: false,
       variadic: false,
     },

@@ -463,6 +463,34 @@ console.log('paletteGroup')
   check('Input stays in built-in', paletteGroup(inputEntryForPalette()) === 'built-in')
 }
 
+console.log('codegen (constant)')
+{
+  const cEntry = {
+    name: 'Constant',
+    module: '__builtin__',
+    framework: 'any',
+    kind: 'const',
+    ctor: [
+      { name: 'value_type', type: 'str', default: 'int' },
+      { name: 'value', type: 'str', default: '1' },
+    ],
+    inputs: [],
+    outputs: [{ name: 'out', shape: [], dtype: 'any' }],
+    bindings: {},
+  }
+  const make = (id, entry, values = {}) => ({
+    id,
+    entry,
+    tag: '',
+    values: { ...Object.fromEntries(entry.ctor.map((p) => [p.name, p.default])), ...values },
+  })
+  const cInt = make('c1', cEntry, { value_type: 'int', value: '7' })
+  const cBool = make('c2', cEntry, { value_type: 'bool', value: 'true' })
+  const code = generate([cInt, cBool], [], 'pytorch')
+  check('constant int emits numeric literal', code.includes('= 7'), code)
+  check('constant bool emits Python bool literal', code.includes('= True'), code)
+}
+
 function inputEntryForPalette() {
   return {
     name: 'Input',
