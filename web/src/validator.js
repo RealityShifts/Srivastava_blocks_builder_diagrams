@@ -77,6 +77,39 @@ export function validate(editor) {
     }
   }
 
+  // 3a. Tag-based weight sharing: module nodes sharing a non-empty tag must
+  //     agree on block type AND non-default ctor values, otherwise codegen
+  //     would emit a self.<attr> backed by one set of ctor args yet
+  //     be called from a site that semantically expects another.
+  const tagGroups = new Map()
+  for (const n of nodes) {
+    if (n.entry.kind !== 'module') continue
+    const t = String(n.tag ?? '').trim()
+    if (!t) continue
+    if (!tagGroups.has(t)) tagGroups.set(t, [])
+    tagGroups.get(t).push(n)
+  }
+  for (const [tag, group] of tagGroups) {
+    if (group.length < 2) continue
+    const head = group[0]
+    for (const other of group.slice(1)) {
+      if (other.entry.name !== head.entry.name) {
+        errors.push({
+          kind: 'tag-conflict',
+          message: `Tag "${tag}" reused across different block types: ${head.entry.name} vs ${other.entry.name}. Same tag = shared weights, so types must match.`,
+        })
+        continue
+      }
+      const diff = ctorValueDiff(head, other)
+      if (diff) {
+        errors.push({
+          kind: 'tag-conflict',
+          message: `Tag "${tag}" on ${other.entry.name}: ctor "${diff.param}" differs (${JSON.stringify(diff.a)} vs ${JSON.stringify(diff.b)}). Weight-shared instances must use identical ctor values.`,
+        })
+      }
+    }
+  }
+
   // 3. Detect required-but-unconnected input ports.
   const incoming = new Map()
   for (const c of connections) {
@@ -91,6 +124,23 @@ export function validate(editor) {
         warnings.push({
           kind: 'unconnected',
           message: `${describeNode(n)}:${port.name} is required but has no input`,
+        })
+      }
+    }
+  }
+
+  // Concat / Stack need at least two wires on their variadic port.
+  for (const n of nodes) {
+    if (n.entry.kind !== 'concat' && n.entry.kind !== 'stack') continue
+    for (const port of n.entry.inputs) {
+      if (!port.variadic) continue
+      const count = connections.filter(
+        (c) => c.target === n.id && c.targetInput === port.name
+      ).length
+      if (count < 2) {
+        warnings.push({
+          kind: 'variadic-min',
+          message: `${describeNode(n)}: needs ≥2 inputs on ${port.name}, got ${count}`,
         })
       }
     }
@@ -148,6 +198,28 @@ export function dryRunEdge(editor, sourceNode, sourcePort, targetNode, targetPor
 
 function describeNode(n) {
   return `${n.label}#${shortId(n.id)}`
+}
+
+/** First ctor param whose value differs between two nodes, or null. */
+function ctorValueDiff(a, b) {
+  for (const p of a.entry.ctor || []) {
+    const va = a.values?.[p.name]
+    const vb = b.values?.[p.name]
+    if (!ctorValueEqual(va, vb)) return { param: p.name, a: va, b: vb }
+  }
+  return null
+}
+
+function ctorValueEqual(a, b) {
+  if (a === b) return true
+  // Treat null/undefined/'' as the same "unset" sentinel - common for
+  // implicit-inferred ctor params like in_ch that get filled in later.
+  const isUnset = (v) => v === null || v === undefined || v === ''
+  if (isUnset(a) && isUnset(b)) return true
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return a.length === b.length && a.every((x, i) => ctorValueEqual(x, b[i]))
+  }
+  return false
 }
 
 function shortId(id) {

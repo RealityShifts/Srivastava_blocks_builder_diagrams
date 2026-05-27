@@ -120,7 +120,10 @@ function describePorts(entry) {
   const k =
     entry.kind === 'function'
       ? 'fn'
-      : entry.kind === 'rearrange' || entry.kind === 'reshape'
+      : entry.kind === 'rearrange' ||
+          entry.kind === 'reshape' ||
+          entry.kind === 'concat' ||
+          entry.kind === 'stack'
         ? 'op'
         : entry.kind === 'input'
           ? 'in'
@@ -273,7 +276,8 @@ export function renderInspector(
   sub,
   onChange,
   runtimeShapes,
-  blockInfo
+  blockInfo,
+  onTagChange
 ) {
   if (!node) {
     _currentNodeId = null
@@ -311,6 +315,32 @@ export function renderInspector(
     node.entry.kind
   )}</span>`
   rootEl.appendChild(header)
+
+  // Tag row. For module-kind nodes the tag also acts as a weight-sharing key:
+  // two ConvBlocks tagged "down1" share one Python attribute.
+  const tagRow = document.createElement('div')
+  tagRow.className = 'row tag-row'
+  const tagLabel = document.createElement('label')
+  const tagId = `ctrl-${node.id}-__tag`
+  tagLabel.htmlFor = tagId
+  tagLabel.textContent = 'Tag'
+  const tagHelp =
+    node.entry.kind === 'module'
+      ? 'label · same tag = shared weights'
+      : 'label only'
+  tagLabel.title = tagHelp
+  tagRow.appendChild(tagLabel)
+  const tagInput = document.createElement('input')
+  tagInput.id = tagId
+  tagInput.type = 'text'
+  tagInput.spellcheck = false
+  tagInput.placeholder = node.entry.kind === 'module' ? 'down1' : 'note'
+  tagInput.value = String(node.tag ?? '')
+  tagInput.addEventListener('input', () => {
+    if (typeof onTagChange === 'function') onTagChange(node, tagInput.value)
+  })
+  tagRow.appendChild(tagInput)
+  rootEl.appendChild(tagRow)
 
   const tabs = document.createElement('div')
   tabs.className = 'tabs'

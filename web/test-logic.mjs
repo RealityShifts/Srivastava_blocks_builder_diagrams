@@ -7,8 +7,11 @@ import {
   parseLengthsString,
   REARRANGE_ENTRY,
   RESHAPE_ENTRY,
+  CONCAT_ENTRY,
+  STACK_ENTRY,
   RearrangeNode,
   ReshapeNode,
+  paletteGroup,
 } from './src/nodes.js'
 
 let pass = 0
@@ -238,6 +241,239 @@ console.log('codegen (rearrange + reshape)')
     codeFlax.includes('jnp.reshape(') && codeFlax.includes(', (-1, 128))'),
     codeFlax
   )
+}
+
+// --- tag-based weight sharing in codegen ---
+console.log('codegen tag weight-sharing')
+{
+  const conv = {
+    name: 'ConvBlock',
+    module: 'pytorch_blocks.core_blocks',
+    framework: 'pytorch',
+    kind: 'module',
+    ctor: [
+      { name: 'in_ch', type: 'int', default: null, required: true },
+      { name: 'out_ch', type: 'int', default: null, required: true },
+    ],
+    inputs: [{ name: 'x', shape: ['B', 'C_in', 'H', 'W'], dtype: 'float' }],
+    outputs: [{ name: 'out', shape: ['B', 'C_out', 'H', 'W'], dtype: 'float' }],
+    bindings: { C_in: 'in_ch', C_out: 'out_ch' },
+  }
+  const make = (id, entry, values = {}, tag = '') => ({
+    id,
+    entry,
+    tag,
+    values: { ...Object.fromEntries(entry.ctor.map((p) => [p.name, p.default])), ...values },
+  })
+  // Two ConvBlocks sharing tag "shared" with the SAME ctor values -> one __init__ slot.
+  const a = make('a', conv, { in_ch: 3, out_ch: 16 }, 'shared')
+  const b = make('b', conv, { in_ch: 3, out_ch: 16 }, 'shared')
+  const code = generate([a, b], [], 'pytorch')
+
+  const initInstances = (code.match(/self\.shared = ConvBlock\(/g) || []).length
+  check('shared tag emits ONE self.shared = ConvBlock(...) slot', initInstances === 1, initInstances)
+
+  // Both nodes call self.shared in forward, with distinct local var names so
+  // the first call's output isn't clobbered.
+  const callSites = (code.match(/self\.shared\(/g) || []).length
+  check('forward has two call sites to self.shared', callSites === 2, callSites)
+  check(
+    'distinct local vars per call site (no var name collision)',
+    /\bshared\s*=\s*self\.shared\(/.test(code) && /\bshared2\s*=\s*self\.shared\(/.test(code),
+    code
+  )
+
+  // Three-way share also collapses to one slot.
+  const c = make('c', conv, { in_ch: 3, out_ch: 16 }, 'shared')
+  const code3 = generate([a, b, c], [], 'pytorch')
+  const slots3 = (code3.match(/self\.shared = ConvBlock\(/g) || []).length
+  check('3-way shared tag still emits ONE slot', slots3 === 1, slots3)
+  const sites3 = (code3.match(/self\.shared\(/g) || []).length
+  check('3-way shared tag produces three call sites', sites3 === 3, sites3)
+
+  // Empty tag = no sharing. Same block type, no tag => two separate slots.
+  const x = make('x', conv, { in_ch: 3, out_ch: 16 })
+  const y = make('y', conv, { in_ch: 3, out_ch: 16 })
+  const codeUntagged = generate([x, y], [], 'pytorch')
+  const untaggedSlots = (codeUntagged.match(/= ConvBlock\(/g) || []).length
+  check('empty tag = each node gets its own slot', untaggedSlots === 2, untaggedSlots)
+
+  // Different ctor values produce one slot with the FIRST node's ctor; the
+  // validator surfaces a hard error separately.
+  const aWide = make('aw', conv, { in_ch: 3, out_ch: 16 }, 'wide')
+  const bWide = make('bw', conv, { in_ch: 3, out_ch: 32 }, 'wide')
+  const codeDisagree = generate([aWide, bWide], [], 'pytorch')
+  const wideSlots = (codeDisagree.match(/self\.wide = ConvBlock\(/g) || []).length
+  check('ctor-disagreement still collapses to one slot (validator rejects)', wideSlots === 1, wideSlots)
+}
+
+// --- validator: tag conflict ---
+console.log('validator tag conflicts')
+{
+  // Synthesize the smallest editor-shaped object the validator needs.
+  async function loadValidator() {
+    return (await import('./src/validator.js')).validate
+  }
+  const validate = await loadValidator()
+  const conv = {
+    name: 'ConvBlock',
+    module: 'pytorch_blocks.core_blocks',
+    framework: 'pytorch',
+    kind: 'module',
+    ctor: [
+      { name: 'in_ch', type: 'int', default: null, required: true },
+      { name: 'out_ch', type: 'int', default: null, required: true },
+    ],
+    inputs: [{ name: 'x', shape: ['B', 'C_in', 'H', 'W'], dtype: 'float' }],
+    outputs: [{ name: 'out', shape: ['B', 'C_out', 'H', 'W'], dtype: 'float' }],
+    bindings: { C_in: 'in_ch', C_out: 'out_ch' },
+  }
+  const linear = {
+    name: 'Linear',
+    module: 'pytorch_blocks.core_blocks',
+    framework: 'pytorch',
+    kind: 'module',
+    ctor: [{ name: 'out_dim', type: 'int', default: null, required: true }],
+    inputs: [{ name: 'x', shape: ['B', 'D'], dtype: 'float' }],
+    outputs: [{ name: 'out', shape: ['B', 'D_out'], dtype: 'float' }],
+    bindings: {},
+  }
+  const mkEd = (nodes) => ({
+    getNodes: () => nodes,
+    getConnections: () => [],
+    getNode: (id) => nodes.find((n) => n.id === id),
+  })
+  const mkN = (id, entry, values, tag = '') => ({
+    id,
+    entry,
+    tag,
+    label: entry.name,
+    values: { ...Object.fromEntries(entry.ctor.map((p) => [p.name, p.default])), ...values },
+    inputs: {},
+    outputs: {},
+    freshenedShape: () => null,
+    applyParamBindings: () => {},
+  })
+
+  // Same tag, same block, same ctor => OK.
+  let res = validate(
+    mkEd([
+      mkN('a', conv, { in_ch: 3, out_ch: 16 }, 'down1'),
+      mkN('b', conv, { in_ch: 3, out_ch: 16 }, 'down1'),
+    ])
+  )
+  check(
+    'tag-conflict: identical twins produce no error',
+    res.errors.filter((e) => e.kind === 'tag-conflict').length === 0,
+    res.errors
+  )
+
+  // Same tag, different block type => error.
+  res = validate(
+    mkEd([
+      mkN('a', conv, { in_ch: 3, out_ch: 16 }, 'shared'),
+      mkN('b', linear, { out_dim: 16 }, 'shared'),
+    ])
+  )
+  check(
+    'tag-conflict: different block types -> error',
+    res.errors.some((e) => e.kind === 'tag-conflict' && /different block types/.test(e.message)),
+    res.errors
+  )
+
+  // Same tag, same block, different ctor => error.
+  res = validate(
+    mkEd([
+      mkN('a', conv, { in_ch: 3, out_ch: 16 }, 'down1'),
+      mkN('b', conv, { in_ch: 3, out_ch: 32 }, 'down1'),
+    ])
+  )
+  check(
+    'tag-conflict: ctor disagreement -> error',
+    res.errors.some((e) => e.kind === 'tag-conflict' && /out_ch/.test(e.message)),
+    res.errors
+  )
+
+  // Empty tag never triggers a conflict, even with same block + same ctor.
+  res = validate(
+    mkEd([
+      mkN('a', conv, { in_ch: 3, out_ch: 16 }, ''),
+      mkN('b', conv, { in_ch: 3, out_ch: 16 }, ''),
+    ])
+  )
+  check(
+    'tag-conflict: empty tag does NOT trigger conflict',
+    res.errors.filter((e) => e.kind === 'tag-conflict').length === 0,
+    res.errors
+  )
+}
+
+// --- Concat / Stack utility nodes ---
+console.log('codegen (concat + stack)')
+{
+  const inputEntry = {
+    name: 'Input',
+    module: '__builtin__',
+    framework: 'any',
+    kind: 'input',
+    ctor: [
+      { name: 'name', type: 'str', default: 'x' },
+      { name: 'shape', type: 'str', default: 'B C H W' },
+      { name: 'dtype', type: 'str', default: 'float' },
+    ],
+    inputs: [],
+    outputs: [{ name: 'out', shape: ['B', 'C', 'H', 'W'], dtype: 'float' }],
+    bindings: {},
+  }
+  const make = (id, entry, values = {}) => ({
+    id,
+    entry,
+    tag: '',
+    values: {
+      ...Object.fromEntries(entry.ctor.map((p) => [p.name, p.default])),
+      ...values,
+    },
+  })
+  const in1 = make('in1', inputEntry, { name: 'x1' })
+  const in2 = make('in2', inputEntry, { name: 'x2' })
+  const concat = make('cat', CONCAT_ENTRY, { dim: 1 })
+  const stack = make('stk', STACK_ENTRY, { dim: 0 })
+  const conns = [
+    { source: 'in1', sourceOutput: 'out', target: 'cat', targetInput: 'xs' },
+    { source: 'in2', sourceOutput: 'out', target: 'cat', targetInput: 'xs' },
+    { source: 'in1', sourceOutput: 'out', target: 'stk', targetInput: 'xs' },
+    { source: 'in2', sourceOutput: 'out', target: 'stk', targetInput: 'xs' },
+  ]
+  const codePt = generate([in1, in2, concat, stack], conns, 'pytorch')
+  check('pytorch concat uses torch.cat([...], dim=)', codePt.includes('torch.cat([x1, x2], dim=1)'), codePt)
+  check('pytorch stack uses torch.stack([...], dim=)', codePt.includes('torch.stack([x1, x2], dim=0)'), codePt)
+  check('utility nodes skip block imports', !codePt.includes('__utility__'), codePt)
+
+  const codeFlax = generate([in1, in2, concat], conns.slice(0, 2), 'flax')
+  check(
+    'flax concat uses jnp.concatenate',
+    codeFlax.includes('jnp.concatenate([x1, x2], axis=1)'),
+    codeFlax
+  )
+}
+
+console.log('paletteGroup')
+{
+  check('Concat maps to utility palette', paletteGroup(CONCAT_ENTRY) === 'utility')
+  check('Input stays in built-in', paletteGroup(inputEntryForPalette()) === 'built-in')
+}
+
+function inputEntryForPalette() {
+  return {
+    name: 'Input',
+    module: '__builtin__',
+    framework: 'any',
+    kind: 'input',
+    ctor: [],
+    inputs: [],
+    outputs: [],
+    bindings: {},
+  }
 }
 
 console.log(`\n${pass} pass, ${fail} fail`)

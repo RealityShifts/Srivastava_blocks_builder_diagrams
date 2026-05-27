@@ -50,11 +50,12 @@ npm run dev    # http://127.0.0.1:5173/
 ## Tests
 
 ```bash
-npm run test:logic     # pure-JS shape parser + unifier + codegen
-npm run test:e2e       # headless puppeteer; expects `npm run dev` running
-npm run test:runtime   # traced codegen + HTTP runner; start runner first
-npm run test:info-tab  # info tab + Mermaid render + collapsibles
-npm run test:autosave  # localStorage autosave + restore-on-reload
+npm run test:logic           # pure-JS shape parser + unifier + codegen
+npm run test:e2e             # headless puppeteer; expects `npm run dev` running
+npm run test:runtime         # traced codegen + HTTP runner; start runner first
+npm run test:info-tab        # info tab + Mermaid render + collapsibles
+npm run test:autosave        # localStorage autosave + restore-on-reload
+npm run test:tags-clipboard  # tags + copy/paste/duplicate + shared-tag codegen
 ```
 
 Run the Python shape runner (PyTorch only, separate terminal)::
@@ -65,26 +66,81 @@ python tools/shape_runner.py   # http://127.0.0.1:8765/run
 
 Then in the UI sidebar **Runtime shapes → Run shape check** once every axis is numeric.
 
-## Shape-op built-ins (Rearrange / Reshape)
+## Tags + weight sharing
 
-Two framework-agnostic utility nodes ship in the palette alongside `Input`,
-so you can splice shape manipulation into a graph without an explicit block:
+Every node has a free-form **Tag** field in the Inspector header, which
+serves two roles depending on node kind:
+
+- **Annotation** (all nodes) — the tag is appended to the node title as
+  `ConvBlock · encoder` so you can label what a block is doing
+  ("downsample-1", "stem", "encoder", etc.). The tag round-trips through
+  export/import and autosave.
+- **Weight-sharing key** (module-kind nodes only) — two ConvBlocks tagged
+  `down1` collapse to **one** Python attribute in the generated module:
+
+  ```python
+  class GeneratedModel(nn.Module):
+      def __init__(self):
+          super().__init__()
+          self.down1 = ConvBlock(in_ch=3, out_ch=16)
+
+      def forward(self, x, x2):
+          down1 = self.down1(x=x)
+          down1_2 = self.down1(x=x2)
+          return (down1, down1_2)
+  ```
+
+  The validator raises a hard error if two nodes share a tag but disagree on
+  block type or ctor values — those would silently produce a model whose
+  forward semantics don't match what you drew on the canvas.
+
+Empty tag = no sharing (each node gets its own `self.<name>_<n>` slot).
+
+## Copy · Paste · Duplicate
+
+| Keystroke              | Action                                                        |
+| ---------------------- | ------------------------------------------------------------- |
+| `Ctrl/Cmd + C`         | Copy selected nodes (+ intra-selection edges) to clipboard    |
+| `Ctrl/Cmd + V`         | Paste with +24 px offset and re-mapped IDs                    |
+| `Ctrl/Cmd + D`         | Duplicate (= copy + paste in one step)                        |
+| `Del` / `Backspace`    | Delete selected nodes                                         |
+
+The clipboard is stored in-memory **and** mirrored to `localStorage` under
+`blocks-builder:clipboard:v1`, so paste works across tabs. Cross-framework
+pastes are skipped with a diagnostic. Edges that would create a shape
+conflict are silently dropped (the connection pipe rejects them just like
+manual edits).
+
+## Built-in nodes (utility + Input)
+
+### Input (`built-in`)
+
+Graph entry point with custom shape/dtype.
+
+### Utility palette
+
+Framework-agnostic ops in the **utility** group:
 
 - **Rearrange** — einops pattern such as `b c h w -> b (h w) c`. Optional
   `lengths` field accepts `h=8, w=16` so RHS groups can fold to literal axis
-  values for the static check. The pattern is parsed by the unifier:
-  identifiers shared between LHS and RHS propagate their binding to
-  downstream nodes; opaque groups stay symbolic and get filled in by the
-  runtime check. Codegen emits `from einops import rearrange` and
+  values for the static check. Codegen emits `from einops import rearrange` and
   `out = rearrange(x, "...", h=8, w=16)`.
 
 - **Reshape** — comma/space-separated literal shape, e.g. `-1 3 224 224`.
-  Only integers and `-1` are accepted (use Rearrange for symbolic ops).
   Codegen emits `x.reshape(...)` on PyTorch and `jnp.reshape(x, (...))` on
   Flax.
 
-Both nodes require `einops>=0.8` in the Python env that runs the shape
-runner; it's listed in `models/blocks/requirements.txt`.
+- **Concat** — variadic `xs[*]` port; wire **two or more** tensors. Parameter
+  `dim` (default `1`) is the axis to join on. Codegen:
+  `torch.cat([a, b, …], dim=1)` / `jnp.concatenate([…], axis=1)`.
+
+- **Stack** — variadic `xs[*]` port; same wiring rule. Parameter `dim`
+  (default `0`) is where the new axis is inserted. Codegen:
+  `torch.stack([a, b, …], dim=0)` / `jnp.stack([…], axis=0)`.
+
+Static shape checking requires all wired inputs to unify; exact concat/stack
+output ranks are resolved by **Run shape check** when axes are numeric.
+Rearrange requires `einops>=0.8` in the Python env (`models/blocks/requirements.txt`).
 
 ## Autosave
 

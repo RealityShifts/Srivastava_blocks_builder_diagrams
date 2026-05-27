@@ -221,6 +221,19 @@ main {
   font-size: 10px;
   margin-top: 2px;
 }
+#inspector .tag-row {
+  margin: 6px 0 10px;
+}
+#inspector .tag-row label {
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: help;
+}
+#inspector .tag-row input {
+  margin-top: 2px;
+}
 #inspector .ports {
   margin-top: 12px;
   font-size: 11px;

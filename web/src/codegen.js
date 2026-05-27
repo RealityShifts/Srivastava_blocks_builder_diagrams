@@ -73,32 +73,68 @@ export function planGraph(nodes, connections) {
   if (nodes.length === 0) return null
   const ordered = topoSort(nodes, connections)
 
-  const usedNames = new Set()
-  const allocate = (base) => {
-    let candidate = base
+  // Two separate Python namespaces: `self.*` attributes vs. forward()-scope
+  // locals. Splitting them lets `self.shared` and local `shared` coexist
+  // (Python is fine with this) so weight-shared twins get nice names like
+  // `shared = self.shared(x)` / `shared2 = self.shared(shared)`.
+  const localPool = new Set()
+  const attrPool = new Set()
+  const allocLocal = (base) => {
+    let c = base
     let i = 2
-    while (usedNames.has(candidate)) candidate = `${base}${i++}`
-    usedNames.add(candidate)
-    return candidate
+    while (localPool.has(c)) c = `${base}${i++}`
+    localPool.add(c)
+    return c
+  }
+  const allocAttr = (base) => {
+    let c = base
+    let i = 2
+    while (attrPool.has(c)) c = `${base}${i++}`
+    attrPool.add(c)
+    return c
   }
 
   const inputArgFor = new Map()
   for (const n of ordered) {
     if (n.entry.kind === 'input') {
-      inputArgFor.set(n.id, allocate(sanitizePyIdent(n.values?.name, 'x')))
+      inputArgFor.set(n.id, allocLocal(sanitizePyIdent(n.values?.name, 'x')))
     }
   }
 
+  // Module-kind nodes sharing a (sanitized, non-empty) tag get the *same*
+  // attribute - that's how weight tying works: one `self.<attr> = Block(...)`
+  // in __init__, multiple call sites in forward. Non-module kinds (input,
+  // rearrange, reshape) never share.
   const attrName = new Map()
+  const sharedKeyToAttr = new Map() // tag -> attr name
   ordered.forEach((n, i) => {
     if (n.entry.kind === 'input') return
-    attrName.set(n.id, allocate(snake(n.entry.name, i)))
+    const tag =
+      n.entry.kind === 'module' ? sanitizePyIdent(n.tag ?? '', '') : ''
+    if (tag) {
+      if (!sharedKeyToAttr.has(tag)) {
+        sharedKeyToAttr.set(tag, allocAttr(tag))
+      }
+      attrName.set(n.id, sharedKeyToAttr.get(tag))
+      return
+    }
+    attrName.set(n.id, allocAttr(snake(n.entry.name, i)))
+  })
+
+  // Local variable per call site - always unique within the forward scope.
+  // For non-shared nodes this matches the attr name exactly; for shared-
+  // weight twins each call site gets a bumped suffix so the first call's
+  // output isn't clobbered by the second.
+  const localName = new Map()
+  ordered.forEach((n) => {
+    if (n.entry.kind === 'input') return
+    localName.set(n.id, allocLocal(attrName.get(n.id)))
   })
 
   const imports = new Map()
   for (const n of ordered) {
     if (n.entry.kind === 'input') continue
-    if (n.entry.module === '__builtin__') continue // synthetic nodes wire imports separately
+    if (n.entry.module?.startsWith('__')) continue // synthetic nodes wire imports separately
     if (!imports.has(n.entry.module)) imports.set(n.entry.module, new Set())
     imports.get(n.entry.module).add(n.entry.name)
   }
@@ -120,16 +156,17 @@ export function planGraph(nodes, connections) {
     for (const port of n.entry.outputs) {
       outputVarFor.set(
         `${n.id}/${port.name}`,
-        multi ? `${attrName.get(n.id)}_${port.name}` : attrName.get(n.id)
+        multi ? `${localName.get(n.id)}_${port.name}` : localName.get(n.id)
       )
     }
   }
 
-  const entryInputs = findEntryInputs(ordered, connections, usedNames)
+  const entryInputs = findEntryInputs(ordered, connections, localPool)
   return {
     ordered,
     inputArgFor,
     attrName,
+    localName,
     imports,
     incoming,
     outputVarFor,
@@ -152,6 +189,7 @@ export function generate(nodes, connections, framework, options = {}) {
     ordered,
     inputArgFor,
     attrName,
+    localName,
     imports,
     incoming,
     outputVarFor,
@@ -190,10 +228,16 @@ export function generate(nodes, connections, framework, options = {}) {
 
   const moduleNodes = ordered.filter((n) => n.entry.kind === 'module')
   if (moduleNodes.length === 0) lines.push('        pass')
+  // Shared-weight nodes (same tag) collapse into one __init__ slot. Iterate
+  // over module nodes and emit one assignment per unique attr name.
+  const emittedAttrs = new Set()
   for (const n of moduleNodes) {
+    const attr = attrName.get(n.id)
+    if (emittedAttrs.has(attr)) continue
+    emittedAttrs.add(attr)
     const args = ctorArgs(n)
     if (framework === 'flax') args.push('rngs=rngs')
-    lines.push(`        self.${attrName.get(n.id)} = ${n.entry.name}(${args.join(', ')})`)
+    lines.push(`        self.${attr} = ${n.entry.name}(${args.join(', ')})`)
   }
   lines.push('')
 
@@ -269,7 +313,7 @@ export function generate(nodes, connections, framework, options = {}) {
           )
         }
       } else {
-        const v = attrName.get(n.id)
+        const v = localName.get(n.id)
         const portName = n.entry.outputs[0]?.name ?? 'out'
         lines.push(`            ${v} = ${callExpr}`)
         lines.push(
@@ -286,7 +330,7 @@ export function generate(nodes, connections, framework, options = {}) {
         .join(', ')
       lines.push(`        ${targets} = ${callExpr}`)
     } else {
-      const v = attrName.get(n.id)
+      const v = localName.get(n.id)
       lines.push(`        ${v} = ${callExpr}`)
     }
   }
@@ -328,6 +372,18 @@ function buildCallExpr(node, callArgs, attrName, framework) {
     if (framework === 'pytorch') return `${xVar}.reshape(${dims.join(', ')})`
     return `jnp.reshape(${xVar}, (${dims.join(', ')}${dims.length === 1 ? ',' : ''}))`
   }
+  if (node.entry.kind === 'concat') {
+    const tensors = variadicList(callArgs, 'xs')
+    const dim = parseAxisDim(node.values?.dim, 1)
+    if (framework === 'pytorch') return `torch.cat(${tensors}, dim=${dim})`
+    return `jnp.concatenate(${tensors}, axis=${dim})`
+  }
+  if (node.entry.kind === 'stack') {
+    const tensors = variadicList(callArgs, 'xs')
+    const dim = parseAxisDim(node.values?.dim, 0)
+    if (framework === 'pytorch') return `torch.stack(${tensors}, dim=${dim})`
+    return `jnp.stack(${tensors}, axis=${dim})`
+  }
   return node.entry.kind === 'module'
     ? `self.${attrName.get(node.id)}(${callArgs.join(', ')})`
     : `${node.entry.name}(${callArgs.join(', ')})`
@@ -338,6 +394,20 @@ function positionalSource(callArgs, portName) {
   const found = callArgs.find((a) => a.startsWith(prefix))
   if (!found) return 'None'  // dangling input; runtime will fail loudly
   return found.slice(prefix.length)
+}
+
+/** Pull `[a, b, c]` from `xs=[a, b, c]` in callArgs; default `[]`. */
+function variadicList(callArgs, portName) {
+  const prefix = `${portName}=`
+  const found = callArgs.find((a) => a.startsWith(prefix))
+  if (!found) return '[]'
+  return found.slice(prefix.length)
+}
+
+function parseAxisDim(v, fallback = 0) {
+  if (v === null || v === undefined || v === '') return fallback
+  const n = Number(v)
+  return Number.isFinite(n) ? Math.trunc(n) : fallback
 }
 
 /** "h=8, w=16; b=2" -> "h=8, w=16, b=2" (only valid name=int kwargs). */

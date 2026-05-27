@@ -1,0 +1,157 @@
+// End-to-end smoke for tags + copy/paste/duplicate.
+//
+// Validates that:
+//   1. Setting a tag updates node.label and the rete node element re-renders.
+//   2. Tag persists through export/import (and autosave/restore).
+//   3. Copy/Paste creates new nodes with fresh ids + offset positions, and
+//      preserves tags + ctor values + intra-selection connections.
+//   4. Duplicate (Cmd+D) is copy+paste in one step.
+//   5. Two ConvBlocks sharing a tag emit ONE __init__ slot in codegen.
+import puppeteer from 'puppeteer'
+
+const URL = process.env.URL || 'http://127.0.0.1:5173/'
+const browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox'] })
+const page = await browser.newPage()
+page.setDefaultTimeout(15000)
+
+const consoleErrors = []
+page.on('pageerror', (e) => consoleErrors.push(`pageerror: ${e.message}`))
+page.on('console', (m) => {
+  if (m.type() === 'error') {
+    const t = m.text()
+    if (t.includes('favicon')) return
+    consoleErrors.push(`console.error: ${t}`)
+  }
+})
+
+let pass = 0,
+  fail = 0
+const check = (name, cond, info) => {
+  if (cond) {
+    pass++
+    console.log(`  ok  ${name}`)
+  } else {
+    fail++
+    console.log(`  FAIL ${name}`, info ?? '')
+  }
+}
+
+try {
+  await page.goto(URL, { waitUntil: 'networkidle0' })
+  await page.waitForFunction(() => !!window.__blocks)
+  await page.evaluate(() => {
+    localStorage.removeItem(window.__blocks.AUTOSAVE_KEY)
+    localStorage.removeItem(window.__blocks.CLIPBOARD_KEY)
+  })
+  await page.reload({ waitUntil: 'networkidle0' })
+  await page.waitForFunction(() => !!window.__blocks)
+
+  // --- 1) Tags update labels live -----------------------------------------
+  const tagInfo = await page.evaluate(async () => {
+    await window.__blocks.clearGraph()
+    const a = await window.__blocks.createNode('ConvBlock')
+    window.__blocks.applyNodeTag(a, 'encoder')
+    window.__blocks.area.update('node', a.id)
+    return { id: a.id, label: a.label, tag: a.tag }
+  })
+  check('node.label includes the tag', tagInfo.label === 'ConvBlock · encoder', tagInfo)
+  check('node.tag persists in the node object', tagInfo.tag === 'encoder')
+
+  // --- 2) Tag round-trips through export/import ---------------------------
+  const exportInfo = await page.evaluate(() => {
+    const data = window.__blocks.getGraphData()
+    return data.nodes.map((n) => ({ name: n.name, tag: n.tag }))
+  })
+  check(
+    'getGraphData() includes tag field',
+    exportInfo[0].tag === 'encoder',
+    exportInfo
+  )
+
+  // --- 3) Copy/paste duplicates the node ---------------------------------
+  const copyPasteInfo = await page.evaluate(async () => {
+    // Force selection of the only node (rete's selector).
+    const [n] = window.__blocks.editor.getNodes()
+    window.__blocks.state.selectedNodeId = n.id
+    window.__blocks.copySelection()
+    await window.__blocks.pasteClipboard()
+    const all = window.__blocks.editor.getNodes()
+    return {
+      total: all.length,
+      tags: all.map((n) => n.tag),
+      labels: all.map((n) => n.label),
+      values: all.map((n) => ({ ...n.values })),
+    }
+  })
+  check('paste created a second node', copyPasteInfo.total === 2, copyPasteInfo)
+  check('pasted copy carries the tag forward', copyPasteInfo.tags.every((t) => t === 'encoder'), copyPasteInfo.tags)
+  check(
+    'pasted copy carries the same ctor values',
+    JSON.stringify(copyPasteInfo.values[0]) === JSON.stringify(copyPasteInfo.values[1]),
+    copyPasteInfo.values
+  )
+
+  // --- 4) Duplicate keyboard shortcut path -------------------------------
+  const dupInfo = await page.evaluate(async () => {
+    const before = window.__blocks.editor.getNodes().length
+    window.__blocks.state.selectedNodeId = window.__blocks.editor.getNodes()[0].id
+    await window.__blocks.duplicateSelection()
+    return { before, after: window.__blocks.editor.getNodes().length }
+  })
+  check('duplicate adds one more node', dupInfo.after === dupInfo.before + 1, dupInfo)
+
+  // --- 5) Shared-tag codegen collapses to one __init__ slot --------------
+  const sharedCode = await page.evaluate(async () => {
+    await window.__blocks.clearGraph()
+    const a = await window.__blocks.createNode('ConvBlock')
+    const b = await window.__blocks.createNode('ConvBlock')
+    a.values.in_ch = 3
+    a.values.out_ch = 16
+    b.values.in_ch = 3
+    b.values.out_ch = 16
+    window.__blocks.applyNodeTag(a, 'shared')
+    window.__blocks.applyNodeTag(b, 'shared')
+    window.__blocks.area.update('node', a.id)
+    window.__blocks.area.update('node', b.id)
+    return window.__blocks.runCodegen()
+  })
+  const initSlots = (sharedCode.match(/self\.shared = ConvBlock\(/g) || []).length
+  const callSites = (sharedCode.match(/self\.shared\(/g) || []).length
+  check('one __init__ slot for shared-tag twins (UI codegen)', initSlots === 1, initSlots)
+  check('two forward call sites to self.shared (UI codegen)', callSites === 2, callSites)
+
+  // --- 6) Tag survives autosave reload -----------------------------------
+  await page.evaluate(() => window.__blocks.saveToStorage())
+  await page.reload({ waitUntil: 'networkidle0' })
+  await page.waitForFunction(
+    () =>
+      window.__blocks &&
+      window.__blocks.editor.getNodes().length === 2 &&
+      window.__blocks.editor.getNodes().every((n) => n.tag === 'shared')
+  )
+  const afterReload = await page.evaluate(() =>
+    window.__blocks.editor.getNodes().map((n) => ({ tag: n.tag, label: n.label }))
+  )
+  check(
+    'tags survive autosave/restore',
+    afterReload.length === 2 && afterReload.every((n) => n.tag === 'shared'),
+    afterReload
+  )
+  check(
+    'labels are re-rendered with tag after restore',
+    afterReload.every((n) => /·\s*shared/.test(n.label)),
+    afterReload
+  )
+} catch (e) {
+  console.error('TEST FAILED:', e.stack)
+  fail++
+} finally {
+  await browser.close()
+}
+
+console.log(`\n${pass} pass, ${fail} fail`)
+if (consoleErrors.length) {
+  console.error('--- runtime console errors ---')
+  consoleErrors.forEach((e) => console.error(e))
+}
+process.exit(fail === 0 && consoleErrors.length === 0 ? 0 : 1)

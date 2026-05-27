@@ -206,13 +206,35 @@
       {
         "shape": [
           "B",
-          "T",
+          "Tq",
           "D"
         ],
         "dtype": "float",
         "optional": false,
         "variadic": false,
-        "name": "x"
+        "name": "query"
+      },
+      {
+        "shape": [
+          "B",
+          "Tk",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": true,
+        "variadic": false,
+        "name": "key"
+      },
+      {
+        "shape": [
+          "B",
+          "Tk",
+          "D"
+        ],
+        "dtype": "float",
+        "optional": true,
+        "variadic": false,
+        "name": "value"
       },
       {
         "shape": [
@@ -228,7 +250,7 @@
       {
         "shape": [
           "B",
-          "T",
+          "Tq",
           "D"
         ],
         "dtype": "float",

@@ -20,6 +20,10 @@ export class BlockNode extends ClassicPreset.Node {
   constructor(entry) {
     super(entry.name)
     this.entry = entry
+    // Free-form user annotation. Doubles as a *weight-sharing identity* for
+    // module-kind nodes: two ConvBlocks tagged "down1" emit one self.down1 in
+    // codegen and call it from each forward-pass site.
+    this.tag = ''
     this.values = Object.fromEntries(
       entry.ctor.map((p) => [p.name, p.default])
     )
@@ -81,6 +85,23 @@ export class BlockNode extends ClassicPreset.Node {
 function labelFor(port) {
   const tag = port.variadic ? '[*]' : port.optional ? '?' : ''
   return `${port.name}${tag}`
+}
+
+/** Display title for a node: "<BlockName>" or "<BlockName> · <tag>". */
+export function computeNodeLabel(node) {
+  const base = node.entry.name
+  const t = String(node.tag ?? '').trim()
+  return t ? `${base} · ${t}` : base
+}
+
+/**
+ * Update `node.tag` and refresh its displayed label in place. The rete area
+ * still has to be told to re-render the node afterwards (`area.update('node',
+ * id)`); the caller does that to keep this module free of area concerns.
+ */
+export function applyNodeTag(node, newTag) {
+  node.tag = String(newTag ?? '')
+  node.label = computeNodeLabel(node)
 }
 
 // ---------------------------------------------------------------------------
@@ -159,7 +180,7 @@ export class InputNode extends BlockNode {
  */
 export const REARRANGE_ENTRY = {
   name: 'Rearrange',
-  module: '__builtin__',
+  module: '__utility__',
   framework: 'any',
   kind: 'rearrange',
   ctor: [
@@ -191,7 +212,7 @@ export const REARRANGE_ENTRY = {
  */
 export const RESHAPE_ENTRY = {
   name: 'Reshape',
-  module: '__builtin__',
+  module: '__utility__',
   framework: 'any',
   kind: 'reshape',
   ctor: [
@@ -204,6 +225,58 @@ export const RESHAPE_ENTRY = {
   ],
   inputs: [
     { name: 'x', shape: ['...'], dtype: 'float', optional: false, variadic: false },
+  ],
+  outputs: [
+    { name: 'out', shape: ['...'], dtype: 'float', optional: false, variadic: false },
+  ],
+  bindings: {},
+}
+
+/**
+ * Concatenate variadic inputs along `dim` (PyTorch dim / JAX axis).
+ * Wire two or more tensors into the `xs[*]` port.
+ */
+export const CONCAT_ENTRY = {
+  name: 'Concat',
+  module: '__utility__',
+  framework: 'any',
+  kind: 'concat',
+  ctor: [
+    {
+      name: 'dim',
+      type: 'int',
+      default: 1,
+      required: false,
+    },
+  ],
+  inputs: [
+    { name: 'xs', shape: ['...'], dtype: 'float', optional: false, variadic: true },
+  ],
+  outputs: [
+    { name: 'out', shape: ['...'], dtype: 'float', optional: false, variadic: false },
+  ],
+  bindings: {},
+}
+
+/**
+ * Stack variadic inputs along a new axis at `dim`.
+ * All inputs must match shape; output rank is input rank + 1.
+ */
+export const STACK_ENTRY = {
+  name: 'Stack',
+  module: '__utility__',
+  framework: 'any',
+  kind: 'stack',
+  ctor: [
+    {
+      name: 'dim',
+      type: 'int',
+      default: 0,
+      required: false,
+    },
+  ],
+  inputs: [
+    { name: 'xs', shape: ['...'], dtype: 'float', optional: false, variadic: true },
   ],
   outputs: [
     { name: 'out', shape: ['...'], dtype: 'float', optional: false, variadic: false },
@@ -334,21 +407,28 @@ export function makeNode(entry) {
   return new BlockNode(entry)
 }
 
+/** Palette section for a manifest entry. */
+export function paletteGroup(entry) {
+  if (entry.module === '__builtin__') return 'built-in'
+  if (entry.module === '__utility__') return 'utility'
+  return entry.module.split('.').slice(-1)[0]
+}
+
 /** Group manifest entries by their submodule for the palette UI. */
 export function groupByModule(entries) {
   const groups = new Map()
   for (const e of entries) {
-    const tail =
-      e.module === '__builtin__' ? 'built-in' : e.module.split('.').slice(-1)[0]
+    const tail = paletteGroup(e)
     if (!groups.has(tail)) groups.set(tail, [])
     groups.get(tail).push(e)
   }
   for (const list of groups.values())
     list.sort((a, b) => a.name.localeCompare(b.name))
-  // Keep "built-in" pinned at the top of the palette.
+  const order = { 'built-in': 0, utility: 1 }
   return [...groups.entries()].sort(([a], [b]) => {
-    if (a === 'built-in') return -1
-    if (b === 'built-in') return 1
+    const oa = order[a] ?? 99
+    const ob = order[b] ?? 99
+    if (oa !== ob) return oa - ob
     return a.localeCompare(b)
   })
 }

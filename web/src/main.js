@@ -9,7 +9,15 @@ import { AreaPlugin, AreaExtensions } from 'rete-area-plugin'
 import { ConnectionPlugin, Presets as ConnectionPresets } from 'rete-connection-plugin'
 import { LitPlugin, Presets as LitPresets } from '@retejs/lit-plugin'
 
-import { makeNode, INPUT_ENTRY, REARRANGE_ENTRY, RESHAPE_ENTRY } from './nodes.js'
+import {
+  makeNode,
+  INPUT_ENTRY,
+  REARRANGE_ENTRY,
+  RESHAPE_ENTRY,
+  CONCAT_ENTRY,
+  STACK_ENTRY,
+  applyNodeTag,
+} from './nodes.js'
 import { validate, dryRunEdge } from './validator.js'
 import { generate as generateCode } from './codegen.js'
 import { isFullyConcrete, runShapeCheck } from './runtime.js'
@@ -38,6 +46,7 @@ const state = {
   runtimeError: null,
   runtimeErrorNodeId: null,
   restoring: false, // true while restoreFromAutosave is mutating the editor
+  clipboard: null, // in-memory copy of last copy/duplicate (mirrors localStorage)
 }
 
 // --- autosave (localStorage, single slot, debounced) ---
@@ -77,6 +86,129 @@ function loadFromStorage() {
   } catch {
     return null
   }
+}
+
+// --- clipboard (copy / paste / duplicate selected nodes) ---
+const CLIPBOARD_KEY = 'blocks-builder:clipboard:v1'
+const PASTE_OFFSET_PX = 24
+
+function selectedNodeIds() {
+  const ids = new Set()
+  for (const n of editor.getNodes()) {
+    if (selector?.isSelected({ label: 'node', id: n.id })) ids.add(n.id)
+  }
+  if (ids.size === 0 && state.selectedNodeId) ids.add(state.selectedNodeId)
+  return ids
+}
+
+function nodePosition(n) {
+  const view = area?.nodeViews?.get(n.id)
+  const p = view?.position
+  if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return undefined
+  return { x: p.x, y: p.y }
+}
+
+/** Snapshot selection (or focused node) into in-memory + localStorage. */
+function copySelection() {
+  const ids = selectedNodeIds()
+  if (ids.size === 0) return false
+  const payload = {
+    version: 1,
+    framework: state.framework,
+    nodes: [],
+    connections: [],
+  }
+  for (const n of editor.getNodes()) {
+    if (!ids.has(n.id)) continue
+    payload.nodes.push({
+      id: n.id,
+      name: n.entry.name,
+      tag: n.tag ?? '',
+      values: { ...n.values },
+      position: nodePosition(n),
+    })
+  }
+  for (const c of editor.getConnections()) {
+    if (ids.has(c.source) && ids.has(c.target)) {
+      payload.connections.push({
+        source: c.source,
+        sourceOutput: c.sourceOutput,
+        target: c.target,
+        targetInput: c.targetInput,
+      })
+    }
+  }
+  state.clipboard = payload
+  try {
+    localStorage.setItem(CLIPBOARD_KEY, JSON.stringify(payload))
+  } catch {
+    // localStorage not available - in-memory clipboard still works for this tab.
+  }
+  return true
+}
+
+function readClipboard() {
+  if (state.clipboard) return state.clipboard
+  try {
+    const raw = localStorage.getItem(CLIPBOARD_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (parsed?.version !== 1) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+/** Paste with +offset and re-mapped IDs; only restore intra-selection edges. */
+async function pasteClipboard() {
+  const payload = readClipboard()
+  if (!payload || !Array.isArray(payload.nodes) || payload.nodes.length === 0) return
+  if (payload.framework && payload.framework !== state.framework) {
+    flashDiagnostic(`Clipboard is from ${payload.framework}; switch framework to paste.`)
+    return
+  }
+  // Deselect the existing selection so the newly-pasted copies are what gets
+  // selected after the paste (the area-pipe nodepicked fires per createNode).
+  if (selector) {
+    for (const n of editor.getNodes()) selector.remove({ label: 'node', id: n.id })
+  }
+  const idMap = new Map()
+  for (const spec of payload.nodes) {
+    const pos = spec.position
+      ? { x: spec.position.x + PASTE_OFFSET_PX, y: spec.position.y + PASTE_OFFSET_PX }
+      : undefined
+    const node = await createNode(spec.name, pos)
+    if (!node) continue
+    if (spec.values) Object.assign(node.values, spec.values)
+    if (typeof spec.tag === 'string' && spec.tag) {
+      applyNodeTag(node, spec.tag)
+      area.update('node', node.id)
+    }
+    idMap.set(spec.id, node.id)
+  }
+  for (const c of payload.connections ?? []) {
+    const source = idMap.get(c.source)
+    const target = idMap.get(c.target)
+    if (!source || !target) continue
+    const srcNode = editor.getNode(source)
+    const tgtNode = editor.getNode(target)
+    if (!srcNode || !tgtNode) continue
+    try {
+      const conn = new ClassicPreset.Connection(srcNode, c.sourceOutput, tgtNode, c.targetInput)
+      await editor.addConnection(conn)
+    } catch {
+      // dryRunEdge in the connection pipe may reject if the paste lands in a
+      // place that creates a shape conflict; silent skip is fine here.
+    }
+  }
+  refreshInspector()
+  queueValidation()
+  queueAutosave()
+}
+
+async function duplicateSelection() {
+  if (copySelection()) await pasteClipboard()
 }
 
 async function restoreFromAutosave() {
@@ -223,6 +355,7 @@ async function bootstrap() {
   document.getElementById('export-btn').addEventListener('click', exportGraph)
   document.getElementById('codegen-btn').addEventListener('click', runCodegen)
   document.getElementById('focus-input-btn').addEventListener('click', () => focusInputNode())
+  document.getElementById('duplicate-btn').addEventListener('click', () => duplicateSelection())
   document.getElementById('delete-btn').addEventListener('click', () => deleteSelected())
   document.getElementById('run-shapes-btn').addEventListener('click', () => runRuntimeShapeCheck())
   document.getElementById('batch-size').addEventListener('input', (e) => {
@@ -234,13 +367,32 @@ async function bootstrap() {
     queueAutosave()
   })
   document.addEventListener('keydown', (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+    const mod = e.ctrlKey || e.metaKey
+    const key = e.key.toLowerCase()
+    if (mod && key === 'k') {
       e.preventDefault()
       document.getElementById('search').focus()
       return
     }
+    // Skip clipboard/delete handlers while the user is typing in any control
+    // so native copy/paste/text editing in inputs still works.
+    if (isEditingText(document.activeElement)) return
+
+    if (mod && key === 'c') {
+      if (copySelection()) e.preventDefault()
+      return
+    }
+    if (mod && key === 'v') {
+      e.preventDefault()
+      pasteClipboard()
+      return
+    }
+    if (mod && key === 'd') {
+      e.preventDefault()
+      duplicateSelection()
+      return
+    }
     if (e.key === 'Delete' || e.key === 'Backspace') {
-      if (isEditingText(document.activeElement)) return
       e.preventDefault()
       deleteSelected()
     }
@@ -268,7 +420,7 @@ async function loadManifest() {
   const res = await fetch(url)
   const fetched = await res.json()
   // Prepend the built-in Input node so it's always available regardless of framework.
-  state.entries = [INPUT_ENTRY, REARRANGE_ENTRY, RESHAPE_ENTRY, ...fetched]
+  state.entries = [INPUT_ENTRY, REARRANGE_ENTRY, RESHAPE_ENTRY, CONCAT_ENTRY, STACK_ENTRY, ...fetched]
   state.byName = new Map(state.entries.map((e) => [e.name, e]))
   renderPalette(document.getElementById('palette'), state.entries, (entry) =>
     createNode(entry.name)
@@ -337,6 +489,10 @@ async function importGraph(data) {
     }
     if (spec?.values && typeof spec.values === 'object') {
       Object.assign(node.values, spec.values)
+    }
+    if (typeof spec?.tag === 'string' && spec.tag) {
+      applyNodeTag(node, spec.tag)
+      area.update('node', node.id)
     }
     idMap.set(spec.id, node.id)
   }
@@ -503,7 +659,16 @@ function refreshInspector() {
       queueAutosave()
     },
     state.runtimeShapes,
-    state.blockInfo
+    state.blockInfo,
+    (n, newTag) => {
+      applyNodeTag(n, newTag)
+      area.update('node', n.id)
+      state.runtimeShapes = null
+      state.runtimeError = null
+      state.runtimeErrorNodeId = null
+      queueValidation()
+      queueAutosave()
+    }
   )
 }
 
@@ -558,6 +723,7 @@ function getGraphData() {
     nodes: editor.getNodes().map((n) => ({
       id: n.id,
       name: n.entry.name,
+      tag: n.tag ?? '',
       values: n.values,
       position: (() => {
         const view = area?.nodeViews?.get(n.id)
@@ -607,7 +773,12 @@ if (typeof window !== 'undefined') {
     loadFromStorage,
     restoreFromAutosave,
     queueAutosave,
+    copySelection,
+    pasteClipboard,
+    duplicateSelection,
+    applyNodeTag,
     AUTOSAVE_KEY,
+    CLIPBOARD_KEY,
     runCodegen: () =>
       generateCode(editor.getNodes(), editor.getConnections(), state.framework),
     addConnection: async (source, sourceOutput, target, targetInput) => {
