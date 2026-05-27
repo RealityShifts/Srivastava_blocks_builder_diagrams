@@ -63,6 +63,27 @@ python tools/shape_runner.py   # http://127.0.0.1:8765/run
 
 Then in the UI sidebar **Runtime shapes → Run shape check** once every axis is numeric.
 
+## Generate Mermaid For All Blocks
+
+Create one Mermaid markdown file per block (PyTorch + Flax) from the generated
+manifests:
+
+```bash
+# from repo root
+python tools/generate_mermaid_blocks.py
+```
+
+Outputs are written to:
+
+```text
+diagrams/
+  pytorch/<module_tail>/<Block>.md
+  flax/<module_tail>/<Block>.md
+```
+
+This gives a local equivalent of the diagrams workflow in
+[RealityShifts/Srivastava-book-of-Blocks-diagrams](https://github.com/RealityShifts/Srivastava-book-of-Blocks-diagrams.git).
+
 ## File map
 
 ```
