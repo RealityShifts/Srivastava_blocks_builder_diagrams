@@ -37,6 +37,68 @@ const state = {
   runtimeRunning: false,
   runtimeError: null,
   runtimeErrorNodeId: null,
+  restoring: false, // true while restoreFromAutosave is mutating the editor
+}
+
+// --- autosave (localStorage, single slot, debounced) ---
+const AUTOSAVE_KEY = 'blocks-builder:autosave:v1'
+const AUTOSAVE_VERSION = 1
+const AUTOSAVE_DEBOUNCE_MS = 800
+
+let autosaveTimer = null
+function queueAutosave() {
+  if (state.restoring) return
+  clearTimeout(autosaveTimer)
+  autosaveTimer = setTimeout(saveToStorage, AUTOSAVE_DEBOUNCE_MS)
+}
+
+function saveToStorage() {
+  try {
+    const payload = {
+      version: AUTOSAVE_VERSION,
+      savedAt: Date.now(),
+      batchSize: state.batchSize,
+      graph: getGraphData(),
+    }
+    localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(payload))
+  } catch {
+    // Storage may be unavailable (private mode, quota, disabled cookies).
+    // Better to silently skip than crash the editor.
+  }
+}
+
+function loadFromStorage() {
+  try {
+    const raw = localStorage.getItem(AUTOSAVE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (parsed?.version !== AUTOSAVE_VERSION) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+async function restoreFromAutosave() {
+  const payload = loadFromStorage()
+  if (!payload?.graph) return
+  if (!Array.isArray(payload.graph.nodes) || payload.graph.nodes.length === 0) return
+  state.restoring = true
+  try {
+    const stats = await importGraph(payload.graph)
+    if (Number.isFinite(payload.batchSize)) {
+      state.batchSize = Math.max(1, Math.trunc(payload.batchSize))
+    }
+    const note =
+      stats.dropped > 0
+        ? `Restored ${stats.nodes} node(s) from autosave (dropped ${stats.dropped})`
+        : `Restored ${stats.nodes} node(s) from autosave`
+    flashDiagnostic(note)
+  } catch (err) {
+    flashDiagnostic(`Autosave restore failed: ${err.message || String(err)}`)
+  } finally {
+    state.restoring = false
+  }
 }
 
 let editor, area, connection, render, selector
@@ -90,15 +152,20 @@ async function bootstrap() {
     'noderemoved',
   ])
   editor.addPipe((context) => {
-    if (structuralSignals.has(context.type)) queueValidation()
+    if (structuralSignals.has(context.type)) {
+      queueValidation()
+      queueAutosave()
+    }
     return context
   })
 
-  // Track selection for the inspector.
+  // Track selection for the inspector; also save after a node drag finishes.
   area.addPipe((context) => {
     if (context.type === 'nodepicked') {
       state.selectedNodeId = context.data.id
       refreshInspector()
+    } else if (context.type === 'nodetranslated') {
+      queueAutosave()
     }
     return context
   })
@@ -164,6 +231,7 @@ async function bootstrap() {
     state.runtimeError = null
     state.runtimeErrorNodeId = null
     queueValidation()
+    queueAutosave()
   })
   document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
@@ -179,6 +247,7 @@ async function bootstrap() {
   })
 
   await Promise.all([loadManifest(), loadBlockInfo()])
+  await restoreFromAutosave()
   queueValidation()
 }
 
@@ -431,6 +500,7 @@ function refreshInspector() {
       state.runtimeError = null
       state.runtimeErrorNodeId = null
       queueValidation()
+      queueAutosave()
     },
     state.runtimeShapes,
     state.blockInfo
@@ -533,6 +603,11 @@ if (typeof window !== 'undefined') {
     runRuntimeShapeCheck,
     getGraphData,
     importGraph,
+    saveToStorage,
+    loadFromStorage,
+    restoreFromAutosave,
+    queueAutosave,
+    AUTOSAVE_KEY,
     runCodegen: () =>
       generateCode(editor.getNodes(), editor.getConnections(), state.framework),
     addConnection: async (source, sourceOutput, target, targetInput) => {

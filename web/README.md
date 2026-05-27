@@ -50,9 +50,11 @@ npm run dev    # http://127.0.0.1:5173/
 ## Tests
 
 ```bash
-npm run test:logic   # pure-JS shape parser + unifier + codegen
-npm run test:e2e     # headless puppeteer; expects `npm run dev` running
-npm run test:runtime # traced codegen + HTTP runner; start runner first
+npm run test:logic     # pure-JS shape parser + unifier + codegen
+npm run test:e2e       # headless puppeteer; expects `npm run dev` running
+npm run test:runtime   # traced codegen + HTTP runner; start runner first
+npm run test:info-tab  # info tab + Mermaid render + collapsibles
+npm run test:autosave  # localStorage autosave + restore-on-reload
 ```
 
 Run the Python shape runner (PyTorch only, separate terminal)::
@@ -62,6 +64,18 @@ python tools/shape_runner.py   # http://127.0.0.1:8765/run
 ```
 
 Then in the UI sidebar **Runtime shapes → Run shape check** once every axis is numeric.
+
+## Autosave
+
+The current graph is saved to `localStorage` under `blocks-builder:autosave:v1`
+on every structural change (node add/remove, connection add/remove), every
+constructor value edit, every node drag, and every batch-size tweak. Saves are
+debounced to 800 ms so rapid typing collapses to a single write. On boot, the
+editor restores the slot automatically and flashes a brief
+"Restored N node(s) from autosave" notice in the diagnostic strip. No UI pill,
+no Save/Load buttons — just don't lose work to a misclick or refresh. To wipe
+the slot, open DevTools and run
+`localStorage.removeItem('blocks-builder:autosave:v1')`.
 
 ## Per-block Info tab (description + reference Mermaid)
 
