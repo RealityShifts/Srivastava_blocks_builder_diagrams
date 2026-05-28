@@ -104,7 +104,7 @@ def run_payload(payload: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(f"traced forward must return dict, got {type(out).__name__}")
 
     shapes = {str(k): [int(d) for d in v] for k, v in out.items()}
-    num_params = sum(p.numel() for p in model.parameters())
+    num_params = sum(p.numel() for p in model.parameters())  #cooment this if want to stop parameter calculation and save some compute
     return {"ok": True, "shapes": shapes, "num_params": int(num_params)}
 
 
