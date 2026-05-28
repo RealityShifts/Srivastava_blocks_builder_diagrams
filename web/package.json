@@ -18,7 +18,8 @@
     "test:group-copy-cycle": "node test-group-copy-cycle.mjs",
     "test:history-paste-select": "node test-history-paste-select.mjs",
     "test:group-name-sync": "node test-group-name-sync.mjs",
-    "test:group-optional-ports": "node test-group-optional-ports.mjs"
+    "test:group-optional-ports": "node test-group-optional-ports.mjs",
+    "test:inspector-reactivity": "node test-inspector-reactivity.mjs"
   },
   "dependencies": {
     "@retejs/lit-plugin": "^2.0.5",

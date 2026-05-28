@@ -492,6 +492,17 @@ export function renderInspector(
   if (node.id === _currentNodeId && !options.forceRebuild) {
     const paramsPanel = rootEl.querySelector('.tab-panel[data-tab="params"]')
     if (paramsPanel) {
+      // Reconcile each control's displayed value with node.values, which may
+      // have changed programmatically while this node stayed selected (paste/
+      // duplicate, implicit ctor back-fill like inferred in_ch, tag-sync
+      // adopting peer values). Skip the control the user is actively editing so
+      // an in-progress edit and caret position are preserved.
+      for (const param of node.entry.ctor ?? []) {
+        const ctrl = paramsPanel.querySelector(`[id="ctrl-${node.id}-${param.name}"]`)
+        if (!ctrl || ctrl === document.activeElement) continue
+        const next = String(controlDisplayValue(param, node.values[param.name]))
+        if (String(ctrl.value) !== next) ctrl.value = next
+      }
       const oldPorts = paramsPanel.querySelector('.ports')
       const fresh = buildPortsSection(node, sub, runtimeShapes)
       if (oldPorts) oldPorts.replaceWith(fresh)
@@ -618,6 +629,20 @@ function portList(title, list, node, sub, side, runtimeShapes) {
   return wrap
 }
 
+/**
+ * The string a control displays for a given param value — mirrors how
+ * makeControl initializes each control. Used both at build time and when
+ * reconciling an already-rendered control with a programmatically-changed value.
+ */
+function controlDisplayValue(param, value) {
+  if (Array.isArray(param.choices) && param.choices.length > 0) {
+    return String(value ?? param.choices[0])
+  }
+  if (param.type === 'bool') return String(Boolean(value))
+  if (param.type === 'list') return Array.isArray(value) ? value.join(',') : (value ?? '')
+  return value ?? '' // int / float / string / any
+}
+
 function makeControl(param, value, onChange) {
   const type = param.type
   if (Array.isArray(param.choices) && param.choices.length > 0) {
@@ -628,7 +653,7 @@ function makeControl(param, value, onChange) {
       opt.textContent = c
       el.appendChild(opt)
     }
-    el.value = value ?? param.choices[0]
+    el.value = controlDisplayValue(param, value)
     el.addEventListener('change', () => onChange(el.value))
     return el
   }
@@ -640,7 +665,7 @@ function makeControl(param, value, onChange) {
       opt.textContent = o
       el.appendChild(opt)
     }
-    el.value = String(Boolean(value))
+    el.value = controlDisplayValue(param, value)
     el.addEventListener('change', () => onChange(el.value === 'true'))
     return el
   }
@@ -648,7 +673,7 @@ function makeControl(param, value, onChange) {
     const el = document.createElement('input')
     el.type = 'number'
     if (type === 'int') el.step = '1'
-    el.value = value ?? ''
+    el.value = controlDisplayValue(param, value)
     el.addEventListener('input', () => {
       const n = Number(el.value)
       if (el.value === '') onChange(null)
@@ -659,7 +684,7 @@ function makeControl(param, value, onChange) {
   if (type === 'list') {
     const el = document.createElement('input')
     el.type = 'text'
-    el.value = Array.isArray(value) ? value.join(',') : (value ?? '')
+    el.value = controlDisplayValue(param, value)
     el.addEventListener('input', () => {
       const parts = el.value
         .split(',')
@@ -676,7 +701,7 @@ function makeControl(param, value, onChange) {
   // string / any
   const el = document.createElement('input')
   el.type = 'text'
-  el.value = value ?? ''
+  el.value = controlDisplayValue(param, value)
   el.addEventListener('input', () => onChange(el.value === '' ? null : el.value))
   return el
 }
