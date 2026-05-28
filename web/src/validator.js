@@ -271,6 +271,9 @@ function collectFacadeOwnership(nodes) {
     for (const m of n.entry.portMap?.inputs || []) {
       inputs.add(`${m.childNodeId}/${m.childPort}`)
     }
+    for (const m of n.entry.portMap?.params || []) {
+      inputs.add(`${m.childNodeId}/${m.childPort}`)
+    }
     for (const m of n.entry.portMap?.outputs || []) {
       outputs.add(`${m.childNodeId}/${m.childPort}`)
     }

@@ -553,6 +553,16 @@ export class GroupNode extends BlockNode {
     for (const m of entry.portMap?.outputs || []) {
       this._facadeShapes.out.set(m.facadePort, m.shape)
     }
+    // Expose __param__ ports for any external constant wiring that crosses
+    // the group boundary. Constants stay outside; the facade proxies them.
+    for (const m of entry.portMap?.params ?? []) {
+      this._paramSpecs.set(m.paramName, {
+        name: m.paramName,
+        type: m.paramType ?? 'int',
+        required: true,
+      })
+      this.exposeParam(m.paramName)
+    }
   }
 
   freshenedShape(portName, side) {
@@ -607,6 +617,13 @@ export function makeGroupEntry(groupId, name, boundary) {
         childNodeId: b.childNodeId,
         childPort: b.childPort,
         shape: b.shape,
+      })),
+      params: (boundary.params || []).map((b) => ({
+        facadePort: `__param__${b.paramName}`,
+        childNodeId: b.childNodeId,
+        childPort: b.childPort,
+        paramName: b.paramName,
+        paramType: b.paramType ?? 'int',
       })),
     },
   }

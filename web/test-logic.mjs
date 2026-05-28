@@ -805,6 +805,146 @@ console.log('codegen (explicit Output node)')
   )
 }
 
+console.log('codegen (group facade param port from external constant)')
+{
+  const inputEntry = {
+    name: 'Input', module: '__builtin__', framework: 'any', kind: 'input',
+    ctor: [
+      { name: 'name', type: 'str', default: 'x' },
+      { name: 'shape', type: 'str', default: 'B C H W' },
+      { name: 'dtype', type: 'str', default: 'float' },
+    ],
+    inputs: [],
+    outputs: [{ name: 'out', shape: ['B', 'C', 'H', 'W'], dtype: 'float' }],
+    bindings: {},
+  }
+  const conv = {
+    name: 'ConvBlock', module: 'pytorch_blocks.core_blocks', framework: 'pytorch', kind: 'module',
+    ctor: [
+      { name: 'in_ch', type: 'int', default: null, required: true },
+      { name: 'out_ch', type: 'int', default: null, required: true },
+      { name: 'kernel_size', type: 'int', default: 3, required: false },
+    ],
+    inputs: [{ name: 'x', shape: ['B', 'C_in', 'H', 'W'], dtype: 'float' }],
+    outputs: [{ name: 'out', shape: ['B', 'C_out', 'H', 'W'], dtype: 'float' }],
+    bindings: { C_in: 'in_ch', C_out: 'out_ch' },
+  }
+  const constEntry = {
+    name: 'Constant', module: '__builtin__', framework: 'any', kind: 'const',
+    ctor: [
+      { name: 'value_type', type: 'str', default: 'int' },
+      { name: 'value', type: 'str', default: '1' },
+    ],
+    inputs: [],
+    outputs: [{ name: 'out', shape: [], dtype: 'any' }],
+    bindings: {},
+  }
+  const mk = (id, entry, values = {}, extra = {}) => ({
+    id, entry, tag: '', ...extra,
+    values: { ...Object.fromEntries(entry.ctor.map((p) => [p.name, p.default])), ...values },
+  })
+  const inp = mk('inp', inputEntry, { name: 'x', shape: '1 3 200 200', dtype: 'float' })
+  const c1 = mk('c1', conv, { in_ch: 3, out_ch: 8, kernel_size: 5 }, { groupId: 'g1' })
+  const k = mk('k', constEntry, { value: '5', value_type: 'int' })
+  const facadeEntry = {
+    name: 'Group1', module: '__group__', framework: 'any', kind: 'group', groupId: 'g1',
+    ctor: [],
+    inputs: [{ name: 'in0', shape: ['B', 'C_in', 'H', 'W'], dtype: 'any' }],
+    outputs: [{ name: 'out0', shape: ['B', 'C_out', 'H', 'W'], dtype: 'any' }],
+    portMap: {
+      inputs: [{ facadePort: 'in0', childNodeId: 'c1', childPort: 'x', shape: ['B', 'C_in', 'H', 'W'] }],
+      outputs: [{ facadePort: 'out0', childNodeId: 'c1', childPort: 'out', shape: ['B', 'C_out', 'H', 'W'] }],
+      params: [{
+        facadePort: '__param__kernel_size',
+        childNodeId: 'c1',
+        childPort: '__param__kernel_size',
+        paramName: 'kernel_size',
+        paramType: 'int',
+      }],
+    },
+    bindings: {},
+  }
+  const fac = mk('fac', facadeEntry, {})
+  fac.inputs = {
+    in0: { portSpec: facadeEntry.inputs[0] },
+    __param__kernel_size: {
+      portSpec: { kind: 'param', paramName: 'kernel_size', paramType: 'int', required: true },
+    },
+  }
+  const conns = [
+    { source: 'inp', sourceOutput: 'out', target: 'fac', targetInput: 'in0' },
+    { source: 'k', sourceOutput: 'out', target: 'fac', targetInput: '__param__kernel_size' },
+  ]
+  const code = generate([inp, fac, c1, k], conns, 'pytorch')
+  check('subclass __init__ has kernel_size', /class Group1[\s\S]+?def __init__\(self, kernel_size: int = 5\)/.test(code), code)
+  check('main __init__ has kernel_size from const', /class GeneratedModel[\s\S]+?def __init__\(self, kernel_size: int = 5\)/.test(code), code)
+  check('main passes kernel_size to group', /Group1\(kernel_size=kernel_size\)/.test(code), code)
+  check('subclass passes kernel_size to ConvBlock', /ConvBlock\([^)]*kernel_size=kernel_size/.test(code), code)
+}
+
+console.log('codegen (expanded group: children with stale groupId)')
+{
+  // Regression: when a group is expanded, the facade is gone but children
+  // keep their groupId. Codegen must treat those orphans as top-level
+  // instead of silently dropping them (which would produce an empty model
+  // and break runtime shape check with `x=None  # TODO: dangling required input`).
+  const inputEntry = {
+    name: 'Input', module: '__builtin__', framework: 'any', kind: 'input',
+    ctor: [
+      { name: 'name', type: 'str', default: 'x' },
+      { name: 'shape', type: 'str', default: 'B C H W' },
+      { name: 'dtype', type: 'str', default: 'float' },
+    ],
+    inputs: [],
+    outputs: [{ name: 'out', shape: ['B', 'C', 'H', 'W'], dtype: 'float' }],
+    bindings: {},
+  }
+  const conv = {
+    name: 'ConvBlock', module: 'pytorch_blocks.core_blocks', framework: 'pytorch', kind: 'module',
+    ctor: [
+      { name: 'in_ch', type: 'int', default: null, required: true },
+      { name: 'out_ch', type: 'int', default: null, required: true },
+    ],
+    inputs: [{ name: 'x', shape: ['B', 'C_in', 'H', 'W'], dtype: 'float' }],
+    outputs: [{ name: 'out', shape: ['B', 'C_out', 'H', 'W'], dtype: 'float' }],
+    bindings: { C_in: 'in_ch', C_out: 'out_ch' },
+  }
+  const mk = (id, entry, values = {}, extra = {}) => ({
+    id, entry, tag: '', ...extra,
+    values: { ...Object.fromEntries(entry.ctor.map((p) => [p.name, p.default])), ...values },
+  })
+  const inp = mk('inp', inputEntry, { name: 'x', shape: 'B 3 224 224', dtype: 'float' })
+  // Two children that USED to live in a group "g1" but are now expanded
+  // (no facade present). They MUST still appear in the generated forward().
+  const c1 = mk('c1', conv, { in_ch: 3, out_ch: 16 }, { groupId: 'g1' })
+  const c2 = mk('c2', conv, { in_ch: 16, out_ch: 32 }, { groupId: 'g1' })
+  const conns = [
+    { source: 'inp', sourceOutput: 'out', target: 'c1', targetInput: 'x' },
+    { source: 'c1', sourceOutput: 'out', target: 'c2', targetInput: 'x' },
+  ]
+  const code = generate([inp, c1, c2], conns, 'pytorch')
+  check(
+    'expanded group: both children land in __init__',
+    (code.match(/ConvBlock\(in_ch=/g) || []).length === 2,
+    code
+  )
+  check(
+    'expanded group: forward wires c1 from input x',
+    /self\.\w*conv_block\w*\(x=x\)/.test(code),
+    code
+  )
+  check(
+    'expanded group: forward chains c2 from c1',
+    /self\.\w*conv_block\w*\(x=conv_block_\d+\)/.test(code),
+    code
+  )
+  check(
+    'expanded group: NO dangling required input',
+    !/dangling required input/.test(code),
+    code
+  )
+}
+
 console.log('codegen (test case + trace)')
 {
   const inputEntry = {

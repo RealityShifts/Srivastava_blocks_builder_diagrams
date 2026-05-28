@@ -477,6 +477,12 @@ async function pasteClipboard() {
         shape: m.shape,
         dtype: 'any',
       })),
+      params: (portMap.params || []).map((m) => ({
+        childNodeId: idMap.get(m.childNodeId) ?? m.childNodeId,
+        childPort: m.childPort,
+        paramName: m.paramName,
+        paramType: m.paramType ?? 'int',
+      })),
     }
     const entry = makeGroupEntry(newGid, spec.name, boundary)
     const facade = makeNode(entry)
@@ -704,6 +710,8 @@ async function bootstrap() {
   document.getElementById('delete-btn').addEventListener('click', () => deleteSelected())
   document.getElementById('group-btn').addEventListener('click', () => groupSelected())
   document.getElementById('ungroup-btn').addEventListener('click', () => ungroupFocused())
+  document.getElementById('collapse-all-btn').addEventListener('click', () => collapseAllGroups())
+  document.getElementById('expand-all-btn').addEventListener('click', () => expandAllGroups())
   document.getElementById('run-shapes-btn').addEventListener('click', () => runRuntimeShapeCheck())
   document.getElementById('batch-size').addEventListener('input', (e) => {
     state.batchSize = Math.max(1, Math.trunc(Number(e.target.value) || 2))
@@ -899,6 +907,12 @@ async function importGraph(data) {
         shape: m.shape,
         dtype: 'any',
       })),
+      params: (portMap.params || []).map((m) => ({
+        childNodeId: idMap.get(m.childNodeId) ?? m.childNodeId,
+        childPort: m.childPort,
+        paramName: m.paramName,
+        paramType: m.paramType ?? 'int',
+      })),
     }
     const entry = makeGroupEntry(spec.groupId, spec.name, boundary)
     const facade = makeNode(entry)
@@ -1058,22 +1072,35 @@ function classifyEdges(childIds) {
 /**
  * Given a set of child node ids, compute the facade port layout: one
  * input port per *(childNode, childInput)* pair that has any external
- * edge into it, and one output port per *(childNode, childOutput)* pair
- * that has any external edge out of it. Param-kind inputs are skipped -
- * those are init-time wiring, not part of the runtime subgraph interface.
+ * edge into it, one output port per *(childNode, childOutput)* pair
+ * that has any external edge out of it, and one __param__ port per
+ * external constant wired into a child's exposed ctor param.
  */
 function computeBoundary(childIds, sub) {
   const { inputBoundary, outputBoundary, internal } = classifyEdges(childIds)
   const inputs = []
   const outputs = []
+  const params = []
   const seenIn = new Map() // `${childId}/${childInput}` -> facade index
   const seenOut = new Map()
+  const seenParam = new Map()
 
   for (const c of inputBoundary) {
     const child = editor.getNode(c.target)
     if (!child) continue
     const portSpec = child.inputs?.[c.targetInput]?.portSpec
-    if (portSpec?.kind === 'param') continue // param wiring isn't a tensor edge
+    if (portSpec?.kind === 'param') {
+      const key = `${c.target}/${c.targetInput}`
+      if (seenParam.has(key)) continue
+      seenParam.set(key, params.length)
+      params.push({
+        childNodeId: c.target,
+        childPort: c.targetInput,
+        paramName: portSpec.paramName,
+        paramType: portSpec.paramType ?? 'int',
+      })
+      continue
+    }
     const key = `${c.target}/${c.targetInput}`
     if (seenIn.has(key)) continue
     seenIn.set(key, inputs.length)
@@ -1101,7 +1128,7 @@ function computeBoundary(childIds, sub) {
       dtype: portSpec?.dtype ?? 'any',
     })
   }
-  return { inputs, outputs, internal, inputBoundary, outputBoundary, seenIn, seenOut }
+  return { inputs, outputs, params, internal, inputBoundary, outputBoundary, seenIn, seenOut, seenParam }
 }
 
 function centroid(nodes) {
@@ -1173,11 +1200,17 @@ async function rerouteBoundaryEdges(group, direction /* 'to-facade' | 'to-childr
   for (const m of portMap.inputs) {
     inputByChild.set(`${m.childNodeId}/${m.childPort}`, m.facadePort)
   }
+  for (const m of portMap.params ?? []) {
+    inputByChild.set(`${m.childNodeId}/${m.childPort}`, m.facadePort)
+  }
   const outputByChild = new Map()
   for (const m of portMap.outputs) {
     outputByChild.set(`${m.childNodeId}/${m.childPort}`, m.facadePort)
   }
-  const inputByFacade = new Map(portMap.inputs.map((m) => [m.facadePort, m]))
+  const inputByFacade = new Map([
+    ...portMap.inputs.map((m) => [m.facadePort, m]),
+    ...(portMap.params ?? []).map((m) => [m.facadePort, m]),
+  ])
   const outputByFacade = new Map(portMap.outputs.map((m) => [m.facadePort, m]))
 
   for (const c of [...editor.getConnections()]) {
@@ -1253,11 +1286,6 @@ async function groupSelected(explicitIds) {
   const childNodes = [...ids].map((id) => editor.getNode(id)).filter(Boolean)
   for (const n of childNodes) {
     n.groupId = groupId
-    // Stamp a unique random tag onto each previously-untagged child so it has
-    // a stable identity in the tag namespace. Group color overrides tag color
-    // in applyTagStyle, so this doesn't change how the node looks; the tag
-    // shows up in the node label and survives ungroup / export. Pre-existing
-    // tags are left alone so user-set weight-sharing groups stay intact.
     if (!String(n.tag ?? '').trim()) {
       applyNodeTag(n, randomChildTag())
       area.update('node', n.id)
@@ -1409,6 +1437,18 @@ async function collapseGroup(groupId) {
   refreshInspector()
   queueValidation()
   queueAutosave()
+}
+
+/** Collapse every currently-expanded group. No-op for already-collapsed ones. */
+async function collapseAllGroups() {
+  const ids = [...state.groups.keys()].filter((gid) => !state.groups.get(gid)?.collapsed)
+  for (const gid of ids) await collapseGroup(gid)
+}
+
+/** Expand every currently-collapsed group. No-op for already-expanded ones. */
+async function expandAllGroups() {
+  const ids = [...state.groups.keys()].filter((gid) => state.groups.get(gid)?.collapsed)
+  for (const gid of ids) await expandGroup(gid)
 }
 
 /**
@@ -1803,6 +1843,8 @@ if (typeof window !== 'undefined') {
     groupNodes: (ids) => groupSelected(new Set(ids)),
     expandGroup,
     collapseGroup,
+    collapseAllGroups,
+    expandAllGroups,
     ungroup,
     runCodegen: () =>
       generateCode(editor.getNodes(), editor.getConnections(), state.framework),

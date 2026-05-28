@@ -279,13 +279,17 @@ export function generate(nodes, connections, framework, options = {}) {
     classNames.set(gid, groupClassName(facade.entry.name, gid))
   }
 
-  // Top-level view excludes group children entirely and treats facades as
-  // ordinary module-kind nodes (their class is defined below in the same file).
-  const topNodes = nodes.filter((n) => !n.groupId)
+  // A child counts as "grouped" only when its facade is actually present in
+  // the graph. When a group is expanded the facade is gone but children keep
+  // their groupId; treating those orphans as top-level keeps the generated
+  // model intact (otherwise children silently disappear from forward()).
+  const isGroupedAway = (n) => Boolean(n?.groupId && facadesByGid.has(n.groupId))
+  const topNodes = nodes.filter((n) => !isGroupedAway(n))
+  const byIdAll = new Map(nodes.map((n) => [n.id, n]))
   const topConnections = connections.filter((c) => {
-    const src = nodes.find((n) => n.id === c.source)
-    const tgt = nodes.find((n) => n.id === c.target)
-    return !src?.groupId && !tgt?.groupId
+    const src = byIdAll.get(c.source)
+    const tgt = byIdAll.get(c.target)
+    return !isGroupedAway(src) && !isGroupedAway(tgt)
   })
 
   // Imports are emitted once across all classes, then we emit subclass bodies
@@ -565,6 +569,7 @@ function emitClassBody(lines, nodes, connections, framework, className, classNam
   lines.push(`class ${className}(${baseClass}):`)
 
   const { initParams, paramRef } = analyzeConstWiring(nodes, connections, attrName)
+  if (facade) mergeGroupFacadeInitParams(facade, ordered, initParams, paramRef)
 
   const initSigParts = []
   if (framework === 'flax') initSigParts.push('*, rngs: nnx.Rngs')
@@ -594,7 +599,8 @@ function emitClassBody(lines, nodes, connections, framework, className, classNam
     emittedAttrs.add(attr)
     if (n.entry.kind === 'group') {
       const sub = classNames.get(n.entry.groupId) || groupClassName(n.entry.name, n.entry.groupId)
-      const args = framework === 'flax' ? ['rngs=rngs'] : []
+      const args = groupCtorArgs(n, paramRef)
+      if (framework === 'flax') args.push('rngs=rngs')
       lines.push(`        self.${attr} = ${sub}(${args.join(', ')})`)
     } else {
       const args = ctorArgs(n, paramRef)
@@ -883,6 +889,48 @@ function analyzeConstWiring(nodes, connections, attrName) {
   }
 
   return { initParams: [...constInitByNodeId.values()], paramRef }
+}
+
+/** Subclass __init__ params for facade param ports (external constants wire here). */
+function mergeGroupFacadeInitParams(facade, nodes, initParams, paramRef) {
+  const byId = new Map(nodes.map((n) => [n.id, n]))
+  const used = new Set(initParams.map((p) => p.initName))
+  for (const m of facade.entry?.portMap?.params ?? []) {
+    const child = byId.get(m.childNodeId)
+    const paramDef = child?.entry?.ctor?.find((p) => p.name === m.paramName)
+    const initName = sanitizePyIdent(m.paramName, 'param')
+    if (!used.has(initName)) {
+      const raw = child?.values?.[m.paramName] ?? paramDef?.default
+      initParams.push({
+        initName,
+        pyType: pyTypeForParamDef(paramDef, m.paramType),
+        defaultLit:
+          raw === null || raw === undefined || raw === ''
+            ? pyRepr(coerce(0, m.paramType ?? 'int'))
+            : pyRepr(coerce(raw, paramDef?.type ?? m.paramType ?? 'int')),
+      })
+      used.add(initName)
+    }
+    paramRef.set(`${m.childNodeId}::${m.paramName}`, initName)
+  }
+}
+
+function pyTypeForParamDef(paramDef, fallbackType) {
+  const t = paramDef?.type ?? fallbackType ?? 'int'
+  if (t === 'bool') return 'bool'
+  if (t === 'str') return 'str'
+  if (t === 'float') return 'float'
+  return 'int'
+}
+
+/** Pass wired constants through to a group facade's __init__. */
+function groupCtorArgs(facadeNode, paramRef) {
+  const out = []
+  for (const m of facadeNode.entry?.portMap?.params ?? []) {
+    const wired = paramRef.get(`${facadeNode.id}::${m.paramName}`)
+    if (wired) out.push(`${m.paramName}=${wired}`)
+  }
+  return out
 }
 
 function positionalSource(callArgs, portName) {
