@@ -528,19 +528,41 @@ async function pasteClipboard() {
     const newGid = gidMap.get(spec.groupId) ?? freshGroupId()
     if (!gidMap.has(spec.groupId)) gidMap.set(spec.groupId, newGid)
     const portMap = spec.portMap || { inputs: [], outputs: [] }
+    // Derive the proxied port's dtype from the freshly-cloned child (as
+    // computeBoundary does) instead of hardcoding 'any'. Otherwise a pasted
+    // facade's interface (dtype 'any') differs from the original's (e.g.
+    // 'float'), tripping the weight-shared boundary check until the next
+    // structural action re-derives the boundary.
+    const childPortDtype = (childNodeId, childPort, dir) => {
+      const child = editor.getNode(childNodeId)
+      if (!child) return 'any'
+      const live =
+        dir === 'in' ? child.inputs?.[childPort] : child.outputs?.[childPort]
+      if (live?.portSpec?.dtype) return live.portSpec.dtype
+      const decl = (dir === 'in' ? child.entry?.inputs : child.entry?.outputs)?.find(
+        (p) => p.name === childPort
+      )
+      return decl?.dtype ?? 'any'
+    }
     const boundary = {
-      inputs: (portMap.inputs || []).map((m) => ({
-        childNodeId: idMap.get(m.childNodeId) ?? m.childNodeId,
-        childPort: m.childPort,
-        shape: m.shape,
-        dtype: 'any',
-      })),
-      outputs: (portMap.outputs || []).map((m) => ({
-        childNodeId: idMap.get(m.childNodeId) ?? m.childNodeId,
-        childPort: m.childPort,
-        shape: m.shape,
-        dtype: 'any',
-      })),
+      inputs: (portMap.inputs || []).map((m) => {
+        const childNodeId = idMap.get(m.childNodeId) ?? m.childNodeId
+        return {
+          childNodeId,
+          childPort: m.childPort,
+          shape: m.shape,
+          dtype: childPortDtype(childNodeId, m.childPort, 'in'),
+        }
+      }),
+      outputs: (portMap.outputs || []).map((m) => {
+        const childNodeId = idMap.get(m.childNodeId) ?? m.childNodeId
+        return {
+          childNodeId,
+          childPort: m.childPort,
+          shape: m.shape,
+          dtype: childPortDtype(childNodeId, m.childPort, 'out'),
+        }
+      }),
       params: (portMap.params || []).map((m) => ({
         childNodeId: idMap.get(m.childNodeId) ?? m.childNodeId,
         childPort: m.childPort,
@@ -1450,13 +1472,26 @@ function topoOrderedGroupChildren(groupId) {
 function buildSourceToPeerChildMap(sourceGid, peerGid) {
   const map = new Map()
   const usedPeerIds = new Set()
-  const peerByTag = groupChildrenByTag(peerGid)
 
-  for (const src of getGroupChildren(sourceGid)) {
+  // Bucket peer children by tag in topo order, then pair source children
+  // (also in topo order) by shifting from the matching bucket. A group may
+  // legitimately hold several children sharing a tag (e.g. repeated
+  // ConvBlocks); a one-node-per-tag map would collapse them onto a single
+  // peer and leave the rest to the name-based fallback, which mis-pairs
+  // nodes and makes mirrorInternalEdgesToPeer draw spurious, cyclic edges.
+  const peerByTag = new Map()
+  for (const peer of topoOrderedGroupChildren(peerGid)) {
+    const key = nodeTagKey(peer.tag)
+    if (!key) continue
+    if (!peerByTag.has(key)) peerByTag.set(key, [])
+    peerByTag.get(key).push(peer)
+  }
+
+  for (const src of topoOrderedGroupChildren(sourceGid)) {
     const key = nodeTagKey(src.tag)
     if (!key) continue
-    const peer = peerByTag.get(key)
-    if (peer && !usedPeerIds.has(peer.id)) {
+    const peer = peerByTag.get(key)?.shift()
+    if (peer) {
       map.set(src.id, peer)
       usedPeerIds.add(peer.id)
     }
