@@ -251,6 +251,16 @@ function buildGroupPanel(node, actions) {
   toggleBtn.addEventListener('click', () => actions.toggle?.(gid))
   btnRow.appendChild(toggleBtn)
 
+  if (!collapsed && typeof actions.addSelection === 'function') {
+    const addBtn = document.createElement('button')
+    addBtn.type = 'button'
+    addBtn.className = 'mini-btn'
+    addBtn.textContent = 'Add selection'
+    addBtn.title = 'Move selected ungrouped nodes into this group'
+    addBtn.addEventListener('click', () => actions.addSelection?.(gid))
+    btnRow.appendChild(addBtn)
+  }
+
   const ungroupBtn = document.createElement('button')
   ungroupBtn.type = 'button'
   ungroupBtn.className = 'mini-btn danger'

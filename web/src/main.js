@@ -18,6 +18,21 @@ import {
 } from './groupBoundary.js'
 import { copyNodeValues, nodeTagKey, nodesInSameTagFamily } from './tagSync.js'
 import {
+  makeTagAtlas,
+  registerNodeMember,
+  registerGroupMember,
+  unregisterMember,
+  adoptValuesFromAtlas,
+  adoptExposedParamsFromAtlas,
+  recordValueChange,
+  recordAllValues,
+  recordExposedParamChange,
+  recordGroupMeta,
+  rebuildAtlas,
+  atlasSummary,
+  getAtlasEntry,
+} from './tagAtlas.js'
+import {
   makeNode,
   makeGroupEntry,
   INPUT_ENTRY,
@@ -73,6 +88,11 @@ const state = {
   // the facade across collapse/expand cycles so dragging the collapsed
   // facade moves the whole subgraph (no snap-back on expand).
   groups: new Map(),
+  // Single source of truth for everything tagged. Tag key (lowercased) ->
+  // canonical AtlasEntry { tag, family, values, exposedParams, members, ... }.
+  // Members can be node ids (BlockNodes) or group ids (state.groups entries).
+  // See tagAtlas.js for the shape and the public API.
+  tagAtlas: makeTagAtlas(),
 }
 
 let _groupCounter = 0
@@ -582,6 +602,7 @@ async function pasteClipboard() {
 
   // Phase 5: ensure collapsed groups stay visually collapsed (CSS).
   if ((payload.groups ?? []).length > 0) applyAllGroupStyles()
+  refreshTagAtlas()
 
   refreshInspector()
   queueValidation()
@@ -756,6 +777,7 @@ async function bootstrap() {
   document.getElementById('delete-btn').addEventListener('click', () => deleteSelected())
   document.getElementById('group-btn').addEventListener('click', () => groupSelected())
   document.getElementById('ungroup-btn').addEventListener('click', () => ungroupFocused())
+  document.getElementById('add-to-group-btn').addEventListener('click', () => addToGroupFocused())
   document.getElementById('collapse-all-btn').addEventListener('click', () => collapseAllGroups())
   document.getElementById('expand-all-btn').addEventListener('click', () => expandAllGroups())
   document.getElementById('run-shapes-btn').addEventListener('click', () => runRuntimeShapeCheck())
@@ -796,6 +818,7 @@ async function bootstrap() {
     if (mod && key === 'g') {
       e.preventDefault()
       if (e.shiftKey) ungroupFocused()
+      else if (e.altKey) void addToGroupFocused()
       else groupSelected()
       return
     }
@@ -868,8 +891,18 @@ async function clearGraph() {
   state.runtimeError = null
   state.runtimeErrorNodeId = null
   state.groups.clear()
+  state.tagAtlas = makeTagAtlas()
   refreshInspector()
   queueValidation()
+}
+
+/** Rebuild the tag atlas from the current editor + groups (post import / paste). */
+function refreshTagAtlas() {
+  state.tagAtlas = rebuildAtlas({
+    editor,
+    groups: state.groups,
+    getNode: (id) => editor.getNode(id),
+  })
 }
 
 async function importGraph(data) {
@@ -1032,6 +1065,8 @@ async function importGraph(data) {
   // Phase F: apply collapsed-state CSS so hidden children stay hidden.
   applyAllGroupStyles()
   applyAllTagStyles()
+  // Rebuild the tag atlas now that every node + group is back in place.
+  refreshTagAtlas()
 
   queueValidation()
   return {
@@ -1071,6 +1106,11 @@ async function deleteSelected() {
     }
   }
   for (const id of ids) {
+    const n = editor.getNode(id)
+    if (n) {
+      if (isGroupFacade(n)) unregisterMember(state.tagAtlas, n.tag, n.entry.groupId)
+      else unregisterMember(state.tagAtlas, n.tag, id)
+    }
     selector?.remove({ label: 'node', id })
     await editor.removeNode(id)
   }
@@ -1147,49 +1187,64 @@ function applyGroupTag(g, tag) {
   if (facade) restoreNodeTag(facade, tag)
 }
 
-function findPeerNodeWithTag(excludeId, tag) {
-  const key = nodeTagKey(tag)
-  if (!key) return null
-  for (const n of editor.getNodes()) {
-    if (n.id === excludeId) continue
-    if (nodeTagKey(n.tag) !== key) continue
-    return n
-  }
-  return null
+/** Resolve a tagged member id to a live BlockNode (skips group ids). */
+function atlasNodeMember(id) {
+  const n = editor.getNode(id)
+  return n && !isGroupFacade(n) ? n : null
 }
 
-function forEachPeerNode(sourceNode, fn) {
-  const key = nodeTagKey(sourceNode?.tag)
-  if (!key) return
-  for (const n of editor.getNodes()) {
-    if (n.id === sourceNode.id) continue
-    if (nodeTagKey(n.tag) !== key) continue
-    if (!nodesInSameTagFamily(sourceNode, n)) continue
-    fn(n)
-  }
-}
-
+/**
+ * Mutator: a node's ctor values changed via the inspector. Push the new
+ * canonical values into the atlas and mirror them to every peer member.
+ */
 function syncTaggedNodePeers(sourceNode) {
   if (!nodeTagKey(sourceNode?.tag)) return
-  forEachPeerNode(sourceNode, (peer) => {
-    copyNodeValues(sourceNode, peer)
-    area.update('node', peer.id)
-    applyTagStyle(peer)
-  })
+  const peers = recordAllValues(state.tagAtlas, sourceNode)
+  for (const peerId of peers) {
+    const peer = atlasNodeMember(peerId)
+    if (!peer) continue
+    if (!nodesInSameTagFamily(sourceNode, peer)) continue
+    if (copyNodeValues(sourceNode, peer)) {
+      area.update('node', peer.id)
+      applyTagStyle(peer)
+    }
+  }
 }
 
-function adoptTaggedPeerValues(node, tag) {
-  const peer = findPeerNodeWithTag(node.id, tag)
-  if (!peer || !nodesInSameTagFamily(peer, node)) return false
-  copyNodeValues(peer, node)
-  area.update('node', node.id)
+/**
+ * Mutator: a node just got a new tag. Pull canonical values + exposed-param
+ * structure from the atlas onto the node so it lines up with its new peers.
+ */
+async function adoptTaggedPeerValues(node) {
+  const entry = getAtlasEntry(state.tagAtlas, node?.tag)
+  if (!entry) return false
+  if (entry.family && entry.family.split(':')[1] !== node.entry?.name) return false
+  let changed = false
+  if (adoptValuesFromAtlas(state.tagAtlas, node).length > 0) changed = true
+  const diff = adoptExposedParamsFromAtlas(state.tagAtlas, node)
+  for (const name of diff.toExpose) {
+    node.exposeParam?.(name)
+    changed = true
+  }
+  for (const name of diff.toHide) {
+    for (const c of [...editor.getConnections()]) {
+      if (c.target === node.id && c.targetInput === `__param__${name}`) {
+        await editor.removeConnection(c.id)
+      }
+    }
+    node.hideParam?.(name)
+    changed = true
+  }
+  if (changed) area.update('node', node.id)
   return true
 }
 
 async function syncTaggedPeerParamPort(sourceNode, param, shouldExpose) {
   const key = `__param__${param.name}`
-  for (const peer of editor.getNodes()) {
-    if (peer.id === sourceNode.id) continue
+  const peers = recordExposedParamChange(state.tagAtlas, sourceNode, param.name, shouldExpose)
+  for (const peerId of peers) {
+    const peer = atlasNodeMember(peerId)
+    if (!peer) continue
     if (!nodesInSameTagFamily(sourceNode, peer)) continue
     if (shouldExpose) {
       peer.exposeParam?.(param.name)
@@ -1321,11 +1376,14 @@ function classifyEdges(childIds) {
 }
 
 /**
- * Given a set of child node ids, compute the facade port layout: one
- * input port per *(childNode, childInput)* pair that has any external
- * edge into it, one output port per *(childNode, childOutput)* pair
- * that has any external edge out of it, and one __param__ port per
- * external constant wired into a child's exposed ctor param.
+ * Given a set of child node ids, compute the facade port layout. Every child
+ * port that is not already consumed by an internal edge becomes a facade port:
+ *   - Inputs:  external -> child + dangling tensor inputs.
+ *   - Outputs: child -> external + dangling outputs with no consumer.
+ *   - Params:  external constant -> child.__param__ + dangling exposed params.
+ *
+ * Exposing dangling ports means the group's interface always covers every
+ * receiver/outlet a child needs/produces, even before the user wires it.
  */
 function computeBoundary(childIds, sub) {
   const { inputBoundary, outputBoundary, internal } = classifyEdges(childIds)
@@ -1336,49 +1394,102 @@ function computeBoundary(childIds, sub) {
   const seenOut = new Map()
   const seenParam = new Map()
 
-  for (const c of inputBoundary) {
-    const child = editor.getNode(c.target)
-    if (!child) continue
-    const portSpec = child.inputs?.[c.targetInput]?.portSpec
-    if (portSpec?.kind === 'param') {
-      const key = `${c.target}/${c.targetInput}`
-      if (seenParam.has(key)) continue
-      seenParam.set(key, params.length)
-      params.push({
-        childNodeId: c.target,
-        childPort: c.targetInput,
-        paramName: portSpec.paramName,
-        paramType: portSpec.paramType ?? 'int',
-      })
-      continue
-    }
-    const key = `${c.target}/${c.targetInput}`
-    if (seenIn.has(key)) continue
+  const pushInputPort = (child, portName, portSpec) => {
+    const key = `${child.id}/${portName}`
+    if (seenIn.has(key) || seenParam.has(key)) return
     seenIn.set(key, inputs.length)
-    const shape = child.freshenedShape?.(c.targetInput, 'in') ?? ['...']
+    const shape = child.freshenedShape?.(portName, 'in') ?? ['...']
     inputs.push({
-      childNodeId: c.target,
-      childPort: c.targetInput,
+      childNodeId: child.id,
+      childPort: portName,
       shape,
       dtype: portSpec?.dtype ?? 'any',
       optional: Boolean(portSpec?.optional),
     })
   }
-  for (const c of outputBoundary) {
-    const child = editor.getNode(c.source)
-    if (!child) continue
-    const key = `${c.source}/${c.sourceOutput}`
-    if (seenOut.has(key)) continue
+
+  const pushParamPort = (child, portName, portSpec) => {
+    const key = `${child.id}/${portName}`
+    if (seenParam.has(key) || seenIn.has(key)) return
+    seenParam.set(key, params.length)
+    params.push({
+      childNodeId: child.id,
+      childPort: portName,
+      paramName: portSpec.paramName,
+      paramType: portSpec.paramType ?? 'int',
+    })
+  }
+
+  const pushOutputPort = (child, portName, portSpec) => {
+    const key = `${child.id}/${portName}`
+    if (seenOut.has(key)) return
     seenOut.set(key, outputs.length)
-    const portSpec = child.outputs?.[c.sourceOutput]?.portSpec
-    const shape = child.freshenedShape?.(c.sourceOutput, 'out') ?? ['...']
+    const shape = child.freshenedShape?.(portName, 'out') ?? ['...']
     outputs.push({
-      childNodeId: c.source,
-      childPort: c.sourceOutput,
+      childNodeId: child.id,
+      childPort: portName,
       shape,
       dtype: portSpec?.dtype ?? 'any',
     })
   }
+
+  // 1. External-edge boundary ports (always come first so port order is
+  //    stable for users that wired things up before adding new members).
+  for (const c of inputBoundary) {
+    const child = editor.getNode(c.target)
+    if (!child) continue
+    const portSpec = child.inputs?.[c.targetInput]?.portSpec
+    if (portSpec?.kind === 'param') pushParamPort(child, c.targetInput, portSpec)
+    else pushInputPort(child, c.targetInput, portSpec)
+  }
+  for (const c of outputBoundary) {
+    const child = editor.getNode(c.source)
+    if (!child) continue
+    const portSpec = child.outputs?.[c.sourceOutput]?.portSpec
+    pushOutputPort(child, c.sourceOutput, portSpec)
+  }
+
+  // 2. Track child ports already saturated by an internal edge so we don't
+  //    surface them as dangling.
+  const internalIn = new Set()
+  const internalOut = new Set()
+  for (const c of internal) {
+    internalIn.add(`${c.target}/${c.targetInput}`)
+    internalOut.add(`${c.source}/${c.sourceOutput}`)
+  }
+
+  // 3. Dangling ports - declared on each child but never wired anywhere.
+  //    Tensor inputs/outputs + any exposed __param__ ports.
+  for (const id of childIds) {
+    const child = editor.getNode(id)
+    if (!child) continue
+
+    for (const port of child.entry?.inputs ?? []) {
+      const key = `${id}/${port.name}`
+      if (internalIn.has(key) || seenIn.has(key)) continue
+      const portSpec = child.inputs?.[port.name]?.portSpec ?? port
+      pushInputPort(child, port.name, portSpec)
+    }
+
+    // Exposed __param__ inputs are user-driven; honor them on the facade so
+    // external constants / Input(...) values can still parameterize the group.
+    for (const portName of Object.keys(child.inputs ?? {})) {
+      if (!portName.startsWith('__param__')) continue
+      const key = `${id}/${portName}`
+      if (internalIn.has(key) || seenParam.has(key)) continue
+      const portSpec = child.inputs[portName].portSpec
+      if (portSpec?.kind !== 'param') continue
+      pushParamPort(child, portName, portSpec)
+    }
+
+    for (const port of child.entry?.outputs ?? []) {
+      const key = `${id}/${port.name}`
+      if (internalOut.has(key) || seenOut.has(key)) continue
+      const portSpec = child.outputs?.[port.name]?.portSpec ?? port
+      pushOutputPort(child, port.name, portSpec)
+    }
+  }
+
   return { inputs, outputs, params, internal, inputBoundary, outputBoundary, seenIn, seenOut, seenParam }
 }
 
@@ -1541,6 +1652,7 @@ async function groupSelected(explicitIds) {
       applyNodeTag(n, randomChildTag())
       area.update('node', n.id)
     }
+    registerNodeMember(state.tagAtlas, n)
   }
 
   const boundary = computeBoundary(ids)
@@ -1598,6 +1710,89 @@ async function groupSelected(explicitIds) {
   refreshInspector()
   queueValidation()
   queueAutosave()
+}
+
+/**
+ * Resolve which group should receive new members from the current selection.
+ * Uses any grouped node or facade in the selection; falls back to focusedGroupId().
+ */
+function resolveTargetGroupIdForAdd() {
+  const ids = selectedNodeIds()
+  const groupIds = new Set()
+  for (const id of ids) {
+    const n = editor.getNode(id)
+    if (!n) continue
+    if (isGroupFacade(n)) groupIds.add(n.entry.groupId)
+    else if (n.groupId) groupIds.add(n.groupId)
+  }
+  if (groupIds.size > 1) return { error: 'Selection spans multiple groups' }
+  if (groupIds.size === 1) return { gid: [...groupIds][0] }
+  const gid = focusedGroupId()
+  if (gid) return { gid }
+  return { error: 'Select a group member (or the group) along with nodes to add' }
+}
+
+/** Assign groupId on nodes and reveal them while the group is expanded. */
+async function addNodesToGroup(groupId, explicitIds) {
+  const group = state.groups.get(groupId)
+  if (!group) {
+    flashDiagnostic('Group not found')
+    return false
+  }
+  if (group.collapsed) await expandGroup(groupId)
+
+  const ids = explicitIds ?? selectedNodeIds()
+  const candidates = [...ids]
+    .map((id) => editor.getNode(id))
+    .filter((n) => n && !isGroupFacade(n) && n.groupId !== groupId)
+
+  if (candidates.length === 0) {
+    flashDiagnostic('Select ungrouped nodes to add to the group')
+    return false
+  }
+
+  for (const n of candidates) {
+    if (n.groupId && n.groupId !== groupId) {
+      flashDiagnostic('Cannot add nodes that already belong to another group')
+      return false
+    }
+    if (n.entry?.kind === 'input' || n.entry?.kind === 'output') {
+      flashDiagnostic('Input/Output nodes cannot be inside a group')
+      return false
+    }
+  }
+
+  for (const n of candidates) {
+    n.groupId = groupId
+    if (!String(n.tag ?? '').trim()) {
+      applyNodeTag(n, randomChildTag())
+      area.update('node', n.id)
+    }
+    registerNodeMember(state.tagAtlas, n)
+    setNodeHidden(n.id, false)
+    applyTagStyle(n)
+  }
+
+  for (const c of editor.getConnections()) {
+    const s = editor.getNode(c.source)
+    const t = editor.getNode(c.target)
+    if (s?.groupId === groupId && t?.groupId === groupId) setConnectionHidden(c.id, false)
+  }
+
+  refreshInspector()
+  queueValidation()
+  queueAutosave()
+  flashDiagnostic(`Added ${candidates.length} node(s) to ${group.name}`)
+  return true
+}
+
+async function addToGroupFocused() {
+  const resolved = resolveTargetGroupIdForAdd()
+  if (resolved.error) {
+    flashDiagnostic(resolved.error)
+    return
+  }
+  await addNodesToGroup(resolved.gid)
 }
 
 /**
@@ -1695,7 +1890,10 @@ async function collapseGroup(groupId) {
   for (const child of children) applyTagStyle(child)
   state.selectedNodeId = facade.id
   if (tag) {
-    await syncPeerGroupBoundaries(groupId, boundarySignatureFromBoundary(boundary))
+    const sig = boundarySignatureFromBoundary(boundary)
+    await syncPeerGroupBoundaries(groupId, sig)
+    registerGroupMember(state.tagAtlas, group, facade)
+    recordGroupMeta(state.tagAtlas, group, { boundarySignature: sig })
   }
   refreshInspector()
   queueValidation()
@@ -1723,6 +1921,7 @@ async function ungroup(groupId) {
   if (!group) return
   if (group.collapsed) await expandGroup(groupId)
   for (const n of getGroupChildren(groupId)) n.groupId = null
+  unregisterMember(state.tagAtlas, group.facadeTag, groupId)
   state.groups.delete(groupId)
   refreshInspector()
   queueValidation()
@@ -1869,21 +2068,36 @@ function refreshInspector(options = {}) {
     },
     state.runtimeShapes,
     state.blockInfo,
-    (n, newTag) => {
+    async (n, newTag) => {
       const oldTag = String(n.tag ?? '').trim()
       applyNodeTag(n, newTag)
       if (n.entry?.kind === 'group') {
         const gid = n.entry.groupId
         const g = state.groups.get(gid)
-        if (g) g.facadeTag = String(newTag ?? '')
+        unregisterMember(state.tagAtlas, oldTag, gid)
+        if (g) {
+          g.facadeTag = String(newTag ?? '')
+          if (nodeTagKey(newTag)) registerGroupMember(state.tagAtlas, g, n)
+        }
         forEachPeerGroup(gid, oldTag, (_peerGid, peer) => applyGroupTag(peer, newTag))
         const newKey = String(newTag ?? '').trim()
         if (newKey) void alignTaggedGroupToPeers(gid, newKey)
         applyAllTagStyles()
       } else {
+        unregisterMember(state.tagAtlas, oldTag, n.id)
         const newKey = String(newTag ?? '').trim()
         if (newKey) {
-          if (!adoptTaggedPeerValues(n, newKey)) syncTaggedNodePeers(n)
+          // Register first so we can either seed the atlas (first member) or
+          // adopt the canonical values from an existing peer.
+          const entry = registerNodeMember(state.tagAtlas, n)
+          const isFirstMember = entry?.members.size === 1
+          if (isFirstMember) {
+            // Push this node's values out as canonical to anything that
+            // already shares the tag (paste / re-tag race).
+            syncTaggedNodePeers(n)
+          } else {
+            await adoptTaggedPeerValues(n)
+          }
         }
       }
       area.update('node', n.id)
@@ -1922,25 +2136,30 @@ function refreshInspector(options = {}) {
         const g = state.groups.get(gid)
         if (!g) return
         const text = String(value ?? '')
-        const tag = groupTag(g)
         g.description = text
-        forEachPeerGroup(gid, tag, (_peerGid, peer) => {
-          peer.description = text
-        })
+        const peers = recordGroupMeta(state.tagAtlas, g, { description: text })
+        for (const peerGid of peers) {
+          const peer = state.groups.get(peerGid)
+          if (peer) peer.description = text
+        }
         queueAutosave()
       },
       isCollapsed: (gid) => Boolean(state.groups.get(gid)?.collapsed),
       rename: (gid, value) => {
         const g = state.groups.get(gid)
         if (!g) return
-        const tag = groupTag(g)
         const newName = String(value ?? '').trim() || g.name
         applyGroupName(g, newName)
-        forEachPeerGroup(gid, tag, (_peerGid, peer) => applyGroupName(peer, newName))
+        const peers = recordGroupMeta(state.tagAtlas, g, { name: newName })
+        for (const peerGid of peers) {
+          const peer = state.groups.get(peerGid)
+          if (peer) applyGroupName(peer, newName)
+        }
         queueAutosave()
       },
       toggle: (gid) => expandGroupOrCollapse(gid),
       ungroup: (gid) => ungroup(gid),
+      addSelection: (gid) => void addNodesToGroup(gid),
     },
     options
   )
@@ -2134,6 +2353,10 @@ if (typeof window !== 'undefined') {
     pasteClipboard,
     duplicateSelection,
     applyNodeTag,
+    refreshTagAtlas,
+    get tagAtlasSummary() {
+      return atlasSummary(state.tagAtlas)
+    },
     AUTOSAVE_KEY,
     CLIPBOARD_KEY,
     groupNodes: (ids) => groupSelected(new Set(ids)),
@@ -2142,6 +2365,8 @@ if (typeof window !== 'undefined') {
     collapseAllGroups,
     expandAllGroups,
     ungroup,
+    addNodesToGroup,
+    addToGroupFocused,
     runCodegen: () =>
       generateCode(editor.getNodes(), editor.getConnections(), state.framework),
     addConnection: async (source, sourceOutput, target, targetInput) => {

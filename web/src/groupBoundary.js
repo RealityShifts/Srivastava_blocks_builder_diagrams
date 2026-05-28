@@ -45,8 +45,22 @@ export function boundarySignatureFromBoundary(boundary) {
   }
 }
 
+/**
+ * Normalize a shape into a stable comparison key. Variable axes carry a
+ * `#<nodeId>` suffix from `freshen()` (so two `B` axes on different child
+ * instances unify) - those suffixes are not part of the *interface* though,
+ * so we strip them here. Without this, two structurally-identical group
+ * facades built from different children would always look different.
+ */
 function shapeKey(shape) {
-  return JSON.stringify(shape ?? ['...'])
+  const toks = (shape ?? ['...']).map((t) => {
+    if (typeof t === 'number') return t
+    const s = String(t)
+    if (s === '...') return s
+    const hash = s.indexOf('#')
+    return hash >= 0 ? s.slice(0, hash) : s
+  })
+  return JSON.stringify(toks)
 }
 
 function portListsMatch(a, b) {

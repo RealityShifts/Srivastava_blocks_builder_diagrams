@@ -26,6 +26,18 @@ import {
   applySignatureToBoundary,
 } from './src/groupBoundary.js'
 import { copyNodeValues, nodesInSameTagFamily } from './src/tagSync.js'
+import {
+  makeTagAtlas,
+  registerNodeMember,
+  registerGroupMember,
+  unregisterMember,
+  recordValueChange,
+  recordAllValues,
+  recordExposedParamChange,
+  recordGroupMeta,
+  adoptValuesFromAtlas,
+  adoptExposedParamsFromAtlas,
+} from './src/tagAtlas.js'
 
 let pass = 0
 let fail = 0
@@ -593,6 +605,77 @@ console.log('tag sync')
   check('copyNodeValues skips different block types', !copyNodeValues(a, c))
 }
 
+// --- tag atlas: single source of truth for tagged nodes & groups ---
+console.log('tag atlas')
+{
+  const conv = {
+    name: 'ConvBlock',
+    kind: 'module',
+    ctor: [
+      { name: 'in_ch', type: 'int' },
+      { name: 'out_ch', type: 'int' },
+    ],
+  }
+  const mkNode = (id, tag, values = {}, inputs = {}) => ({
+    id,
+    entry: conv,
+    tag,
+    values: { ...values },
+    inputs,
+  })
+
+  const atlas = makeTagAtlas()
+  const a = mkNode('a', 'down1', { in_ch: 3, out_ch: 16 })
+  const b = mkNode('b', 'down1', { in_ch: 99, out_ch: 99 })
+  const entry1 = registerNodeMember(atlas, a)
+  check('first member becomes canonical seed', entry1?.values.out_ch === 16, entry1)
+  const entry2 = registerNodeMember(atlas, b)
+  check('second member joins the same entry', entry1 === entry2 && entry2.members.size === 2)
+
+  // Second node should adopt canonical values from atlas (peer joined).
+  adoptValuesFromAtlas(atlas, b)
+  check('joined member adopts canonical values', b.values.out_ch === 16, b.values)
+
+  // Source of truth: mutate a, propagate.
+  a.values.out_ch = 64
+  const peersToUpdate = recordValueChange(atlas, a, 'out_ch')
+  check('recordValueChange reports peer ids', peersToUpdate.length === 1 && peersToUpdate[0] === 'b')
+  check('atlas canonical value updated', atlas.get('down1').values.out_ch === 64)
+
+  // Exposed params: structural change propagation.
+  const inputsWith = { __param__kernel_size: { portSpec: { kind: 'param', paramName: 'kernel_size' } } }
+  const c = mkNode('c', 'block', { in_ch: 3, out_ch: 16 }, inputsWith)
+  registerNodeMember(atlas, c)
+  const peers2 = recordExposedParamChange(atlas, c, 'kernel_size', true)
+  check('exposed-param change tracked even with no peers', peers2.length === 0)
+  check('atlas tracks exposed params', atlas.get('block').exposedParams.has('kernel_size'))
+
+  const d = mkNode('d', 'block', { in_ch: 3, out_ch: 16 })
+  registerNodeMember(atlas, d)
+  const diff = adoptExposedParamsFromAtlas(atlas, d)
+  check('new peer is told to expose missing param ports', diff.toExpose.includes('kernel_size'))
+
+  // Untagged nodes never touch the atlas.
+  const untagged = mkNode('u', '', { in_ch: 0, out_ch: 0 })
+  check('untagged registration is a no-op', registerNodeMember(atlas, untagged) === null)
+
+  // Unregister: last member removes entry.
+  unregisterMember(atlas, 'down1', 'a')
+  unregisterMember(atlas, 'down1', 'b')
+  check('atlas drops empty entries', !atlas.has('down1'))
+
+  // Group meta propagates through atlas.
+  const facade = { entry: { kind: 'group', name: 'Group1' }, tag: 'enc' }
+  const g1 = { id: 'g1', name: 'Group1', description: '', facadeTag: 'enc' }
+  const g2 = { id: 'g2', name: 'Group1', description: '', facadeTag: 'enc' }
+  registerGroupMember(atlas, g1, facade)
+  registerGroupMember(atlas, g2, facade)
+  const gPeers = recordGroupMeta(atlas, g1, { name: 'Encoder', description: 'note' })
+  check('group meta peers reported', gPeers.length === 1 && gPeers[0] === 'g2')
+  check('atlas stores canonical group name', atlas.get('enc').name === 'Encoder')
+  check('atlas stores canonical group description', atlas.get('enc').description === 'note')
+}
+
 // --- group boundary signatures ---
 console.log('group boundary signatures')
 {
@@ -608,6 +691,22 @@ console.log('group boundary signatures')
     params: [{ paramName: 'kernel_size', paramType: 'int' }],
   })
   check('matching signatures compare equal', boundarySignaturesMatch(sig1, sig2))
+
+  // Regression: freshened shape tokens carry a `#<nodeId>` suffix that must
+  // be stripped before comparison, otherwise two facades over different
+  // children always look like different interfaces.
+  const sigFreshA = boundarySignatureFromBoundary({
+    inputs: [{ shape: ['B#nodeA', 'C#nodeA', 'H#nodeA', 'W#nodeA'], dtype: 'float' }],
+    outputs: [{ shape: ['B#nodeA', 'C2#nodeA', 'H#nodeA', 'W#nodeA'], dtype: 'float' }],
+  })
+  const sigFreshB = boundarySignatureFromBoundary({
+    inputs: [{ shape: ['B#nodeB', 'C#nodeB', 'H#nodeB', 'W#nodeB'], dtype: 'float' }],
+    outputs: [{ shape: ['B#nodeB', 'C2#nodeB', 'H#nodeB', 'W#nodeB'], dtype: 'float' }],
+  })
+  check(
+    'freshen-suffixed shapes still compare equal across instances',
+    boundarySignaturesMatch(sigFreshA, sigFreshB)
+  )
 
   const sig3 = boundarySignatureFromBoundary({
     inputs: [

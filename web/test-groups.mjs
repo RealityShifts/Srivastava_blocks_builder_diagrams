@@ -589,6 +589,98 @@ try {
     reloadDrag
   )
 
+  // --- Add ungrouped node to an existing group (auto-expands when collapsed).
+  const addToGroup = await page.evaluate(async () => {
+    const blocks = window.__blocks
+    const ed = blocks.editor
+    await blocks.clearGraph()
+    const a = await blocks.createNode('ConvBlock')
+    a.values.in_ch = 3
+    a.values.out_ch = 16
+    const b = await blocks.createNode('ConvBlock')
+    b.values.in_ch = 16
+    b.values.out_ch = 32
+    await blocks.addConnection(a.id, 'out', b.id, 'x')
+    await blocks.groupNodes([a.id, b.id])
+    await new Promise((r) => setTimeout(r, 20))
+    const gid = [...blocks.state.groups.keys()][0]
+    const c = await blocks.createNode('ConvBlock')
+    c.values.in_ch = 32
+    c.values.out_ch = 64
+    await blocks.addConnection(b.id, 'out', c.id, 'x')
+    const wasCollapsed = blocks.state.groups.get(gid)?.collapsed
+    await blocks.addNodesToGroup(gid, new Set([c.id]))
+    await new Promise((r) => setTimeout(r, 20))
+    const group = blocks.state.groups.get(gid)
+    return {
+      gid,
+      wasCollapsed,
+      collapsed: group?.collapsed,
+      cGroupId: ed.getNode(c.id)?.groupId,
+      childCount: ed.getNodes().filter((n) => n.groupId === gid).length,
+    }
+  })
+  check('group started collapsed before add', addToGroup.wasCollapsed === true, addToGroup)
+  check('addNodesToGroup leaves group expanded for editing', addToGroup.collapsed === false, addToGroup)
+  check('added node receives groupId', addToGroup.cGroupId === addToGroup.gid, addToGroup)
+  check('group now has three children', addToGroup.childCount === 3, addToGroup)
+
+  // --- Dangling child ports surface on the facade.
+  const dangling = await page.evaluate(async () => {
+    const blocks = window.__blocks
+    const ed = blocks.editor
+    await blocks.clearGraph()
+    // MultiHeadAttention has three inputs: query, key, value. Only wire one
+    // of them to confirm the other two still surface as facade inputs.
+    const inp = await blocks.createNode('Input')
+    inp.values.shape = 'B 4 64'
+    const mha = await blocks.createNode('MultiHeadAttention')
+    mha.values.dim = 64
+    await blocks.addConnection(inp.id, 'out', mha.id, 'query')
+    await blocks.groupNodes([mha.id])
+    await new Promise((r) => setTimeout(r, 20))
+    const facade = ed.getNodes().find((n) => n.entry.kind === 'group')
+    return {
+      facadeInputs: facade ? Object.keys(facade.inputs).filter((k) => !k.startsWith('__param__')) : [],
+      facadeOutputs: facade ? Object.keys(facade.outputs) : [],
+    }
+  })
+  check(
+    'facade exposes every child input (wired + dangling)',
+    dangling.facadeInputs.length === 3,
+    dangling.facadeInputs
+  )
+  check(
+    'facade exposes child output even when no external consumer',
+    dangling.facadeOutputs.length === 1,
+    dangling.facadeOutputs
+  )
+
+  // --- Atlas: edit one tagged node, peers update.
+  const atlasSync = await page.evaluate(async () => {
+    const blocks = window.__blocks
+    const ed = blocks.editor
+    await blocks.clearGraph()
+    const a = await blocks.createNode('ConvBlock')
+    a.values.in_ch = 3
+    a.values.out_ch = 16
+    blocks.applyNodeTag(a, 'down1')
+    const b = await blocks.createNode('ConvBlock')
+    b.values.in_ch = 9
+    b.values.out_ch = 9
+    blocks.applyNodeTag(b, 'down1')
+    blocks.refreshTagAtlas()
+    // Adopt canonical values onto b (simulates the re-tag adopt path).
+    const { adoptValuesFromAtlas } = await import('/src/tagAtlas.js')
+    adoptValuesFromAtlas(blocks.state.tagAtlas, b)
+    return {
+      atlas: blocks.tagAtlasSummary,
+      bOutCh: ed.getNode(b.id)?.values?.out_ch,
+    }
+  })
+  check('atlas has the tagged family', !!atlasSync.atlas['down1'], atlasSync)
+  check('adopt copies canonical out_ch onto peer', atlasSync.bOutCh === 16, atlasSync)
+
   if (consoleErrors.length > 0) {
     console.log('')
     console.log('Console errors observed:')
