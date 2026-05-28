@@ -540,6 +540,13 @@ export function makeNode(entry) {
 export function paletteGroup(entry) {
   if (entry.module === '__builtin__') return 'built-in'
   if (entry.module === '__utility__') return 'utility'
+  // Custom blocks live in models/customblocks/<framework>/<file>.py and the
+  // build_manifest tool labels them "custom.<file>". Surface that as a
+  // distinct top-level palette section so user blocks don't get visually
+  // mixed in with the built-in library.
+  if (entry.module.startsWith('custom.')) {
+    return `custom · ${entry.module.slice('custom.'.length)}`
+  }
   return entry.module.split('.').slice(-1)[0]
 }
 
@@ -558,6 +565,10 @@ export function groupByModule(entries) {
     const oa = order[a] ?? 99
     const ob = order[b] ?? 99
     if (oa !== ob) return oa - ob
+    // Keep "custom · *" groups together right after built-in/utility.
+    const ca = a.startsWith('custom · ')
+    const cb = b.startsWith('custom · ')
+    if (ca !== cb) return ca ? -1 : 1
     return a.localeCompare(b)
   })
 }

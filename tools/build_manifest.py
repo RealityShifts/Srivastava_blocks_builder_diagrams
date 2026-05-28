@@ -1,5 +1,10 @@
 """Extract block metadata from models/blocks/{pytorch,flax}_blocks into JSON.
 
+User-defined ("custom") blocks living under ``models/customblocks/<framework>/``
+are picked up as well: each ``*.py`` file in those directories is loaded as a
+standalone module and any ``nn.Module`` / ``nnx.Module`` (or jaxtyped function)
+declared there gets merged into the same per-framework manifest.
+
 The generated manifests are consumed by the web/ Rete editor for shape
 inference, validation and Python code generation.
 
@@ -34,6 +39,7 @@ from __future__ import annotations
 
 import collections.abc
 import importlib
+import importlib.util
 import inspect
 import json
 import os
@@ -52,7 +58,13 @@ os.environ.setdefault("CHECK_TYPES", "0")
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BLOCKS_ROOT = REPO_ROOT / "models" / "blocks"
+CUSTOM_BLOCKS_ROOT = REPO_ROOT / "models" / "customblocks"
 sys.path.insert(0, str(BLOCKS_ROOT))
+# Custom block files can `from pytorch_blocks._typecheck import typecheck` etc.
+# We also expose CUSTOM_BLOCKS_ROOT on sys.path so user files can import each
+# other by their bare module name.
+if CUSTOM_BLOCKS_ROOT.is_dir():
+    sys.path.insert(0, str(CUSTOM_BLOCKS_ROOT))
 
 
 # ---------------------------------------------------------------------------
@@ -367,17 +379,62 @@ def _is_block_class(cls: type, base_names: tuple[str, ...]) -> bool:
     return any(b in mro_names for b in base_names)
 
 
+def _framework_targets(framework: str) -> tuple[tuple[str, ...], str]:
+    """Base class names and forward-method name per framework."""
+    if framework == "pytorch":
+        return ("Module",), "forward"
+    return ("Module", "nnx.Module"), "__call__"
+
+
+def _entries_from_module(
+    module: typing.Any,
+    framework: str,
+    module_label: str,
+) -> list[dict[str, Any]]:
+    """Extract block entries from an already-imported module."""
+    base_names, method_name = _framework_targets(framework)
+    entries: list[dict[str, Any]] = []
+    for name, obj in inspect.getmembers(module):
+        if name.startswith("_"):
+            continue
+        if getattr(obj, "__module__", None) != module.__name__:
+            continue
+
+        if _is_block_class(obj, base_names):
+            method = obj.__dict__.get(method_name)
+            if method is None:
+                continue
+            entry = _entry_for_callable(
+                obj,
+                name,
+                module_label,
+                framework,
+                kind="module",
+                func=method,
+                ctor=_ctor_params(obj),
+            )
+            if entry is not None:
+                entries.append(entry)
+
+        elif inspect.isfunction(obj):
+            entry = _entry_for_callable(
+                obj,
+                name,
+                module_label,
+                framework,
+                kind="function",
+                func=obj,
+                ctor=None,
+            )
+            if entry is not None:
+                entries.append(entry)
+    return entries
+
+
 def _walk(framework: str) -> list[dict[str, Any]]:
     pkg_name = f"{framework}_blocks"
     pkg = importlib.import_module(pkg_name)
     entries: list[dict[str, Any]] = []
-
-    if framework == "pytorch":
-        base_names = ("Module",)
-        method_name = "forward"
-    else:
-        base_names = ("Module", "nnx.Module")
-        method_name = "__call__"
 
     for info in pkgutil.iter_modules(pkg.__path__):
         if info.name.startswith("_"):
@@ -387,43 +444,46 @@ def _walk(framework: str) -> list[dict[str, Any]]:
         except Exception as exc:
             print(f"  ! skip {pkg_name}.{info.name}: {exc}", file=sys.stderr)
             continue
+        entries.extend(_entries_from_module(module, framework, module.__name__))
 
-        for name, obj in inspect.getmembers(module):
-            if name.startswith("_"):
+    entries.sort(key=lambda e: (e["module"], e["name"]))
+    return entries
+
+
+def _walk_custom(framework: str) -> list[dict[str, Any]]:
+    """Pick up user-defined blocks from ``models/customblocks/<framework>/*.py``.
+
+    Each ``.py`` file is loaded as a standalone module (no ``__init__.py``
+    required). Both ``nn.Module`` classes with annotated ``forward`` and
+    jaxtyped module-level functions are picked up, just like the built-in
+    walker. Entries are tagged with ``module = "custom.<filename_stem>"`` so
+    they group together in the palette.
+    """
+    dir_path = CUSTOM_BLOCKS_ROOT / framework
+    if not dir_path.is_dir():
+        return []
+
+    entries: list[dict[str, Any]] = []
+    for py_file in sorted(dir_path.glob("*.py")):
+        if py_file.name.startswith("_"):
+            continue
+        stem = py_file.stem
+        # Unique module name so two files with the same stem in different
+        # framework subdirs don't collide in sys.modules.
+        module_name = f"_custom_{framework}_{stem}"
+        try:
+            spec = importlib.util.spec_from_file_location(module_name, py_file)
+            if spec is None or spec.loader is None:
+                print(f"  ! skip custom {py_file.name}: no loader", file=sys.stderr)
                 continue
-            if getattr(obj, "__module__", None) != module.__name__:
-                continue
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[module_name] = module
+            spec.loader.exec_module(module)
+        except Exception as exc:
+            print(f"  ! skip custom {py_file.name}: {exc}", file=sys.stderr)
+            continue
 
-            # Module classes
-            if _is_block_class(obj, base_names):
-                method = obj.__dict__.get(method_name)
-                if method is None:
-                    continue
-                entry = _entry_for_callable(
-                    obj,
-                    name,
-                    module.__name__,
-                    framework,
-                    kind="module",
-                    func=method,
-                    ctor=_ctor_params(obj),
-                )
-                if entry is not None:
-                    entries.append(entry)
-
-            # Module-level functions
-            elif inspect.isfunction(obj):
-                entry = _entry_for_callable(
-                    obj,
-                    name,
-                    module.__name__,
-                    framework,
-                    kind="function",
-                    func=obj,
-                    ctor=None,
-                )
-                if entry is not None:
-                    entries.append(entry)
+        entries.extend(_entries_from_module(module, framework, f"custom.{stem}"))
 
     entries.sort(key=lambda e: (e["module"], e["name"]))
     return entries
@@ -444,7 +504,17 @@ def main() -> None:
             entries = _walk(framework)
         except ModuleNotFoundError as e:
             print(f"   skip {framework}: {e}", file=sys.stderr)
+            entries = []
+
+        custom_entries = _walk_custom(framework)
+        if custom_entries:
+            print(f"   + {len(custom_entries)} custom from customblocks/{framework}/")
+            entries.extend(custom_entries)
+            entries.sort(key=lambda e: (e["module"], e["name"]))
+
+        if not entries:
             continue
+
         out = out_dir / f"{framework}.json"
         out.write_text(json.dumps(entries, indent=2))
         print(f"   wrote {len(entries):3d} entries -> {out.relative_to(REPO_ROOT)}")
