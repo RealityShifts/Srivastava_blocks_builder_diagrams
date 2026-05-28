@@ -84,6 +84,11 @@ const AUTOSAVE_VERSION = 1
 const AUTOSAVE_DEBOUNCE_MS = 800
 
 let autosaveTimer = null
+function queueAutosave() {
+  if (state.restoring) return
+  clearTimeout(autosaveTimer)
+  autosaveTimer = setTimeout(saveToStorage, AUTOSAVE_DEBOUNCE_MS)
+}
 
 function saveToStorage() {
   try {
@@ -98,30 +103,6 @@ function saveToStorage() {
     // Storage may be unavailable (private mode, quota, disabled cookies).
     // Better to silently skip than crash the editor.
   }
-}
-
-/** Write the current graph immediately (cancels any pending debounced save). */
-function flushAutosave() {
-  clearTimeout(autosaveTimer)
-  autosaveTimer = null
-  if (state.restoring) return
-  saveToStorage()
-}
-
-function queueAutosave() {
-  if (state.restoring) return
-  clearTimeout(autosaveTimer)
-  autosaveTimer = setTimeout(saveToStorage, AUTOSAVE_DEBOUNCE_MS)
-}
-
-function wireAutosavePersistence() {
-  // Flush before the tab closes or hides so a quick refresh doesn't miss the
-  // 800ms debounce window and lose the graph.
-  window.addEventListener('pagehide', () => flushAutosave())
-  window.addEventListener('beforeunload', () => flushAutosave())
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') flushAutosave()
-  })
 }
 
 function loadFromStorage() {
@@ -603,11 +584,6 @@ async function restoreFromAutosave() {
     const stats = await importGraph(payload.graph)
     if (Number.isFinite(payload.batchSize)) {
       state.batchSize = Math.max(1, Math.trunc(payload.batchSize))
-      const bs = document.getElementById('batch-size')
-      if (bs) bs.value = String(state.batchSize)
-    }
-    if (editor.getNodes().length > 0) {
-      AreaExtensions.zoomAt(area, editor.getNodes())
     }
     const note =
       stats.dropped > 0
@@ -810,7 +786,6 @@ async function bootstrap() {
   })
 
   await Promise.all([loadManifest(), loadBlockInfo()])
-  wireAutosavePersistence()
   await restoreFromAutosave()
   queueValidation()
 }
@@ -870,7 +845,6 @@ async function clearGraph() {
   state.groups.clear()
   refreshInspector()
   queueValidation()
-  queueAutosave()
 }
 
 async function importGraph(data) {
@@ -1031,7 +1005,6 @@ async function importGraph(data) {
   applyAllGroupStyles()
 
   queueValidation()
-  if (!state.restoring) queueAutosave()
   return {
     nodes: idMap.size,
     connections: restoredConnections,
@@ -1891,7 +1864,6 @@ if (typeof window !== 'undefined') {
     saveToStorage,
     loadFromStorage,
     restoreFromAutosave,
-    flushAutosave,
     queueAutosave,
     copySelection,
     pasteClipboard,
