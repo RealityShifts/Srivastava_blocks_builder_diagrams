@@ -215,6 +215,14 @@ function buildGroupPanel(node, actions) {
 function buildPortsSection(node, sub, runtimeShapes) {
   const ports = document.createElement('div')
   ports.className = 'ports'
+  // Output nodes sink a tensor on input `x`; label that section "Output" so
+  // runtime shapes (keyed as nodeId/x) read as the graph's output shape.
+  if (node.entry.kind === 'output' && node.entry.inputs.length > 0) {
+    ports.appendChild(
+      portList('Output', node.entry.inputs, node, sub, 'in', runtimeShapes)
+    )
+    return ports
+  }
   ports.appendChild(portList('Inputs', node.entry.inputs, node, sub, 'in', runtimeShapes))
   ports.appendChild(portList('Outputs', node.entry.outputs, node, sub, 'out', runtimeShapes))
   return ports
@@ -495,7 +503,7 @@ function portList(title, list, node, sub, side, runtimeShapes) {
     const key = `${node.id}/${p.name}`
     const runtime = runtimeShapes?.get(key)
     const runtimeTag =
-      side === 'out' && runtime
+      runtime
         ? ` <span class="runtime-shape">runtime: ${runtime.join(' ')}</span>`
         : ''
     row.innerHTML = `<code>${p.name}</code> : ${shape} <span class="muted">[${dtype}${p.optional ? ', opt' : ''}${p.variadic ? ', var' : ''}]</span>${runtimeTag}`
