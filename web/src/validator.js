@@ -15,6 +15,7 @@
 
 import { unifyShape, UnifyError, cloneSub } from './unify.js'
 import { isVariable, isRest } from './shape.js'
+import { boundarySignatureFromEntry, boundarySignaturesMatch } from './groupBoundary.js'
 
 export function validate(editor) {
   const nodes = editor.getNodes()
@@ -106,14 +107,18 @@ export function validate(editor) {
         continue
       }
       if (head.entry.kind === 'group' && other.entry.kind === 'group') {
-        const headIn = head.entry.inputs?.length ?? 0
-        const headOut = head.entry.outputs?.length ?? 0
-        const otherIn = other.entry.inputs?.length ?? 0
-        const otherOut = other.entry.outputs?.length ?? 0
-        if (headIn !== otherIn || headOut !== otherOut) {
+        const sigA = boundarySignatureFromEntry(head.entry)
+        const sigB = boundarySignatureFromEntry(other.entry)
+        if (!boundarySignaturesMatch(sigA, sigB)) {
+          const headIn = sigA.inputs.length
+          const headOut = sigA.outputs.length
+          const headP = sigA.params.length
+          const otherIn = sigB.inputs.length
+          const otherOut = sigB.outputs.length
+          const otherP = sigB.params.length
           errors.push({
             kind: 'tag-conflict',
-            message: `Tag "${tag}" on group "${other.entry.name}": boundary ports differ (${headIn}in/${headOut}out vs ${otherIn}in/${otherOut}out). Weight-shared groups must have matching interfaces.`,
+            message: `Tag "${tag}" on group "${other.entry.name}": boundary interface differs (${headIn}in/${headOut}out/${headP}param vs ${otherIn}in/${otherOut}out/${otherP}param). Weight-shared groups must have matching receivers and outlets.`,
           })
         }
         continue

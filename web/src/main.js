@@ -11,6 +11,12 @@ import { setupNodeSelection } from './selection.js'
 import { LitPlugin, Presets as LitPresets } from '@retejs/lit-plugin'
 
 import {
+  boundarySignatureFromBoundary,
+  boundarySignatureFromEntry,
+  boundarySignaturesMatch,
+  applySignatureToBoundary,
+} from './groupBoundary.js'
+import {
   makeNode,
   makeGroupEntry,
   INPUT_ENTRY,
@@ -1140,6 +1146,106 @@ function applyGroupTag(g, tag) {
   if (facade) restoreNodeTag(facade, tag)
 }
 
+function groupBoundarySignature(g) {
+  const facade = g.facadeNodeId ? editor.getNode(g.facadeNodeId) : null
+  if (facade?.entry) return boundarySignatureFromEntry(facade.entry)
+  const pm = g.portMap
+  if (pm?.inputs?.length || pm?.outputs?.length || pm?.params?.length) {
+    return boundarySignatureFromBoundary({
+      inputs: (pm.inputs ?? []).map((m) => ({ shape: m.shape })),
+      outputs: (pm.outputs ?? []).map((m) => ({ shape: m.shape })),
+      params: pm.params ?? [],
+    })
+  }
+  return null
+}
+
+function findPeerGroupWithTag(excludeGid, tag) {
+  const key = String(tag ?? '').trim().toLowerCase()
+  if (!key) return null
+  for (const [peerGid, peer] of state.groups) {
+    if (peerGid === excludeGid) continue
+    if (groupTag(peer).toLowerCase() !== key) continue
+    return { gid: peerGid, g: peer }
+  }
+  return null
+}
+
+function getTagBoundaryTemplate(excludeGid, tag) {
+  const peer = findPeerGroupWithTag(excludeGid, tag)
+  return peer ? groupBoundarySignature(peer.g) : null
+}
+
+async function replaceCollapsedFacade(group, boundary) {
+  const facade = group.facadeNodeId ? editor.getNode(group.facadeNodeId) : null
+  const pos = (facade && nodePosition(facade)) ?? group.savedPosition ?? { x: 0, y: 0 }
+  const tag = String(facade?.tag ?? group.facadeTag ?? '')
+
+  if (facade) {
+    await rerouteBoundaryEdges(group, 'to-children')
+    for (const c of [...editor.getConnections()]) {
+      if (c.source === facade.id || c.target === facade.id) {
+        await editor.removeConnection(c.id)
+      }
+    }
+    await editor.removeNode(facade.id)
+  }
+
+  const facadeEntry = makeGroupEntry(group.id, group.name, boundary)
+  const newFacade = makeNode(facadeEntry)
+  await editor.addNode(newFacade)
+  await area.translate(newFacade.id, pos)
+  markFacadeElement(newFacade.id)
+  if (tag) restoreNodeTag(newFacade, tag)
+
+  group.facadeNodeId = newFacade.id
+  group.portMap = facadeEntry.portMap
+  group.savedPosition = nodePosition(newFacade) ?? pos
+  await rerouteBoundaryEdges(group, 'to-facade')
+  applyTagStyle(newFacade)
+  for (const child of getGroupChildren(group.id)) applyTagStyle(child)
+}
+
+async function alignGroupBoundary(groupId, signature) {
+  const group = state.groups.get(groupId)
+  if (!group || !signature) return
+
+  if (!group.collapsed) {
+    group.pendingBoundarySignature = signature
+    return
+  }
+
+  const currentSig = groupBoundarySignature(group)
+  if (currentSig && boundarySignaturesMatch(currentSig, signature)) return
+
+  const childIds = new Set(getGroupChildren(groupId).map((n) => n.id))
+  const merged = applySignatureToBoundary(computeBoundary(childIds), signature, group.portMap)
+  await replaceCollapsedFacade(group, merged)
+}
+
+async function syncPeerGroupBoundaries(sourceGid, signature) {
+  const tag = groupTag(state.groups.get(sourceGid))
+  if (!tag || !signature) return
+  for (const [peerGid, peer] of state.groups) {
+    if (peerGid === sourceGid) continue
+    if (groupTag(peer).toLowerCase() !== tag.toLowerCase()) continue
+    await alignGroupBoundary(peerGid, signature)
+  }
+}
+
+async function alignTaggedGroupToPeers(gid, tag) {
+  const existing = findPeerGroupWithTag(gid, tag)
+  if (existing) {
+    const sig = groupBoundarySignature(existing.g)
+    if (sig) await alignGroupBoundary(gid, sig)
+  } else {
+    const sig = groupBoundarySignature(state.groups.get(gid))
+    if (sig) await syncPeerGroupBoundaries(gid, sig)
+  }
+  queueValidation()
+  queueAutosave()
+}
+
 /** Inspect every connection and classify it w.r.t. the given child set. */
 function classifyEdges(childIds) {
   const internal = []
@@ -1495,7 +1601,12 @@ async function collapseGroup(groupId) {
     return
   }
   const childIds = new Set(children.map((n) => n.id))
-  const boundary = computeBoundary(childIds)
+  let boundary = computeBoundary(childIds)
+  const tag = groupTag(group)
+  let template = group.pendingBoundarySignature ?? (tag ? getTagBoundaryTemplate(groupId, tag) : null)
+  delete group.pendingBoundarySignature
+  if (!template && tag) template = boundarySignatureFromBoundary(boundary)
+  if (template) boundary = applySignatureToBoundary(boundary, template, group.portMap)
   const center = group.savedPosition ?? centroid(children)
   const facadeEntry = makeGroupEntry(groupId, group.name, boundary)
   const facade = makeNode(facadeEntry)
@@ -1524,6 +1635,9 @@ async function collapseGroup(groupId) {
   applyTagStyle(facade)
   for (const child of children) applyTagStyle(child)
   state.selectedNodeId = facade.id
+  if (tag) {
+    await syncPeerGroupBoundaries(groupId, boundarySignatureFromBoundary(boundary))
+  }
   refreshInspector()
   queueValidation()
   queueAutosave()
@@ -1702,6 +1816,8 @@ function refreshInspector(options = {}) {
         const g = state.groups.get(gid)
         if (g) g.facadeTag = String(newTag ?? '')
         forEachPeerGroup(gid, oldTag, (_peerGid, peer) => applyGroupTag(peer, newTag))
+        const newKey = String(newTag ?? '').trim()
+        if (newKey) void alignTaggedGroupToPeers(gid, newKey)
         applyAllTagStyles()
       }
       area.update('node', n.id)

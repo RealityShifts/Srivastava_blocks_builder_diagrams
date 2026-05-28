@@ -19,6 +19,12 @@ import {
   ReshapeNode,
   paletteGroup,
 } from './src/nodes.js'
+import {
+  boundarySignatureFromBoundary,
+  boundarySignatureFromEntry,
+  boundarySignaturesMatch,
+  applySignatureToBoundary,
+} from './src/groupBoundary.js'
 
 let pass = 0
 let fail = 0
@@ -508,6 +514,53 @@ console.log('codegen tag weight-sharing')
   check('untagged / distinct-tag groups get separate instances', separateInits === 2, separateInits)
 }
 
+// --- group boundary signatures ---
+console.log('group boundary signatures')
+{
+  const shapeKey = (shape) => JSON.stringify(shape)
+  const sig1 = boundarySignatureFromBoundary({
+    inputs: [{ shape: ['B', 'C', 'H', 'W'], dtype: 'float' }],
+    outputs: [{ shape: ['B', 'C2', 'H', 'W'], dtype: 'float' }],
+    params: [{ paramName: 'kernel_size', paramType: 'int' }],
+  })
+  const sig2 = boundarySignatureFromBoundary({
+    inputs: [{ shape: ['B', 'C', 'H', 'W'], dtype: 'float' }],
+    outputs: [{ shape: ['B', 'C2', 'H', 'W'], dtype: 'float' }],
+    params: [{ paramName: 'kernel_size', paramType: 'int' }],
+  })
+  check('matching signatures compare equal', boundarySignaturesMatch(sig1, sig2))
+
+  const sig3 = boundarySignatureFromBoundary({
+    inputs: [
+      { shape: ['B', 'C', 'H', 'W'], dtype: 'float' },
+      { shape: ['B', 'C', 'H', 'W'], dtype: 'float' },
+    ],
+    outputs: [{ shape: ['B', 'C2', 'H', 'W'], dtype: 'float' }],
+  })
+  check('extra input port breaks match', !boundarySignaturesMatch(sig1, sig3))
+
+  const entry = makeGroupEntry('g1', 'Group1', {
+    inputs: [{ shape: ['B', 3, 'H', 'W'], childNodeId: 'c1', childPort: 'x' }],
+    outputs: [{ shape: ['B', 16, 'H', 'W'], childNodeId: 'c2', childPort: 'out' }],
+    params: [],
+  })
+  const fromEntry = boundarySignatureFromEntry(entry)
+  check('signature from entry preserves input shape', shapeKey(fromEntry.inputs[0].shape) === shapeKey(['B', 3, 'H', 'W']))
+
+  const merged = applySignatureToBoundary(
+    {
+      inputs: [{ shape: ['B', 3, 'H', 'W'], childNodeId: 'c9', childPort: 'x' }],
+      outputs: [],
+      params: [],
+    },
+    sig1,
+    { inputs: [{ childNodeId: 'old', childPort: 'x' }], outputs: [], params: [] }
+  )
+  check('applySignature pads outputs from template', merged.outputs.length === 1)
+  check('applySignature keeps local child binding', merged.inputs[0].childNodeId === 'c9')
+  check('applySignature adds param port from template', merged.params.length === 1)
+}
+
 // --- validator: tag conflict ---
 console.log('validator tag conflicts')
 {
@@ -605,6 +658,29 @@ console.log('validator tag conflicts')
   check(
     'tag-conflict: empty tag does NOT trigger conflict',
     res.errors.filter((e) => e.kind === 'tag-conflict').length === 0,
+    res.errors
+  )
+
+  const groupEntry1 = makeGroupEntry('g1', 'Enc', {
+    inputs: [{ shape: ['B', 'C', 'H', 'W'], childNodeId: 'c1', childPort: 'x' }],
+    outputs: [{ shape: ['B', 'C2', 'H', 'W'], childNodeId: 'c2', childPort: 'out' }],
+  })
+  const groupEntry2 = makeGroupEntry('g2', 'Enc', {
+    inputs: [
+      { shape: ['B', 'C', 'H', 'W'], childNodeId: 'c3', childPort: 'x' },
+      { shape: ['B', 'C', 'H', 'W'], childNodeId: 'c4', childPort: 'x' },
+    ],
+    outputs: [{ shape: ['B', 'C2', 'H', 'W'], childNodeId: 'c5', childPort: 'out' }],
+  })
+  res = validate(
+    mkEd([
+      mkN('f1', groupEntry1, {}, 'shared-enc'),
+      mkN('f2', groupEntry2, {}, 'shared-enc'),
+    ])
+  )
+  check(
+    'tag-conflict: group facades with mismatched boundary -> error',
+    res.errors.some((e) => e.kind === 'tag-conflict' && /boundary interface differs/.test(e.message)),
     res.errors
   )
 }
