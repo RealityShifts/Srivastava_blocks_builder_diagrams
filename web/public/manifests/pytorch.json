@@ -74,7 +74,7 @@
       {
         "name": "dropout",
         "type": "float",
-        "default": 0.0,
+        "default": 0,
         "required": false
       }
     ],
@@ -198,7 +198,7 @@
       {
         "name": "dropout",
         "type": "float",
-        "default": 0.0,
+        "default": 0,
         "required": false
       },
       {
@@ -337,7 +337,7 @@
       {
         "name": "base",
         "type": "float",
-        "default": 10000.0,
+        "default": 10000,
         "required": false
       }
     ],
@@ -393,7 +393,7 @@
       {
         "name": "dropout",
         "type": "float",
-        "default": 0.0,
+        "default": 0,
         "required": false
       }
     ],
@@ -1328,67 +1328,6 @@
     "bindings": {}
   },
   {
-    "name": "Pool2d",
-    "module": "pytorch_blocks.core_blocks",
-    "framework": "pytorch",
-    "kind": "module",
-    "ctor": [
-      {
-        "name": "kernel_size",
-        "type": "int",
-        "default": 2,
-        "required": false
-      },
-      {
-        "name": "stride",
-        "type": "int",
-        "default": null,
-        "required": false
-      },
-      {
-        "name": "padding",
-        "type": "int",
-        "default": 0,
-        "required": false
-      },
-      {
-        "name": "mode",
-        "type": "str",
-        "default": "max",
-        "required": false
-      }
-    ],
-    "inputs": [
-      {
-        "shape": [
-          "B",
-          "C",
-          "H",
-          "W"
-        ],
-        "dtype": "float",
-        "optional": false,
-        "variadic": false,
-        "name": "x"
-      }
-    ],
-    "outputs": [
-      {
-        "shape": [
-          "B",
-          "C",
-          "H_out",
-          "W_out"
-        ],
-        "dtype": "float",
-        "optional": false,
-        "variadic": false,
-        "name": "out"
-      }
-    ],
-    "bindings": {}
-  },
-  {
     "name": "RMSNorm",
     "module": "pytorch_blocks.core_blocks",
     "framework": "pytorch",
@@ -1403,7 +1342,7 @@
       {
         "name": "eps",
         "type": "float",
-        "default": 1e-06,
+        "default": 0.000001,
         "required": false
       }
     ],
@@ -1606,61 +1545,6 @@
       {
         "shape": [
           "..."
-        ],
-        "dtype": "float",
-        "optional": false,
-        "variadic": false,
-        "name": "out"
-      }
-    ],
-    "bindings": {}
-  },
-  {
-    "name": "Upsample",
-    "module": "pytorch_blocks.core_blocks",
-    "framework": "pytorch",
-    "kind": "module",
-    "ctor": [
-      {
-        "name": "scale_factor",
-        "type": "int",
-        "default": 2,
-        "required": false
-      },
-      {
-        "name": "mode",
-        "type": "str",
-        "default": "bilinear",
-        "required": false
-      },
-      {
-        "name": "align_corners",
-        "type": "bool",
-        "default": false,
-        "required": false
-      }
-    ],
-    "inputs": [
-      {
-        "shape": [
-          "B",
-          "C",
-          "H",
-          "W"
-        ],
-        "dtype": "float",
-        "optional": false,
-        "variadic": false,
-        "name": "x"
-      }
-    ],
-    "outputs": [
-      {
-        "shape": [
-          "B",
-          "C",
-          "H_out",
-          "W_out"
         ],
         "dtype": "float",
         "optional": false,
@@ -2472,7 +2356,7 @@
       {
         "name": "gain",
         "type": "float",
-        "default": 1.0,
+        "default": 1,
         "required": false
       }
     ],
@@ -2536,13 +2420,13 @@
       {
         "name": "gain",
         "type": "float",
-        "default": 1.0,
+        "default": 1,
         "required": false
       },
       {
         "name": "lr_mul",
         "type": "float",
-        "default": 1.0,
+        "default": 1,
         "required": false
       }
     ],
@@ -3309,7 +3193,7 @@
       {
         "name": "dropout",
         "type": "float",
-        "default": 0.0,
+        "default": 0,
         "required": false
       },
       {
@@ -3631,7 +3515,7 @@
       {
         "name": "mlp_ratio",
         "type": "float",
-        "default": 4.0,
+        "default": 4,
         "required": false
       }
     ],
@@ -4544,8 +4428,8 @@
         "name": "grid_range",
         "type": "list",
         "default": [
-          -1.0,
-          1.0
+          -1,
+          1
         ],
         "required": false
       }
@@ -4600,13 +4484,13 @@
       {
         "name": "t0",
         "type": "float",
-        "default": 0.0,
+        "default": 0,
         "required": false
       },
       {
         "name": "t1",
         "type": "float",
-        "default": 1.0,
+        "default": 1,
         "required": false
       }
     ],
@@ -4669,7 +4553,7 @@
       {
         "name": "eps",
         "type": "float",
-        "default": 1e-08,
+        "default": 1e-8,
         "required": false
       }
     ],
@@ -4854,7 +4738,7 @@
       {
         "name": "dropout",
         "type": "float",
-        "default": 0.0,
+        "default": 0,
         "required": false
       },
       {
@@ -4913,7 +4797,7 @@
       {
         "name": "dropout",
         "type": "float",
-        "default": 0.0,
+        "default": 0,
         "required": false
       }
     ],
@@ -5027,7 +4911,7 @@
       {
         "name": "dropout",
         "type": "float",
-        "default": 0.0,
+        "default": 0,
         "required": false
       }
     ],
@@ -5080,7 +4964,7 @@
       {
         "name": "mlp_ratio",
         "type": "float",
-        "default": 4.0,
+        "default": 4,
         "required": false
       },
       {
@@ -5092,7 +4976,7 @@
       {
         "name": "dropout",
         "type": "float",
-        "default": 0.0,
+        "default": 0,
         "required": false
       }
     ],
@@ -5167,13 +5051,13 @@
       {
         "name": "mlp_ratio",
         "type": "float",
-        "default": 4.0,
+        "default": 4,
         "required": false
       },
       {
         "name": "dropout",
         "type": "float",
-        "default": 0.0,
+        "default": 0,
         "required": false
       }
     ],
@@ -5428,7 +5312,7 @@
       {
         "name": "scale",
         "type": "float",
-        "default": 1.0,
+        "default": 1,
         "required": false
       }
     ],
@@ -5505,7 +5389,7 @@
       {
         "name": "alpha",
         "type": "float",
-        "default": 8.0,
+        "default": 8,
         "required": false
       }
     ],
@@ -5560,13 +5444,13 @@
       {
         "name": "alpha",
         "type": "float",
-        "default": 16.0,
+        "default": 16,
         "required": false
       },
       {
         "name": "dropout",
         "type": "float",
-        "default": 0.0,
+        "default": 0,
         "required": false
       }
     ],
@@ -5852,7 +5736,7 @@
       {
         "name": "dropout",
         "type": "float",
-        "default": 0.0,
+        "default": 0,
         "required": false
       }
     ],
@@ -6136,7 +6020,7 @@
       {
         "name": "dropout",
         "type": "float",
-        "default": 0.0,
+        "default": 0,
         "required": false
       }
     ],
@@ -6197,7 +6081,7 @@
       {
         "name": "dropout",
         "type": "float",
-        "default": 0.0,
+        "default": 0,
         "required": false
       }
     ],

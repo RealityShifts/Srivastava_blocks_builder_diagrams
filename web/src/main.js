@@ -811,7 +811,7 @@ async function loadManifest() {
   const url = `/manifests/${state.framework}.json`
   const res = await fetch(url)
   const fetched = await res.json()
-  state.entries = [
+  const builtins = [
     INPUT_ENTRY,
     OUTPUT_ENTRY,
     CONST_ENTRY,
@@ -822,8 +822,12 @@ async function loadManifest() {
     STACK_ENTRY,
     POOL_ENTRY,
     UPSAMPLE_ENTRY,
-    ...fetched,
   ]
+  // Built-in / utility names always win. The manifest is auto-generated and
+  // historically picked up stale module-kind aliases (e.g. Pool2d, Upsample)
+  // that would emit broken imports if a palette click resolved to them.
+  const builtinNames = new Set(builtins.map((e) => e.name))
+  state.entries = [...builtins, ...fetched.filter((e) => !builtinNames.has(e.name))]
   state.byName = new Map(state.entries.map((e) => [e.name, e]))
   renderPalette(document.getElementById('palette'), state.entries, (entry) =>
     createNode(entry.name)

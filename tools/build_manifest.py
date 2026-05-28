@@ -494,6 +494,23 @@ def _walk_custom(framework: str) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
+# Names owned by the JS-side built-in / utility palette. The manifest must
+# never emit a module-kind entry under these names, otherwise palette nodes
+# resolve to the stale class and codegen emits a broken `from … import X`.
+_RESERVED_NAMES: frozenset[str] = frozenset({
+    "Input",
+    "Output",
+    "Constant",
+    "LearnableTensor",
+    "Rearrange",
+    "Reshape",
+    "Concat",
+    "Stack",
+    "Pool2d",
+    "Upsample",
+})
+
+
 def main() -> None:
     out_dir = REPO_ROOT / "web" / "public" / "manifests"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -511,6 +528,12 @@ def main() -> None:
             print(f"   + {len(custom_entries)} custom from customblocks/{framework}/")
             entries.extend(custom_entries)
             entries.sort(key=lambda e: (e["module"], e["name"]))
+
+        dropped = [e for e in entries if e["name"] in _RESERVED_NAMES]
+        if dropped:
+            for e in dropped:
+                print(f"   - drop reserved name '{e['name']}' from {e['module']}")
+            entries = [e for e in entries if e["name"] not in _RESERVED_NAMES]
 
         if not entries:
             continue
