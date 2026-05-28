@@ -56,7 +56,7 @@ const state = {
   runtimeErrorNodeId: null,
   restoring: false, // true while restoreFromAutosave is mutating the editor
   clipboard: null, // in-memory copy of last copy/duplicate (mirrors localStorage)
-  // groupId -> { id, name, collapsed, facadeNodeId, portMap, savedPosition,
+  // groupId -> { id, name, description, collapsed, facadeNodeId, portMap, savedPosition,
   //              childOffsets }
   // See groupSelected/expandGroup/collapseGroup for the lifecycle. The portMap
   // is the source of truth used by validator and codegen to "see through" a
@@ -398,6 +398,7 @@ function copySelection() {
     payload.groups.push({
       id: g.id,
       name: g.name,
+      description: g.description ?? '',
       collapsed: g.collapsed,
       facadeNodeId: g.facadeNodeId,
       savedPosition: g.savedPosition,
@@ -527,6 +528,7 @@ async function pasteClipboard() {
     state.groups.set(newGid, {
       id: newGid,
       name: g.name || 'Group',
+      description: g.description ?? '',
       collapsed: Boolean(g.collapsed),
       facadeNodeId: newFacadeId ?? null,
       portMap: facade?.entry?.portMap ?? { inputs: [], outputs: [] },
@@ -975,6 +977,7 @@ async function importGraph(data) {
     state.groups.set(g.id, {
       id: g.id,
       name: g.name || 'Group',
+      description: g.description ?? '',
       collapsed: Boolean(g.collapsed),
       facadeNodeId: newFacadeId ?? null,
       portMap: facade?.entry?.portMap ?? { inputs: [], outputs: [] },
@@ -1342,6 +1345,7 @@ async function groupSelected(explicitIds) {
   const group = {
     id: groupId,
     name,
+    description: '',
     collapsed: true,
     facadeNodeId: facade.id,
     portMap: facadeEntry.portMap,
@@ -1674,6 +1678,13 @@ function refreshInspector(options = {}) {
     },
     {
       getName: (gid) => state.groups.get(gid)?.name ?? '',
+      getDescription: (gid) => state.groups.get(gid)?.description ?? '',
+      setDescription: (gid, value) => {
+        const g = state.groups.get(gid)
+        if (!g) return
+        g.description = String(value ?? '')
+        queueAutosave()
+      },
       isCollapsed: (gid) => Boolean(state.groups.get(gid)?.collapsed),
       rename: (gid, value) => {
         const g = state.groups.get(gid)
@@ -1820,6 +1831,7 @@ function getGraphData() {
     groups: [...state.groups.values()].map((g) => ({
       id: g.id,
       name: g.name,
+      description: g.description ?? '',
       collapsed: g.collapsed,
       facadeNodeId: g.facadeNodeId,
       savedPosition: g.savedPosition,

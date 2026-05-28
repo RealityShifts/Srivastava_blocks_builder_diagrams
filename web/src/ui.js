@@ -335,7 +335,52 @@ function buildParamsPanel(node, sub, runtimeShapes, onChange, onAddConst, onTogg
   return panel
 }
 
-function buildInfoPanel(node, blockInfo) {
+function buildGroupInfoPanel(gid, actions) {
+  const panel = document.createElement('div')
+  panel.className = 'tab-panel info-panel group-info-panel'
+  panel.dataset.tab = 'info'
+
+  const name = String(actions.getName?.(gid) ?? 'Group').trim() || 'Group'
+  const lead = document.createElement('p')
+  lead.className = 'info-desc'
+  lead.textContent =
+    'Notes for this subgraph — purpose, wiring expectations, training tips, or anything that helps you (or a collaborator) understand what lives inside.'
+  panel.appendChild(lead)
+
+  const title = document.createElement('p')
+  title.className = 'group-info-name'
+  title.innerHTML = `<strong>${escapeHtml(name)}</strong>`
+  panel.appendChild(title)
+
+  const row = document.createElement('div')
+  row.className = 'row group-desc-row'
+  const label = document.createElement('label')
+  label.textContent = 'Description'
+  label.htmlFor = `group-desc-${gid}`
+  row.appendChild(label)
+
+  const ta = document.createElement('textarea')
+  ta.id = `group-desc-${gid}`
+  ta.className = 'group-desc-input'
+  ta.rows = 8
+  ta.spellcheck = true
+  ta.placeholder =
+    'e.g. Downsample path: two 3×3 convs with stride 2. Output channels must match the skip branch before Add.'
+  ta.value = String(actions.getDescription?.(gid) ?? '')
+  ta.addEventListener('input', () => actions.setDescription?.(gid, ta.value))
+  row.appendChild(ta)
+  panel.appendChild(row)
+
+  return panel
+}
+
+function buildInfoPanel(node, blockInfo, groupActions) {
+  const gid =
+    node.entry.kind === 'group' ? node.entry.groupId : node.groupId ?? null
+  if (gid && groupActions) {
+    return buildGroupInfoPanel(gid, groupActions)
+  }
+
   const panel = document.createElement('div')
   panel.className = 'tab-panel info-panel'
   panel.dataset.tab = 'info'
@@ -515,7 +560,7 @@ export function renderInspector(
     onAddConst,
     onToggleParamPort
   )
-  const infoPanel = buildInfoPanel(node, blockInfo)
+  const infoPanel = buildInfoPanel(node, blockInfo, groupActions)
   rootEl.appendChild(paramsPanel)
   rootEl.appendChild(infoPanel)
 

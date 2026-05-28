@@ -470,6 +470,32 @@ main {
   margin: 4px 0 8px;
   color: var(--text);
 }
+#inspector .group-info-name {
+  margin: 0 0 10px;
+  font-size: 13px;
+}
+#inspector .group-desc-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+#inspector .group-desc-input {
+  width: 100%;
+  min-height: 120px;
+  resize: vertical;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  line-height: 1.45;
+}
+#inspector .group-desc-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
+}
 #inspector .info-shapes {
   margin: 0 0 8px;
   font-size: 11px;
