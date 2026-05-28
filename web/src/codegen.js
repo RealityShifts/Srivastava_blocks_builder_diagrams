@@ -65,6 +65,84 @@ export function sanitizePyIdent(raw, fallback = 'x') {
   return out || fallback
 }
 
+// ---------------------------------------------------------------------------
+// jaxtyping annotations
+//
+// jaxtyping wants `Float[Tensor, "B C H W"]`-style annotations. We synthesize
+// them from each node's declared shape + dtype so the generated module can be
+// dropped into another codebase as a real, typed custom block.
+//
+// Notes:
+//   - Axis names with a "#<nodeId>" freshen suffix are stripped (jaxtyping
+//     reserves `#` for broadcasting axes, so we'd otherwise misuse it).
+//   - Axis tokens that aren't a bare identifier or an integer literal are
+//     replaced with `_` (jaxtyping's "any size, no checking" axis).
+//   - Empty / missing shape -> `"..."` (any rank, any sizes).
+//   - dtype 'any' / unknown -> `Shaped` (matches any numeric dtype).
+// ---------------------------------------------------------------------------
+const JAXTYPING_BY_DTYPE = {
+  float: 'Float',
+  float16: 'Float',
+  float32: 'Float',
+  float64: 'Float',
+  bfloat16: 'Float',
+  int: 'Int',
+  int8: 'Int',
+  int16: 'Int',
+  int32: 'Int',
+  int64: 'Int',
+  long: 'Int',
+  uint: 'UInt',
+  uint8: 'UInt',
+  bool: 'Bool',
+  complex: 'Complex',
+  any: 'Shaped',
+  '': 'Shaped',
+}
+
+function jaxtypingDtype(dtype) {
+  const key = String(dtype ?? '').toLowerCase().trim()
+  return JAXTYPING_BY_DTYPE[key] || 'Shaped'
+}
+
+function sanitizeAxis(tok) {
+  const s = String(tok ?? '').trim()
+  if (!s) return '_'
+  if (s === '...') return '...'
+  // Strip freshen suffix appended by shape.js (`C_in#node-7` -> `C_in`).
+  const base = s.split('#')[0]
+  if (/^-?\d+$/.test(base)) return base
+  if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(base)) return base
+  return '_'
+}
+
+/** Normalize a shape (array of tokens OR space-separated string) into the
+ *  axis string jaxtyping expects, e.g. ["B","C","H","W"] -> "B C H W". */
+function jaxtypingShape(shape) {
+  let toks = []
+  if (Array.isArray(shape)) toks = shape
+  else if (typeof shape === 'string') toks = shape.split(/[\s,]+/)
+  toks = toks.map((t) => String(t ?? '').trim()).filter((t) => t.length > 0)
+  if (toks.length === 0) return '...'
+  toks = toks.map(sanitizeAxis)
+  // jaxtyping permits at most one `...`; collapse any duplicates.
+  let seenEllipsis = false
+  toks = toks.filter((t) => {
+    if (t !== '...') return true
+    if (seenEllipsis) return false
+    seenEllipsis = true
+    return true
+  })
+  return toks.join(' ')
+}
+
+/** `Float[Tensor, "B C H W"]` style annotation. */
+function jaxtypingAnno(shape, dtype, tensorType, usedDtypes) {
+  const cls = jaxtypingDtype(dtype)
+  usedDtypes?.add(cls)
+  return `${cls}[${tensorType}, "${jaxtypingShape(shape)}"]`
+}
+
 /**
  * Shared graph planning used by generate() and the runtime shape runner.
  * Returns naming maps, wiring tables, and topo order.
@@ -207,9 +285,14 @@ export function generate(nodes, connections, framework, options = {}) {
   })
 
   // Imports are emitted once across all classes, then we emit subclass bodies
-  // followed by the main class.
+  // followed by the main class. We don't yet know which jaxtyping dtype
+  // classes will be referenced, so we reserve a placeholder line and patch
+  // it once every emitClassBody() has filled `usedDtypes`.
+  const usedDtypes = new Set()
   const lines = ['from __future__ import annotations', '']
   emitFrameworkImports(lines, framework)
+  const jaxtypingLineIdx = lines.length
+  lines.push('') // placeholder for `from jaxtyping import ...`
   emitUserImports(lines, nodes)
   if (nodes.some((n) => n.entry.kind === 'rearrange')) {
     lines.push('from einops import rearrange')
@@ -237,7 +320,8 @@ export function generate(nodes, connections, framework, options = {}) {
       framework,
       cls,
       classNames,
-      options
+      options,
+      { facade, usedDtypes }
     )
     subClassSections.push(subLines.join('\n'))
   }
@@ -248,7 +332,10 @@ export function generate(nodes, connections, framework, options = {}) {
 
   // Main class. If there's truly nothing top-level (e.g. user grouped the
   // entire graph), still emit a hollow main class so the file is valid.
-  if (topNodes.length === 0) return lines.join('\n') + '# empty graph\n'
+  if (topNodes.length === 0) {
+    lines[jaxtypingLineIdx] = renderJaxtypingImport(usedDtypes, framework)
+    return lines.join('\n') + '# empty graph\n'
+  }
   emitClassBody(
     lines,
     topNodes,
@@ -256,9 +343,99 @@ export function generate(nodes, connections, framework, options = {}) {
     framework,
     'GeneratedModel',
     classNames,
-    options
+    options,
+    { usedDtypes }
   )
+  lines[jaxtypingLineIdx] = renderJaxtypingImport(usedDtypes, framework)
   return lines.join('\n')
+}
+
+function renderJaxtypingImport(usedDtypes, framework) {
+  // Always import the Tensor/Array symbol so signatures don't depend on whether
+  // any input had a recognized dtype.
+  const sorted = [...usedDtypes].sort()
+  if (sorted.length === 0) sorted.push('Shaped')
+  const jaxtypingLine = `from jaxtyping import ${sorted.join(', ')}`
+  const tensorLine =
+    framework === 'pytorch' ? 'from torch import Tensor' : 'from jax import Array'
+  return `${jaxtypingLine}\n${tensorLine}`
+}
+
+/** Walk back from a port reference and return its declared shape/dtype.
+ *  Returns `null` if we can't resolve (no edge, unknown port). */
+function resolveSourceShapeDtype(ref, ordered, incoming) {
+  // ref is { nodeId, portName } - the port itself is a SOURCE (output port).
+  const owner = ordered.find((n) => n.id === ref.nodeId)
+  if (!owner) return null
+  if (owner.entry.kind === 'input') {
+    // Explicit Input nodes carry their declared shape on values.{shape,dtype};
+    // fall back to the manifest entry if values are blank.
+    return {
+      shape: owner.values?.shape ?? owner.entry.outputs?.[0]?.shape ?? ['...'],
+      dtype: owner.values?.dtype ?? owner.entry.outputs?.[0]?.dtype ?? 'any',
+    }
+  }
+  const port = owner.entry.outputs?.find((p) => p.name === ref.portName)
+  if (!port) return null
+  // Group facade ports may have a child-derived dtype in the live editor, but
+  // only shape survives autosave (computeBoundary copies dtype from the child
+  // but the persisted portMap drops it). Force `any` here so the generated
+  // type signature is identical before/after autosave roundtrips.
+  const dtype = owner.entry.kind === 'group' ? 'any' : port.dtype ?? 'any'
+  return { shape: port.shape ?? ['...'], dtype }
+}
+
+/** Resolve the source (shape, dtype) of an Output node's incoming edge. */
+function resolveOutputSourceShapeDtype(outNode, ordered, incoming) {
+  const edges = incoming.get(`${outNode.id}/x`) ?? []
+  if (edges.length === 0) return null
+  const c = edges[0]
+  return resolveSourceShapeDtype(
+    { nodeId: c.source, portName: c.sourceOutput },
+    ordered,
+    incoming
+  )
+}
+
+function buildReturnAnnotation({ ordered, connections, incoming, isSubclass, facade, tensorType, usedDtypes }) {
+  // Sub-class return matches its facade's portMap.outputs (one virtual Output
+  // per boundary, ordered out0..outN). Read shapes directly from the facade
+  // so we don't depend on whether buildSubgraphView set virtual port shapes.
+  let entries = []
+  if (isSubclass && facade) {
+    entries = (facade.entry.portMap?.outputs ?? []).map((m) => ({
+      shape: m.shape ?? ['...'],
+      dtype: 'any',
+    }))
+  } else {
+    // Main class: prefer explicit Output nodes; otherwise terminal output
+    // ports become the return tuple (same logic the body uses for `return`).
+    const outNodes = ordered.filter((n) => n.entry.kind === 'output')
+    if (outNodes.length > 0) {
+      for (const o of outNodes) {
+        const sd = resolveOutputSourceShapeDtype(o, ordered, incoming)
+        if (sd) entries.push(sd)
+      }
+    } else {
+      const terminals = findTerminals(ordered, connections)
+      for (const t of terminals) {
+        const sd = resolveSourceShapeDtype(
+          { nodeId: t.nodeId, portName: t.portName },
+          ordered,
+          incoming
+        )
+        if (sd) entries.push(sd)
+      }
+    }
+  }
+  if (entries.length === 0) return 'None'
+  if (entries.length === 1) {
+    return jaxtypingAnno(entries[0].shape, entries[0].dtype, tensorType, usedDtypes)
+  }
+  const annos = entries.map((e) =>
+    jaxtypingAnno(e.shape, e.dtype, tensorType, usedDtypes)
+  )
+  return `tuple[${annos.join(', ')}]`
 }
 
 function emitFrameworkImports(lines, framework) {
@@ -286,7 +463,7 @@ function emitUserImports(lines, allNodes) {
   }
 }
 
-function emitClassBody(lines, nodes, connections, framework, className, classNames, options) {
+function emitClassBody(lines, nodes, connections, framework, className, classNames, options, typing = {}) {
   // Subclasses (anything other than the main entry point) MUST always return
   // real tensors so the main class's wiring keeps working - even in trace
   // mode. Without this, the subclass would emit `return _runtime_shapes` and
@@ -310,6 +487,10 @@ function emitClassBody(lines, nodes, connections, framework, className, classNam
     incoming,
     outputVarFor,
   } = plan
+
+  const tensorType = framework === 'pytorch' ? 'Tensor' : 'Array'
+  const usedDtypes = typing.usedDtypes
+  const facade = typing.facade // populated for subclass emission only
 
   const baseClass = framework === 'pytorch' ? 'nn.Module' : 'nnx.Module'
   lines.push(`class ${className}(${baseClass}):`)
@@ -344,12 +525,44 @@ function emitClassBody(lines, nodes, connections, framework, className, classNam
 
   // ------- forward / __call__ -------
   // Only explicit Input nodes become forward() arguments.
-  const inputArgs = ordered
-    .filter((n) => n.entry.kind === 'input')
-    .map((n) => inputArgFor.get(n.id))
-  const allArgs = [...inputArgs]
+  const inputNodes = ordered.filter((n) => n.entry.kind === 'input')
+  const inputArgs = inputNodes.map((n) => inputArgFor.get(n.id))
+
+  // Resolve a jaxtyping annotation for each forward arg. For the main class
+  // we use the user's Input ctor (shape/dtype). For a subclass we read the
+  // facade's portMap so the signature reflects what the parent passes in.
+  const argAnnotations = inputNodes.map((n, i) => {
+    let shape
+    let dtype = 'any'
+    if (facade) {
+      const m = facade.entry?.portMap?.inputs?.[i]
+      if (m) shape = m.shape
+    } else {
+      shape = n.values?.shape ?? n.entry.outputs?.[0]?.shape
+      dtype = n.values?.dtype ?? n.entry.outputs?.[0]?.dtype ?? 'any'
+    }
+    return jaxtypingAnno(shape, dtype, tensorType, usedDtypes)
+  })
+
+  // Resolve return-type annotation. Subclasses always return tensor(s) (we
+  // disable trace there). The main class in trace mode returns a dict, so we
+  // intentionally skip annotating the return to keep the type honest.
+  const returnAnno = trace
+    ? 'dict[str, list[int]]'
+    : buildReturnAnnotation({
+        ordered,
+        connections,
+        incoming,
+        isSubclass,
+        facade,
+        tensorType,
+        usedDtypes,
+      })
+
+  const annotatedArgs = inputArgs.map((name, i) => `${name}: ${argAnnotations[i]}`)
   const fwdName = framework === 'pytorch' ? 'forward' : '__call__'
-  lines.push(`    def ${fwdName}(self${allArgs.length ? ', ' + allArgs.join(', ') : ''}):`)
+  const sigHead = `    def ${fwdName}(self${annotatedArgs.length ? ', ' + annotatedArgs.join(', ') : ''})`
+  lines.push(returnAnno ? `${sigHead} -> ${returnAnno}:` : `${sigHead}:`)
 
   if (trace) lines.push('        _runtime_shapes = {}')
 

@@ -187,6 +187,121 @@ console.log('ReshapeNode')
   )
 }
 
+// --- jaxtyping annotations ---
+console.log('codegen jaxtyping annotations')
+{
+  const inputEntry = {
+    name: 'Input',
+    module: '__builtin__',
+    framework: 'any',
+    kind: 'input',
+    ctor: [
+      { name: 'name', type: 'str', default: 'x' },
+      { name: 'shape', type: 'str', default: 'B C H W' },
+      { name: 'dtype', type: 'str', default: 'float' },
+    ],
+    inputs: [],
+    outputs: [{ name: 'out', shape: ['B', 'C', 'H', 'W'], dtype: 'float' }],
+    bindings: {},
+  }
+  const conv = {
+    name: 'ConvBlock',
+    module: 'pytorch_blocks.core_blocks',
+    framework: 'pytorch',
+    kind: 'module',
+    ctor: [
+      { name: 'in_ch', type: 'int', default: null, required: true },
+      { name: 'out_ch', type: 'int', default: null, required: true },
+    ],
+    inputs: [{ name: 'x', shape: ['B', 'C_in', 'H', 'W'], dtype: 'float' }],
+    outputs: [{ name: 'out', shape: ['B', 'C_out', 'H', 'W'], dtype: 'float' }],
+    bindings: { C_in: 'in_ch', C_out: 'out_ch' },
+  }
+  const mk = (id, entry, values = {}, tag = '') => ({
+    id,
+    entry,
+    tag,
+    values: { ...Object.fromEntries(entry.ctor.map((p) => [p.name, p.default])), ...values },
+  })
+
+  const inp = mk('inp', inputEntry, { name: 'x', shape: 'B 3 224 224', dtype: 'float' })
+  const c1 = mk('c1', conv, { in_ch: 3, out_ch: 16 })
+  const code = generate(
+    [inp, c1],
+    [{ source: 'inp', sourceOutput: 'out', target: 'c1', targetInput: 'x' }],
+    'pytorch'
+  )
+  check('jaxtyping import emitted', /^from jaxtyping import [A-Z][A-Za-z, ]+$/m.test(code), code)
+  check(
+    'torch Tensor symbol imported for jaxtyping params',
+    /^from torch import Tensor$/m.test(code),
+    code
+  )
+  check(
+    'forward arg uses Float[Tensor, "B 3 224 224"]',
+    /def forward\(self, x: Float\[Tensor, "B 3 224 224"\]\)/.test(code),
+    code
+  )
+  check(
+    'forward return type uses the source port shape (C_out, not C_in)',
+    /-> Float\[Tensor, "B C_out H W"\]:/.test(code),
+    code
+  )
+
+  // Empty Input shape and unknown dtype -> Shaped with `...`.
+  const inp2 = mk('inp2', inputEntry, { name: 'x', shape: '', dtype: '' })
+  const c2 = mk('c2', conv, { in_ch: 3, out_ch: 16 })
+  const code2 = generate(
+    [inp2, c2],
+    [{ source: 'inp2', sourceOutput: 'out', target: 'c2', targetInput: 'x' }],
+    'pytorch'
+  )
+  check(
+    'empty shape -> Shaped[Tensor, "..."]',
+    /def forward\(self, x: Shaped\[Tensor, "\.\.\."\]\)/.test(code2),
+    code2
+  )
+
+  // Multi-output return -> tuple[...]
+  const fork = {
+    name: 'ForkBlock',
+    module: 'pytorch_blocks.core_blocks',
+    framework: 'pytorch',
+    kind: 'module',
+    ctor: [],
+    inputs: [{ name: 'x', shape: ['B', 'C', 'H', 'W'], dtype: 'float' }],
+    outputs: [
+      { name: 'a', shape: ['B', 'C', 'H', 'W'], dtype: 'float' },
+      { name: 'b', shape: ['B', 'C', 'H', 'W'], dtype: 'float' },
+    ],
+    bindings: {},
+  }
+  const inp3 = mk('inp3', inputEntry, { name: 'x', shape: 'B C H W', dtype: 'float' })
+  const f = mk('f', fork, {})
+  const code3 = generate(
+    [inp3, f],
+    [{ source: 'inp3', sourceOutput: 'out', target: 'f', targetInput: 'x' }],
+    'pytorch'
+  )
+  check(
+    'multi-output return uses tuple[]',
+    /-> tuple\[Float\[Tensor, "B C H W"\], Float\[Tensor, "B C H W"\]\]:/.test(code3),
+    code3
+  )
+
+  // Flax framework uses Array, not Tensor.
+  const codeFlax = generate(
+    [inp, c1],
+    [{ source: 'inp', sourceOutput: 'out', target: 'c1', targetInput: 'x' }],
+    'flax'
+  )
+  check(
+    'flax uses Array for jaxtyping params',
+    /^from jax import Array$/m.test(codeFlax) && /Float\[Array,/.test(codeFlax),
+    codeFlax
+  )
+}
+
 // --- Rearrange / Reshape codegen ---
 console.log('codegen (rearrange + reshape)')
 {
