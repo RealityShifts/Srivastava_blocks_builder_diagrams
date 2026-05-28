@@ -805,6 +805,141 @@ console.log('codegen (explicit Output node)')
   )
 }
 
+console.log('codegen (test case + trace)')
+{
+  const inputEntry = {
+    name: 'Input',
+    module: '__builtin__',
+    framework: 'any',
+    kind: 'input',
+    ctor: [
+      { name: 'name', type: 'str', default: 'x' },
+      { name: 'shape', type: 'str', default: 'B C H W' },
+      { name: 'dtype', type: 'str', default: 'float' },
+    ],
+    inputs: [],
+    outputs: [{ name: 'out', shape: ['B', 'C', 'H', 'W'], dtype: 'float' }],
+    bindings: {},
+  }
+  const conv = {
+    name: 'ConvBlock',
+    module: 'pytorch_blocks.core_blocks',
+    framework: 'pytorch',
+    kind: 'module',
+    ctor: [
+      { name: 'in_ch', type: 'int', default: null, required: true },
+      { name: 'out_ch', type: 'int', default: null, required: true },
+    ],
+    inputs: [{ name: 'x', shape: ['B', 'C_in', 'H', 'W'], dtype: 'float' }],
+    outputs: [{ name: 'out', shape: ['B', 'C_out', 'H', 'W'], dtype: 'float' }],
+    bindings: { C_in: 'in_ch', C_out: 'out_ch' },
+  }
+  const mk = (id, entry, values = {}) => ({
+    id,
+    entry,
+    tag: '',
+    values: { ...Object.fromEntries(entry.ctor.map((p) => [p.name, p.default])), ...values },
+  })
+  const inp = mk('inp', inputEntry, { name: 'x', shape: 'B 3 224 224', dtype: 'float' })
+  const c1 = mk('c1', conv, { in_ch: 3, out_ch: 16 })
+  const conns = [{ source: 'inp', sourceOutput: 'out', target: 'c1', targetInput: 'x' }]
+
+  // With test case, no trace: emits test_GeneratedModel + __main__ guard.
+  const codeWithTest = generate([inp, c1], conns, 'pytorch', {
+    testCase: [{ arg: 'x', shape: [2, 3, 224, 224], dtype: 'float' }],
+  })
+  check(
+    'test mode emits def test_GeneratedModel()',
+    /^def test_GeneratedModel\(\) -> None:/m.test(codeWithTest),
+    codeWithTest
+  )
+  check(
+    'test mode emits __main__ guard',
+    /if __name__ == "__main__":\n\s+test_GeneratedModel\(\)/.test(codeWithTest),
+    codeWithTest
+  )
+  check(
+    'test mode builds dummy tensor with concrete shape',
+    /x = torch\.randn\(\(2, 3, 224, 224\)\)/.test(codeWithTest),
+    codeWithTest
+  )
+  check(
+    'test mode wraps call in torch.no_grad()',
+    /with torch\.no_grad\(\):\n\s+out = model\(x=x\)/.test(codeWithTest),
+    codeWithTest
+  )
+  check(
+    'plain test mode prints output shape (not asserting dict)',
+    /print\(f"out: \{tuple\(out\.shape\)\}"\)/.test(codeWithTest) &&
+      !/assert isinstance\(out, dict\)/.test(codeWithTest),
+    codeWithTest
+  )
+
+  // Trace mode + test: forward() returns dict, test asserts dict + prints entries.
+  const codeTrace = generate([inp, c1], conns, 'pytorch', {
+    trace: true,
+    testCase: [{ arg: 'x', shape: [2, 3, 224, 224], dtype: 'float' }],
+  })
+  check(
+    'trace mode: forward() returns _runtime_shapes',
+    /return _runtime_shapes/.test(codeTrace),
+    codeTrace
+  )
+  check(
+    'trace mode: test asserts dict return',
+    /assert isinstance\(out, dict\)/.test(codeTrace),
+    codeTrace
+  )
+  check(
+    'trace mode: test iterates the runtime shapes dict',
+    /for k, v in out\.items\(\):/.test(codeTrace),
+    codeTrace
+  )
+
+  // No testCase option -> no test/main block at all (backward compatible).
+  const codePlain = generate([inp, c1], conns, 'pytorch')
+  check(
+    'plain mode does NOT emit __main__ block',
+    !/if __name__ == "__main__":/.test(codePlain),
+    codePlain
+  )
+  check(
+    'plain mode does NOT emit test_GeneratedModel',
+    !/def test_GeneratedModel/.test(codePlain),
+    codePlain
+  )
+
+  // Int dtype -> torch.randint, not torch.randn.
+  const codeIntInput = generate([inp, c1], conns, 'pytorch', {
+    testCase: [{ arg: 'x', shape: [2, 16], dtype: 'long' }],
+  })
+  check(
+    'int dtype uses torch.randint',
+    /x = torch\.randint\(0, 100, \(2, 16\)\)/.test(codeIntInput),
+    codeIntInput
+  )
+
+  // Flax: nnx.Rngs init, jnp.zeros tensors, no torch.no_grad block.
+  const codeFlax = generate([inp, c1], conns, 'flax', {
+    testCase: [{ arg: 'x', shape: [2, 3, 224, 224], dtype: 'float' }],
+  })
+  check(
+    'flax test instantiates with nnx.Rngs(0)',
+    /model = GeneratedModel\(rngs=nnx\.Rngs\(0\)\)/.test(codeFlax),
+    codeFlax
+  )
+  check(
+    'flax test uses jnp.zeros with float32',
+    /x = jnp\.zeros\(\(2, 3, 224, 224\), dtype=jnp\.float32\)/.test(codeFlax),
+    codeFlax
+  )
+  check(
+    'flax test calls model directly (no torch.no_grad)',
+    !/torch\.no_grad/.test(codeFlax) && /out = model\(x=x\)/.test(codeFlax),
+    codeFlax
+  )
+}
+
 function inputEntryForPalette() {
   return {
     name: 'Input',

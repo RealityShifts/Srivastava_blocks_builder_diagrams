@@ -258,7 +258,11 @@ export function planGraph(nodes, connections) {
  * @param {Array} nodes      array of BlockNode (top-level + grouped + facades)
  * @param {Array} connections array of {source, sourceOutput, target, targetInput}
  * @param {'pytorch'|'flax'} framework
- * @param {{ trace?: boolean }} options  trace=true records tensor.shape per port
+ * @param {{ trace?: boolean, testCase?: Array<{arg:string, shape:number[], dtype?:string}> }} options
+ *   trace=true records tensor.shape per port and forward() returns the dict.
+ *   testCase, when provided, appends a `test_GeneratedModel()` function plus
+ *   an `if __name__ == "__main__":` entrypoint that instantiates the model
+ *   with dummy tensors built from the supplied input specs.
  *
  * If the graph contains group facades (kind === 'group'), every group is
  * emitted as its own nn.Module / nnx.Module subclass, and the main class
@@ -346,8 +350,73 @@ export function generate(nodes, connections, framework, options = {}) {
     options,
     { usedDtypes }
   )
+  if (Array.isArray(options.testCase) && options.testCase.length > 0) {
+    emitTestCase(lines, framework, 'GeneratedModel', options.testCase, !!options.trace)
+  }
   lines[jaxtypingLineIdx] = renderJaxtypingImport(usedDtypes, framework)
   return lines.join('\n')
+}
+
+/**
+ * Emit `def test_<ClassName>() ...` and an `if __name__ == "__main__":` block
+ * that instantiates the model with dummy tensors and prints the output shape.
+ */
+function emitTestCase(lines, framework, className, inputs, trace) {
+  const shapeTuple = (shape) => {
+    const dims = shape.map((d) => (Number.isFinite(d) ? String(Math.trunc(d)) : '1'))
+    return `(${dims.join(', ')}${dims.length === 1 ? ',' : ''})`
+  }
+  const tensorExpr = (shape, dtype) => {
+    const cat = jaxtypingDtype(dtype)
+    const s = shapeTuple(shape)
+    if (framework === 'pytorch') {
+      if (cat === 'Int' || cat === 'UInt') return `torch.randint(0, 100, ${s})`
+      if (cat === 'Bool') return `torch.zeros(${s}, dtype=torch.bool)`
+      return `torch.randn(${s})`
+    }
+    if (cat === 'Int' || cat === 'UInt') return `jnp.zeros(${s}, dtype=jnp.int32)`
+    if (cat === 'Bool') return `jnp.zeros(${s}, dtype=jnp.bool_)`
+    return `jnp.zeros(${s}, dtype=jnp.float32)`
+  }
+
+  lines.push('')
+  lines.push(`def test_${className}() -> None:`)
+  if (framework === 'pytorch') {
+    lines.push(`    model = ${className}()`)
+    lines.push('    model.eval()')
+  } else {
+    lines.push(`    model = ${className}(rngs=nnx.Rngs(0))`)
+  }
+  for (const spec of inputs) {
+    lines.push(`    ${spec.arg} = ${tensorExpr(spec.shape, spec.dtype)}`)
+  }
+  const callKwargs = inputs.map((s) => `${s.arg}=${s.arg}`).join(', ')
+  if (framework === 'pytorch') {
+    lines.push('    with torch.no_grad():')
+    lines.push(`        out = model(${callKwargs})`)
+  } else {
+    lines.push(`    out = model(${callKwargs})`)
+  }
+  if (trace) {
+    lines.push('    assert isinstance(out, dict), "trace=True forward must return a dict"')
+    lines.push('    print("Runtime shapes:")')
+    lines.push('    for k, v in out.items():')
+    lines.push('        print(f"  {k}: {v}")')
+  } else {
+    lines.push('    if isinstance(out, dict):')
+    lines.push('        for k, v in out.items():')
+    lines.push('            print(f"{k}: {v}")')
+    lines.push('    elif isinstance(out, (tuple, list)):')
+    lines.push('        for i, t in enumerate(out):')
+    lines.push('            print(f"out[{i}]: {tuple(t.shape)}")')
+    lines.push('    else:')
+    lines.push('        print(f"out: {tuple(out.shape)}")')
+  }
+  lines.push('')
+  lines.push('')
+  lines.push('if __name__ == "__main__":')
+  lines.push(`    test_${className}()`)
+  lines.push('')
 }
 
 function renderJaxtypingImport(usedDtypes, framework) {

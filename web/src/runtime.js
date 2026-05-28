@@ -110,14 +110,21 @@ function backSolveInputShape(inputNode, sub, batchSize, axisDefaults) {
   return dims
 }
 
-/** Build POST body for the Python runner. */
-export function buildRunPayload(editor, framework, batchSize = 2) {
+/**
+ * Resolve concrete input shapes for the current graph using the validator's
+ * solved substitution + axis defaults. Returns `[{nodeId, arg, shape, dtype}]`
+ * ordered to match the generated forward()'s argument order.
+ *
+ * Exposed so codegen can reuse the same back-solver when emitting an
+ * embedded `test_GeneratedModel()` function — the test calls forward() with
+ * the same shapes the runtime shape-runner would.
+ */
+export function resolveInputSpecs(editor, framework, batchSize = 2) {
   const nodes = editor.getNodes()
   const connections = editor.getConnections()
   const plan = planGraph(nodes, connections)
   if (!plan) throw new Error('Graph is empty.')
 
-  const code = generate(nodes, connections, framework, { trace: true })
   const sub = (editor && editor.__lastValidationSub) || new Map()
   const axisDefaults = new Map([['B', batchSize]])
   const inputs = []
@@ -132,7 +139,15 @@ export function buildRunPayload(editor, framework, batchSize = 2) {
       dtype: n.values?.dtype ?? 'float',
     })
   }
+  return inputs
+}
 
+/** Build POST body for the Python runner. */
+export function buildRunPayload(editor, framework, batchSize = 2) {
+  const inputs = resolveInputSpecs(editor, framework, batchSize)
+  const code = generate(editor.getNodes(), editor.getConnections(), framework, {
+    trace: true,
+  })
   return { framework, code, inputs, batch_size: batchSize }
 }
 

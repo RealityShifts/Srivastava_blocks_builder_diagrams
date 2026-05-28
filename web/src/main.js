@@ -25,7 +25,7 @@ import {
 } from './nodes.js'
 import { validate, dryRunEdge } from './validator.js'
 import { generate as generateCode } from './codegen.js'
-import { isFullyConcrete, runShapeCheck } from './runtime.js'
+import { isFullyConcrete, runShapeCheck, resolveInputSpecs } from './runtime.js'
 import { resolve } from './shape.js'
 import {
   renderPalette,
@@ -692,7 +692,13 @@ async function bootstrap() {
     }
   })
   document.getElementById('export-btn').addEventListener('click', exportGraph)
-  document.getElementById('codegen-btn').addEventListener('click', runCodegen)
+  document.getElementById('codegen-btn').addEventListener('click', () => runCodegen())
+  document.getElementById('codegen-test-btn').addEventListener('click', () =>
+    runCodegen({ withTest: true })
+  )
+  document.getElementById('codegen-trace-btn').addEventListener('click', () =>
+    runCodegen({ trace: true, withTest: true })
+  )
   document.getElementById('focus-input-btn').addEventListener('click', () => focusInputNode())
   document.getElementById('duplicate-btn').addEventListener('click', () => duplicateSelection())
   document.getElementById('delete-btn').addEventListener('click', () => deleteSelected())
@@ -1744,8 +1750,20 @@ function getGraphData() {
   }
 }
 
-function runCodegen() {
-  const code = generateCode(editor.getNodes(), editor.getConnections(), state.framework)
+function runCodegen(options = {}) {
+  let testCase
+  if (options.withTest) {
+    try {
+      testCase = resolveInputSpecs(editor, state.framework, state.batchSize)
+    } catch (err) {
+      alert(`Cannot build test case: ${err.message}`)
+      return
+    }
+  }
+  const code = generateCode(editor.getNodes(), editor.getConnections(), state.framework, {
+    trace: !!options.trace,
+    testCase,
+  })
   showCode(code)
 }
 
