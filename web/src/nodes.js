@@ -53,7 +53,7 @@ export class BlockNode extends ClassicPreset.Node {
     }
     // Ctor parameters are init-time values (not runtime tensor flow). They are
     // hidden by default and can be explicitly exposed per-param from inspector.
-    if (entry.kind !== 'input' && entry.kind !== 'const') {
+    if (entry.kind !== 'input' && entry.kind !== 'const' && entry.kind !== 'learnable') {
       for (const p of entry.ctor) this._paramSpecs.set(p.name, p)
     }
     for (const p of entry.outputs) {
@@ -265,6 +265,47 @@ export const CONST_ENTRY = {
   bindings: {},
 }
 
+/**
+ * Learnable parameter source registered in __init__ and emitted on the forward
+ * pass as `self.<name>`. Shape must use numeric literals (symbolic axes are
+ * ignored at codegen time).
+ */
+export const LEARNABLE_TENSOR_ENTRY = {
+  name: 'LearnableTensor',
+  module: '__builtin__',
+  framework: 'any',
+  kind: 'learnable',
+  ctor: [
+    { name: 'name', type: 'str', default: 'param', required: false },
+    { name: 'shape', type: 'str', default: '1 768', required: false },
+    {
+      name: 'dtype',
+      type: 'str',
+      default: 'float',
+      required: false,
+      choices: ['float', 'int', 'bool', 'complex', 'any'],
+    },
+    {
+      name: 'init',
+      type: 'str',
+      default: 'randn',
+      required: false,
+      choices: ['zeros', 'ones', 'randn'],
+    },
+  ],
+  inputs: [],
+  outputs: [
+    {
+      name: 'out',
+      shape: ['1', '768'],
+      dtype: 'float',
+      optional: false,
+      variadic: false,
+    },
+  ],
+  bindings: {},
+}
+
 /** "B, 3,224 224" -> ["B", "3", "224", "224"] */
 export function parseShapeString(s) {
   if (s == null) return []
@@ -287,6 +328,17 @@ export class InputNode extends BlockNode {
     // sees the latest value the user typed.
     const port = this.outputs[portName]
     if (port?.portSpec) port.portSpec.dtype = this.values.dtype || 'any'
+    return freshen(tokens, this.id)
+  }
+}
+
+/** Like InputNode but for nn.Parameter / nnx.Param sources. */
+export class LearnableTensorNode extends BlockNode {
+  freshenedShape(portName, side) {
+    if (side !== 'out') return null
+    const tokens = normalize(parseShapeString(this.values.shape))
+    const port = this.outputs[portName]
+    if (port?.portSpec) port.portSpec.dtype = this.values.dtype || 'float'
     return freshen(tokens, this.id)
   }
 }
@@ -709,6 +761,7 @@ export function makeGroupEntry(groupId, name, boundary) {
 /** Pick the right node class for a manifest entry. */
 export function makeNode(entry) {
   if (entry.kind === 'input') return new InputNode(entry)
+  if (entry.kind === 'learnable') return new LearnableTensorNode(entry)
   if (entry.kind === 'output') return new OutputNode(entry)
   if (entry.kind === 'rearrange') return new RearrangeNode(entry)
   if (entry.kind === 'reshape') return new ReshapeNode(entry)

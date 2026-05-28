@@ -172,6 +172,8 @@ function describePorts(entry) {
           entry.kind === 'upsample' ||
           entry.kind === 'const'
         ? 'op'
+        : entry.kind === 'learnable'
+          ? 'mod'
         : entry.kind === 'input'
           ? 'in'
           : entry.kind === 'output'

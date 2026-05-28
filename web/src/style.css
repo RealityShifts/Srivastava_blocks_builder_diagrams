@@ -278,6 +278,27 @@ main {
   overflow: hidden;
 }
 
+.selection-marquee {
+  position: absolute;
+  pointer-events: none;
+  z-index: 100;
+  display: none;
+  border: 1px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-radius: 2px;
+}
+
+#editor.space-pan {
+  cursor: grab;
+}
+#editor.space-pan.space-panning {
+  cursor: grabbing;
+}
+#editor.space-pan rete-node,
+#editor.space-pan .node {
+  pointer-events: none !important;
+}
+
 #diagnostics,
 #inspector {
   padding: 10px 12px;

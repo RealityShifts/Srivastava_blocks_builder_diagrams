@@ -13,6 +13,7 @@ import {
   UPSAMPLE_ENTRY,
   OUTPUT_ENTRY,
   CONST_ENTRY,
+  LEARNABLE_TENSOR_ENTRY,
   makeGroupEntry,
   RearrangeNode,
   ReshapeNode,
@@ -723,6 +724,7 @@ console.log('paletteGroup')
   check('Upsample maps to utility palette', paletteGroup(UPSAMPLE_ENTRY) === 'utility')
   check('Input stays in built-in', paletteGroup(inputEntryForPalette()) === 'built-in')
   check('Constant stays in built-in', paletteGroup(CONST_ENTRY) === 'built-in')
+  check('LearnableTensor stays in built-in', paletteGroup(LEARNABLE_TENSOR_ENTRY) === 'built-in')
 }
 
 console.log('codegen (constant)')
@@ -807,6 +809,71 @@ console.log('codegen (constant)')
     'module ctor references __init__ param from constant',
     /ConvBlock\([^)]*kernel_size=kernel_size/.test(wiredCode),
     wiredCode
+  )
+}
+
+console.log('codegen (learnable tensor)')
+{
+  const make = (id, entry, values = {}) => ({
+    id,
+    entry,
+    tag: '',
+    values: { ...Object.fromEntries(entry.ctor.map((p) => [p.name, p.default])), ...values },
+  })
+  const inputEntry = {
+    name: 'Input',
+    module: '__builtin__',
+    framework: 'any',
+    kind: 'input',
+    ctor: [
+      { name: 'name', type: 'str', default: 'x' },
+      { name: 'shape', type: 'str', default: 'B C H W' },
+      { name: 'dtype', type: 'str', default: 'float' },
+    ],
+    inputs: [],
+    outputs: [{ name: 'out', shape: ['B', 'C', 'H', 'W'], dtype: 'float' }],
+    bindings: {},
+  }
+  const add = {
+    name: 'Concat',
+    module: '__utility__',
+    framework: 'any',
+    kind: 'concat',
+    ctor: [{ name: 'dim', type: 'int', default: 1, required: false }],
+    inputs: [{ name: 'xs', shape: ['...'], dtype: 'float', optional: false, variadic: true }],
+    outputs: [{ name: 'out', shape: ['...'], dtype: 'float', optional: false, variadic: false }],
+    bindings: {},
+  }
+  const inp = make('inp', inputEntry, { name: 'x', shape: 'B 3 32 32' })
+  const token = make('tok', LEARNABLE_TENSOR_ENTRY, {
+    name: 'cls_token',
+    shape: '1 1 768',
+    init: 'zeros',
+  })
+  const cat = make('cat', add, { dim: 1 })
+  const conns = [
+    { source: 'inp', sourceOutput: 'out', target: 'cat', targetInput: 'xs' },
+    { source: 'tok', sourceOutput: 'out', target: 'cat', targetInput: 'xs' },
+  ]
+  const code = generate([inp, token, cat], conns, 'pytorch')
+  check(
+    'learnable tensor becomes nn.Parameter in __init__',
+    /self\.cls_token = nn\.Parameter\(torch\.zeros\(1, 1, 768\)\)/.test(code),
+    code
+  )
+  check(
+    'learnable tensor wired as self.<name> in forward',
+    /torch\.cat\(\[x, self\.cls_token\], dim=1\)/.test(code),
+    code
+  )
+  check('learnable tensor skips __builtin__ import', !code.includes('__builtin__'), code)
+
+  const flaxToken = make('lt', LEARNABLE_TENSOR_ENTRY, { init: 'randn' })
+  const flaxCode = generate([flaxToken], [], 'flax')
+  check(
+    'flax learnable tensor uses nnx.Param with jax random init',
+    /self\.param = nnx\.Param\(jax\.random\.normal\(rngs\.params\(\), \(1, 768\)\)\)/.test(flaxCode),
+    flaxCode
   )
 }
 

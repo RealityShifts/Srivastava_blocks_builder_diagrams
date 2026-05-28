@@ -7,6 +7,7 @@
 import { NodeEditor, ClassicPreset } from 'rete'
 import { AreaPlugin, AreaExtensions } from 'rete-area-plugin'
 import { ConnectionPlugin, Presets as ConnectionPresets } from 'rete-connection-plugin'
+import { setupNodeSelection } from './selection.js'
 import { LitPlugin, Presets as LitPresets } from '@retejs/lit-plugin'
 
 import {
@@ -15,6 +16,7 @@ import {
   INPUT_ENTRY,
   OUTPUT_ENTRY,
   CONST_ENTRY,
+  LEARNABLE_TENSOR_ENTRY,
   REARRANGE_ENTRY,
   RESHAPE_ENTRY,
   CONCAT_ENTRY,
@@ -597,7 +599,7 @@ async function restoreFromAutosave() {
   }
 }
 
-let editor, area, connection, render, selector
+let editor, area, connection, render, selector, nodeSelection
 
 async function bootstrap() {
   const container = document.getElementById('editor')
@@ -607,10 +609,13 @@ async function bootstrap() {
   connection = new ConnectionPlugin()
   render = new LitPlugin()
 
-  selector = AreaExtensions.selector()
-  AreaExtensions.selectableNodes(area, selector, {
-    accumulating: AreaExtensions.accumulateOnCtrl(),
+  nodeSelection = setupNodeSelection(area, editor, {
+    onSelectionChanged(nodeId) {
+      state.selectedNodeId = nodeId
+      refreshInspector()
+    },
   })
+  selector = nodeSelection.selector
   AreaExtensions.simpleNodesOrder(area)
   AreaExtensions.snapGrid(area, { dynamic: true, size: 16 })
 
@@ -810,6 +815,7 @@ async function loadManifest() {
     INPUT_ENTRY,
     OUTPUT_ENTRY,
     CONST_ENTRY,
+    LEARNABLE_TENSOR_ENTRY,
     REARRANGE_ENTRY,
     RESHAPE_ENTRY,
     CONCAT_ENTRY,

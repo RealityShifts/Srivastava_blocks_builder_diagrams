@@ -182,11 +182,15 @@ export function planGraph(nodes, connections) {
   // Module- and group-kind nodes sharing a (sanitized, non-empty) tag get the
   // *same* attribute - that's how weight tying works: one `self.<attr> = ...`
   // in __init__, multiple call sites in forward. Non-module kinds (input,
-  // rearrange, reshape) never share.
+  // learnable, rearrange, reshape) never share.
   const attrName = new Map()
   const sharedKeyToAttr = new Map() // tag -> attr name
   ordered.forEach((n, i) => {
     if (n.entry.kind === 'input') return
+    if (n.entry.kind === 'learnable') {
+      attrName.set(n.id, allocAttr(sanitizePyIdent(n.values?.name, 'param')))
+      return
+    }
     const tag =
       n.entry.kind === 'module' || n.entry.kind === 'group'
         ? sanitizePyIdent(n.tag ?? '', '')
@@ -207,7 +211,7 @@ export function planGraph(nodes, connections) {
   // output isn't clobbered by the second.
   const localName = new Map()
   ordered.forEach((n) => {
-    if (n.entry.kind === 'input') return
+    if (n.entry.kind === 'input' || n.entry.kind === 'learnable') return
     localName.set(n.id, allocLocal(attrName.get(n.id)))
   })
 
@@ -230,6 +234,10 @@ export function planGraph(nodes, connections) {
   for (const n of ordered) {
     if (n.entry.kind === 'input') {
       outputVarFor.set(`${n.id}/out`, inputArgFor.get(n.id))
+      continue
+    }
+    if (n.entry.kind === 'learnable') {
+      outputVarFor.set(`${n.id}/out`, `self.${attrName.get(n.id)}`)
       continue
     }
     const multi = n.entry.outputs.length > 1
@@ -446,9 +454,9 @@ function resolveSourceShapeDtype(ref, ordered, incoming) {
   // ref is { nodeId, portName } - the port itself is a SOURCE (output port).
   const owner = ordered.find((n) => n.id === ref.nodeId)
   if (!owner) return null
-  if (owner.entry.kind === 'input') {
-    // Explicit Input nodes carry their declared shape on values.{shape,dtype};
-    // fall back to the manifest entry if values are blank.
+  if (owner.entry.kind === 'input' || owner.entry.kind === 'learnable') {
+    // Explicit Input / LearnableTensor nodes carry their declared shape on
+    // values.{shape,dtype}; fall back to the manifest entry if values are blank.
     return {
       shape: owner.values?.shape ?? owner.entry.outputs?.[0]?.shape ?? ['...'],
       dtype: owner.values?.dtype ?? owner.entry.outputs?.[0]?.dtype ?? 'any',
@@ -597,7 +605,8 @@ function emitClassBody(lines, nodes, connections, framework, className, classNam
   const moduleNodes = ordered.filter(
     (n) => n.entry.kind === 'module' || n.entry.kind === 'group'
   )
-  if (moduleNodes.length === 0) lines.push('        pass')
+  const learnableNodes = ordered.filter((n) => n.entry.kind === 'learnable')
+  if (moduleNodes.length === 0 && learnableNodes.length === 0) lines.push('        pass')
   const emittedAttrs = new Set()
   for (const n of moduleNodes) {
     const attr = attrName.get(n.id)
@@ -613,6 +622,12 @@ function emitClassBody(lines, nodes, connections, framework, className, classNam
       if (framework === 'flax') args.push('rngs=rngs')
       lines.push(`        self.${attr} = ${n.entry.name}(${args.join(', ')})`)
     }
+  }
+  for (const n of learnableNodes) {
+    const attr = attrName.get(n.id)
+    if (emittedAttrs.has(attr)) continue
+    emittedAttrs.add(attr)
+    lines.push(`        ${learnableInitLine(n, attr, framework)}`)
   }
   lines.push('')
 
@@ -665,6 +680,15 @@ function emitClassBody(lines, nodes, connections, framework, className, classNam
         const arg = inputArgFor.get(n.id)
         lines.push(
           `        _runtime_shapes[${JSON.stringify(`${n.id}/out`)}] = list(${arg}.shape)`
+        )
+      }
+      continue
+    }
+    if (n.entry.kind === 'learnable') {
+      if (trace) {
+        const attr = attrName.get(n.id)
+        lines.push(
+          `        _runtime_shapes[${JSON.stringify(`${n.id}/out`)}] = list(self.${attr}.shape)`
         )
       }
       continue
@@ -1003,6 +1027,38 @@ function parseReshapeDims(s) {
     if (/^-?\d+$/.test(t)) dims.push(Number(t))
   }
   return dims.length ? dims : [-1]
+}
+
+/** Numeric-only shape tokens for LearnableTensor __init__ (defaults to scalar). */
+function parseLearnableDims(s) {
+  const toks = String(s ?? '')
+    .trim()
+    .split(/[\s,]+/)
+    .filter(Boolean)
+  const dims = []
+  for (const t of toks) {
+    if (/^\d+$/.test(t)) dims.push(Number(t))
+  }
+  return dims.length ? dims : [1]
+}
+
+function learnableInitLine(node, attr, framework) {
+  const dims = parseLearnableDims(node.values?.shape)
+  const init = String(node.values?.init ?? 'randn').toLowerCase()
+  const shapeArgs = dims.join(', ')
+  const shapeTuple = dims.length === 1 ? `(${shapeArgs},)` : `(${shapeArgs})`
+  if (framework === 'pytorch') {
+    let tensor
+    if (init === 'zeros') tensor = `torch.zeros${shapeTuple}`
+    else if (init === 'ones') tensor = `torch.ones${shapeTuple}`
+    else tensor = `torch.randn${shapeTuple}`
+    return `self.${attr} = nn.Parameter(${tensor})`
+  }
+  let arr
+  if (init === 'zeros') arr = `jnp.zeros${shapeTuple}`
+  else if (init === 'ones') arr = `jnp.ones${shapeTuple}`
+  else arr = `jax.random.normal(rngs.params(), ${shapeTuple})`
+  return `self.${attr} = nnx.Param(${arr})`
 }
 
 function parseBoolValue(v, fallback = false) {
