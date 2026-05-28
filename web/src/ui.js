@@ -358,7 +358,8 @@ export function renderInspector(
   onTagChange,
   onAddConst,
   onToggleParamPort,
-  groupActions
+  groupActions,
+  options = {}
 ) {
   if (!node) {
     _currentNodeId = null
@@ -372,8 +373,9 @@ export function renderInspector(
 
   // Same node selected: just refresh the params panel's ports section so the
   // user's focus on a control stays put across validation runs. The Info tab
-  // doesn't depend on validation state and is left untouched.
-  if (node.id === _currentNodeId) {
+  // doesn't depend on validation state and is left untouched. Structural
+  // changes (expose/hide param ports) pass forceRebuild to redo param rows too.
+  if (node.id === _currentNodeId && !options.forceRebuild) {
     const paramsPanel = rootEl.querySelector('.tab-panel[data-tab="params"]')
     if (paramsPanel) {
       const oldPorts = paramsPanel.querySelector('.ports')

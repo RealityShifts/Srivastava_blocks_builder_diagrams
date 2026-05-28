@@ -1543,7 +1543,7 @@ async function runRuntimeShapeCheck() {
   }
 }
 
-function refreshInspector() {
+function refreshInspector(options = {}) {
   const node = state.selectedNodeId ? editor.getNode(state.selectedNodeId) : null
   renderInspector(
     document.getElementById('inspector-body'),
@@ -1586,7 +1586,7 @@ function refreshInspector() {
       await area.update('node', targetNode.id)
       queueValidation()
       queueAutosave()
-      refreshInspector()
+      refreshInspector({ forceRebuild: true })
     },
     {
       getName: (gid) => state.groups.get(gid)?.name ?? '',
@@ -1607,7 +1607,8 @@ function refreshInspector() {
       },
       toggle: (gid) => expandGroupOrCollapse(gid),
       ungroup: (gid) => ungroup(gid),
-    }
+    },
+    options
   )
 }
 
