@@ -766,8 +766,6 @@ async function loadManifest() {
   const url = `/manifests/${state.framework}.json`
   const res = await fetch(url)
   const fetched = await res.json()
-  // Keep Constant available for createNode/import, but hide it from the
-  // palette so users spawn it explicitly from node params ("+ const").
   state.entries = [
     INPUT_ENTRY,
     OUTPUT_ENTRY,
@@ -779,8 +777,7 @@ async function loadManifest() {
     ...fetched,
   ]
   state.byName = new Map(state.entries.map((e) => [e.name, e]))
-  const paletteEntries = state.entries.filter((e) => e.kind !== 'const')
-  renderPalette(document.getElementById('palette'), paletteEntries, (entry) =>
+  renderPalette(document.getElementById('palette'), state.entries, (entry) =>
     createNode(entry.name)
   )
 }

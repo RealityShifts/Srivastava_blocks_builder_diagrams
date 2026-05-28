@@ -10,6 +10,7 @@ import {
   CONCAT_ENTRY,
   STACK_ENTRY,
   OUTPUT_ENTRY,
+  CONST_ENTRY,
   makeGroupEntry,
   RearrangeNode,
   ReshapeNode,
@@ -658,6 +659,7 @@ console.log('paletteGroup')
 {
   check('Concat maps to utility palette', paletteGroup(CONCAT_ENTRY) === 'utility')
   check('Input stays in built-in', paletteGroup(inputEntryForPalette()) === 'built-in')
+  check('Constant stays in built-in', paletteGroup(CONST_ENTRY) === 'built-in')
 }
 
 console.log('codegen (constant)')
@@ -684,8 +686,65 @@ console.log('codegen (constant)')
   const cInt = make('c1', cEntry, { value_type: 'int', value: '7' })
   const cBool = make('c2', cEntry, { value_type: 'bool', value: 'true' })
   const code = generate([cInt, cBool], [], 'pytorch')
-  check('constant int emits numeric literal', code.includes('= 7'), code)
-  check('constant bool emits Python bool literal', code.includes('= True'), code)
+  check(
+    'unwired constants become __init__ params with UI defaults',
+    /def __init__\(self, constant_0: int = 7, constant_1: bool = True\)/.test(code),
+    code
+  )
+  check('constants are not stored on self', !/self\.constant_\d+\s*=/.test(code), code)
+  check('constants are not emitted in forward', !/def forward[\s\S]*=\s*7/.test(code), code)
+
+  // Wired constant -> __init__ kwarg with default + module ctor references self.<param>.
+  const conv = {
+    name: 'ConvBlock',
+    module: 'pytorch_blocks.core_blocks',
+    framework: 'pytorch',
+    kind: 'module',
+    ctor: [
+      { name: 'in_ch', type: 'int', default: null, required: true },
+      { name: 'out_ch', type: 'int', default: null, required: true },
+      { name: 'kernel_size', type: 'int', default: 3, required: false },
+    ],
+    inputs: [
+      { name: 'x', shape: ['B', 'C_in', 'H', 'W'], dtype: 'float' },
+      { name: '__param__kernel_size', shape: [], dtype: 'any', kind: 'param', paramName: 'kernel_size' },
+    ],
+    outputs: [{ name: 'out', shape: ['B', 'C_out', 'H', 'W'], dtype: 'float' }],
+    bindings: { C_in: 'in_ch', C_out: 'out_ch' },
+  }
+  const cKs = make('cks', cEntry, { value_type: 'int', value: '5' })
+  const convNode = make('conv', conv, { in_ch: 3, out_ch: 16 })
+  convNode.inputs = {
+    x: { portSpec: conv.inputs[0] },
+    __param__kernel_size: {
+      portSpec: {
+        kind: 'param',
+        paramName: 'kernel_size',
+        name: '__param__kernel_size',
+        type: 'int',
+      },
+    },
+  }
+  const wiredCode = generate(
+    [cKs, convNode],
+    [{ source: 'cks', sourceOutput: 'out', target: 'conv', targetInput: '__param__kernel_size' }],
+    'pytorch'
+  )
+  check(
+    'wired constant becomes __init__ kwarg with default',
+    /def __init__\(self, kernel_size: int = 5\)/.test(wiredCode),
+    wiredCode
+  )
+  check(
+    'wired constant is not stored on self',
+    !/self\.kernel_size\s*=/.test(wiredCode),
+    wiredCode
+  )
+  check(
+    'module ctor references __init__ param from constant',
+    /ConvBlock\([^)]*kernel_size=kernel_size/.test(wiredCode),
+    wiredCode
+  )
 }
 
 console.log('codegen (explicit Output node)')

@@ -495,11 +495,23 @@ function emitClassBody(lines, nodes, connections, framework, className, classNam
   const baseClass = framework === 'pytorch' ? 'nn.Module' : 'nnx.Module'
   lines.push(`class ${className}(${baseClass}):`)
 
+  const { initParams, paramRef } = analyzeConstWiring(nodes, connections, attrName)
+
+  const initSigParts = []
+  if (framework === 'flax') initSigParts.push('*, rngs: nnx.Rngs')
+  for (const p of initParams) {
+    initSigParts.push(`${p.initName}: ${p.pyType} = ${p.defaultLit}`)
+  }
+  const initSig =
+    initSigParts.length > 0
+      ? `self, ${initSigParts.join(', ')}`
+      : framework === 'flax'
+        ? 'self, *, rngs: nnx.Rngs'
+        : 'self'
+
+  lines.push(`    def __init__(${initSig}):`)
   if (framework === 'pytorch') {
-    lines.push('    def __init__(self):')
     lines.push('        super().__init__()')
-  } else {
-    lines.push('    def __init__(self, *, rngs: nnx.Rngs):')
   }
 
   const moduleNodes = ordered.filter(
@@ -516,7 +528,7 @@ function emitClassBody(lines, nodes, connections, framework, className, classNam
       const args = framework === 'flax' ? ['rngs=rngs'] : []
       lines.push(`        self.${attr} = ${sub}(${args.join(', ')})`)
     } else {
-      const args = ctorArgs(n)
+      const args = ctorArgs(n, paramRef)
       if (framework === 'flax') args.push('rngs=rngs')
       lines.push(`        self.${attr} = ${n.entry.name}(${args.join(', ')})`)
     }
@@ -576,6 +588,8 @@ function emitClassBody(lines, nodes, connections, framework, className, classNam
       }
       continue
     }
+    // Constants are init-time only; wired ones feed ctor kwargs via __init__ params.
+    if (n.entry.kind === 'const') continue
     if (n.entry.kind === 'output') {
       if (trace) {
         const key = `${n.id}/x`
@@ -742,6 +756,66 @@ function constLiteral(node) {
   return type === 'int' ? String(Math.trunc(n)) : String(n)
 }
 
+/** Map every Constant node to an __init__ parameter defaulting to its UI
+ *  value. Wired constants name the param after the target ctor slot; unwired
+ *  ones use the codegen attr name (constant_0, …). Module ctors reference the
+ *  __init__ parameter directly — no self.* storage. */
+function analyzeConstWiring(nodes, connections, attrName) {
+  const byId = new Map(nodes.map((n) => [n.id, n]))
+  const constInitByNodeId = new Map()
+  const paramRef = new Map()
+  const usedInitNames = new Set()
+
+  const allocInitName = (base) => {
+    let c = sanitizePyIdent(base, 'param')
+    let i = 2
+    while (usedInitNames.has(c)) c = `${sanitizePyIdent(base, 'param')}${i++}`
+    usedInitNames.add(c)
+    return c
+  }
+
+  const pyTypeForConst = (constNode, paramDef) => {
+    const vt = constNode.values?.value_type || paramDef?.type || 'int'
+    if (vt === 'bool') return 'bool'
+    if (vt === 'str') return 'str'
+    if (vt === 'float') return 'float'
+    return 'int'
+  }
+
+  for (const c of connections) {
+    const source = byId.get(c.source)
+    const target = byId.get(c.target)
+    if (!source || !target) continue
+    if (source.entry?.kind !== 'const') continue
+    const spec = target.inputs?.[c.targetInput]?.portSpec
+    if (spec?.kind !== 'param') continue
+    const paramName = spec.paramName
+    const paramDef = (target.entry.ctor || []).find((p) => p.name === paramName)
+
+    if (!constInitByNodeId.has(source.id)) {
+      constInitByNodeId.set(source.id, {
+        initName: allocInitName(paramName),
+        pyType: pyTypeForConst(source, paramDef),
+        defaultLit: constLiteral(source),
+      })
+    }
+    paramRef.set(`${target.id}::${paramName}`, constInitByNodeId.get(source.id).initName)
+  }
+
+  // Every remaining Constant node becomes an __init__ param even if unwired.
+  for (const n of nodes) {
+    if (n.entry?.kind !== 'const') continue
+    if (constInitByNodeId.has(n.id)) continue
+    constInitByNodeId.set(n.id, {
+      initName: allocInitName(attrName.get(n.id) || 'constant'),
+      pyType: pyTypeForConst(n, null),
+      defaultLit: constLiteral(n),
+    })
+  }
+
+  return { initParams: [...constInitByNodeId.values()], paramRef }
+}
+
 function positionalSource(callArgs, portName) {
   const prefix = `${portName}=`
   const found = callArgs.find((a) => a.startsWith(prefix))
@@ -787,9 +861,14 @@ function parseReshapeDims(s) {
   return dims.length ? dims : [-1]
 }
 
-function ctorArgs(node) {
+function ctorArgs(node, paramRef = new Map()) {
   const out = []
   for (const p of node.entry.ctor) {
+    const wired = paramRef.get(`${node.id}::${p.name}`)
+    if (wired) {
+      out.push(`${p.name}=${wired}`)
+      continue
+    }
     const v = node.values[p.name]
     if (v === null || v === undefined || v === '') continue
     // Skip if it equals the default to keep the output tidy.
