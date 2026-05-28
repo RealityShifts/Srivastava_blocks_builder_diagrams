@@ -52,10 +52,14 @@ const state = {
   runtimeErrorNodeId: null,
   restoring: false, // true while restoreFromAutosave is mutating the editor
   clipboard: null, // in-memory copy of last copy/duplicate (mirrors localStorage)
-  // groupId -> { id, name, collapsed, facadeNodeId, portMap, savedPosition }
+  // groupId -> { id, name, collapsed, facadeNodeId, portMap, savedPosition,
+  //              childOffsets }
   // See groupSelected/expandGroup/collapseGroup for the lifecycle. The portMap
   // is the source of truth used by validator and codegen to "see through" a
-  // collapsed facade back to its underlying child ports.
+  // collapsed facade back to its underlying child ports. childOffsets is
+  // {childId: {dx, dy}} relative to the facade and anchors the children to
+  // the facade across collapse/expand cycles so dragging the collapsed
+  // facade moves the whole subgraph (no snap-back on expand).
   groups: new Map(),
 }
 
@@ -64,6 +68,12 @@ function freshGroupId() {
   // Monotonic + random suffix so re-importing on top of an existing graph
   // doesn't collide.
   return `g${++_groupCounter}_${Math.random().toString(36).slice(2, 8)}`
+}
+
+/** Short alphanumeric token (base36) used to stamp a unique tag onto group
+ *  children. 5 chars ~ 60M combinations - collisions are negligible. */
+function randomChildTag() {
+  return Math.random().toString(36).slice(2, 7)
 }
 
 // --- autosave (localStorage, single slot, debounced) ---
@@ -125,17 +135,76 @@ function nodePosition(n) {
   return { x: p.x, y: p.y }
 }
 
+/** Snapshot each child's position relative to the facade's *actual placed*
+ *  position into group.childOffsets, and sync group.savedPosition to it.
+ *  Called on collapse so the next expand can place children at
+ *  `currentFacadePos + offset` instead of their original absolute coords.
+ *  We read the facade's real position from area (rather than trusting the
+ *  passed-in center) because Rete snaps positions to a grid, so the post-
+ *  translate coords can differ from the requested ones by a few pixels. */
+function captureChildOffsets(group, children) {
+  if (!group) return
+  const facade = group.facadeNodeId ? editor.getNode(group.facadeNodeId) : null
+  const facadePos = (facade && nodePosition(facade)) ?? group.savedPosition
+  if (!facadePos) return
+  group.savedPosition = facadePos
+  const out = {}
+  for (const child of children) {
+    const p = nodePosition(child)
+    if (!p) continue
+    out[child.id] = { dx: p.x - facadePos.x, dy: p.y - facadePos.y }
+  }
+  group.childOffsets = out
+}
+
+/** Translate group children to `facadePos + offset`. No-op for children
+ *  without a recorded offset (leaves them where they are). */
+async function applyChildOffsets(group, facadePos) {
+  const offsets = group?.childOffsets
+  if (!offsets || !facadePos) return
+  for (const child of getGroupChildren(group.id)) {
+    const off = offsets[child.id]
+    if (!off || !Number.isFinite(off.dx) || !Number.isFinite(off.dy)) continue
+    await area.translate(child.id, { x: facadePos.x + off.dx, y: facadePos.y + off.dy })
+  }
+}
+
+/** Rebuild a {oldId: offset} map using a fresh idMap (paste / import). */
+function remapChildOffsets(raw, idMap) {
+  const out = {}
+  if (!raw || typeof raw !== 'object') return out
+  for (const [oldId, off] of Object.entries(raw)) {
+    if (!off || !Number.isFinite(off.dx) || !Number.isFinite(off.dy)) continue
+    const newId = idMap?.get(oldId) ?? oldId
+    out[newId] = { dx: off.dx, dy: off.dy }
+  }
+  return out
+}
+
 function applyTagStyle(node) {
   const el = area?.nodeViews?.get(node.id)?.element
   if (!el) return
-  const c = colorForTag(node.tag)
-  if (!c) {
+  // Group membership wins over the user-set tag for visual color so a group
+  // and all its children read as one unit. Color is keyed off the group
+  // *name*, so two groups both called "Encoder" (e.g. after duplicate)
+  // pick up the same hue. We deliberately do NOT touch node.tag - tags
+  // mean explicit weight sharing and must stay under user control.
+  let color = null
+  if (node?.entry?.kind === 'group') {
+    const g = state.groups.get(node.entry.groupId)
+    if (g?.name) color = colorForTag(g.name)
+  } else if (node?.groupId) {
+    const g = state.groups.get(node.groupId)
+    if (g?.name) color = colorForTag(g.name)
+  }
+  if (!color) color = colorForTag(node.tag)
+  if (!color) {
     el.classList.remove('tagged-node')
     el.style.removeProperty('--tag-color')
     return
   }
   el.classList.add('tagged-node')
-  el.style.setProperty('--tag-color', c)
+  el.style.setProperty('--tag-color', color)
 }
 
 function applyAllTagStyles() {
@@ -319,6 +388,7 @@ function copySelection() {
       collapsed: g.collapsed,
       facadeNodeId: g.facadeNodeId,
       savedPosition: g.savedPosition,
+      childOffsets: g.childOffsets ?? {},
     })
   }
   state.clipboard = payload
@@ -439,6 +509,8 @@ async function pasteClipboard() {
             y: g.savedPosition.y + PASTE_OFFSET_PX,
           }
         : { x: 0, y: 0 },
+      // Offsets are deltas to the facade - no need to PASTE_OFFSET them.
+      childOffsets: remapChildOffsets(g.childOffsets, idMap),
     })
   }
 
@@ -852,6 +924,7 @@ async function importGraph(data) {
       facadeNodeId: newFacadeId ?? null,
       portMap: facade?.entry?.portMap ?? { inputs: [], outputs: [] },
       savedPosition: g.savedPosition ?? { x: 0, y: 0 },
+      childOffsets: remapChildOffsets(g.childOffsets, idMap),
     })
   }
 
@@ -906,15 +979,14 @@ async function deleteSelected() {
   if (ids.size === 0 && state.selectedNodeId) ids.add(state.selectedNodeId)
   if (ids.size === 0) return
 
-  // Facades: dissolve their groups so children survive as plain nodes.
-  for (const id of ids) {
+  // Facades: cascade-delete. Removing a group drops everything it contains
+  // along with it (matches the "folder" mental model). To keep children
+  // alive after dropping the group, use Ungroup instead.
+  for (const id of [...ids]) {
     const n = editor.getNode(id)
     if (!n || !isGroupFacade(n)) continue
     const gid = n.entry.groupId
-    for (const child of getGroupChildren(gid)) {
-      child.groupId = null
-      setNodeHidden(child.id, false)
-    }
+    for (const child of getGroupChildren(gid)) ids.add(child.id)
     state.groups.delete(gid)
   }
 
@@ -1176,7 +1248,18 @@ async function groupSelected(explicitIds) {
 
   const groupId = freshGroupId()
   const childNodes = [...ids].map((id) => editor.getNode(id)).filter(Boolean)
-  for (const n of childNodes) n.groupId = groupId
+  for (const n of childNodes) {
+    n.groupId = groupId
+    // Stamp a unique random tag onto each previously-untagged child so it has
+    // a stable identity in the tag namespace. Group color overrides tag color
+    // in applyTagStyle, so this doesn't change how the node looks; the tag
+    // shows up in the node label and survives ungroup / export. Pre-existing
+    // tags are left alone so user-set weight-sharing groups stay intact.
+    if (!String(n.tag ?? '').trim()) {
+      applyNodeTag(n, randomChildTag())
+      area.update('node', n.id)
+    }
+  }
 
   const boundary = computeBoundary(ids)
   const center = centroid(childNodes)
@@ -1194,7 +1277,9 @@ async function groupSelected(explicitIds) {
     facadeNodeId: facade.id,
     portMap: facadeEntry.portMap,
     savedPosition: center,
+    childOffsets: {},
   }
+  captureChildOffsets(group, childNodes)
   state.groups.set(groupId, group)
 
   await rerouteBoundaryEdges(group, 'to-facade')
@@ -1209,6 +1294,11 @@ async function groupSelected(explicitIds) {
       setConnectionHidden(c.id, true)
     }
   }
+
+  // Paint the group color immediately (children + facade) instead of waiting
+  // for the next debounced validation pass.
+  applyTagStyle(facade)
+  for (const child of childNodes) applyTagStyle(child)
 
   // Select the facade so the user immediately sees it as a unit.
   if (selector) {
@@ -1235,6 +1325,13 @@ async function expandGroup(groupId) {
   if (!group || !group.collapsed) return
   const facade = group.facadeNodeId ? editor.getNode(group.facadeNodeId) : null
 
+  // Anchor the expansion to wherever the facade is RIGHT NOW (user may have
+  // dragged it since collapse) so the children re-materialise around it
+  // instead of jumping back to their pre-collapse absolute coords.
+  const facadePos =
+    (facade && nodePosition(facade)) ?? group.savedPosition ?? { x: 0, y: 0 }
+  group.savedPosition = facadePos
+
   // Reroute boundary edges from facade back to children before deleting the
   // facade (so we don't lose the wiring).
   await rerouteBoundaryEdges(group, 'to-children')
@@ -1251,7 +1348,9 @@ async function expandGroup(groupId) {
   group.facadeNodeId = null
   group.collapsed = false
 
-  // Reveal children + their internal edges.
+  // Translate children FIRST, then reveal them - this avoids a one-frame flash
+  // at the stale coordinates.
+  await applyChildOffsets(group, facadePos)
   for (const n of getGroupChildren(groupId)) setNodeHidden(n.id, false)
   for (const c of editor.getConnections()) {
     const s = editor.getNode(c.source)
@@ -1287,6 +1386,11 @@ async function collapseGroup(groupId) {
   group.facadeNodeId = facade.id
   group.portMap = facadeEntry.portMap
   group.collapsed = true
+  // Refresh offsets - children may have been dragged while the group was
+  // expanded, so the previously-captured offsets are stale. captureChildOffsets
+  // also writes back group.savedPosition using the facade's *actual* placed
+  // coords (after any grid-snap applied during area.translate).
+  captureChildOffsets(group, children)
 
   await rerouteBoundaryEdges(group, 'to-facade')
 
@@ -1296,6 +1400,8 @@ async function collapseGroup(groupId) {
     const t = editor.getNode(c.target)
     if (s?.groupId === groupId && t?.groupId === groupId) setConnectionHidden(c.id, true)
   }
+  applyTagStyle(facade)
+  for (const child of children) applyTagStyle(child)
   state.selectedNodeId = facade.id
   refreshInspector()
   queueValidation()
@@ -1497,7 +1603,9 @@ function refreshInspector() {
           facade.entry.name = g.name
           facade.label = g.name
           area.update('node', facade.id)
+          applyTagStyle(facade)
         }
+        for (const child of getGroupChildren(gid)) applyTagStyle(child)
         queueAutosave()
       },
       toggle: (gid) => expandGroupOrCollapse(gid),
@@ -1633,6 +1741,7 @@ function getGraphData() {
       collapsed: g.collapsed,
       facadeNodeId: g.facadeNodeId,
       savedPosition: g.savedPosition,
+      childOffsets: g.childOffsets ?? {},
     })),
   }
 }

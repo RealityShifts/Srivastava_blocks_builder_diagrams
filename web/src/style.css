@@ -56,7 +56,7 @@ body {
 
 #toolbar select,
 #toolbar input[type='search'],
-#toolbar button {
+#toolbar .menu-trigger {
   background: var(--panel-2);
   color: var(--text);
   border: 1px solid var(--line);
@@ -69,15 +69,93 @@ body {
   flex: 1;
   min-width: 200px;
   max-width: 360px;
+  margin-left: auto;
 }
 
-#toolbar button {
+/* --- Menu bar (File / Edit hover dropdowns) --- */
+#toolbar .menu-bar {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  height: 100%;
+}
+
+#toolbar .menu-item {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+}
+
+#toolbar .menu-trigger {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0 12px;
+  cursor: default;
+  color: var(--text);
+  transition: background 0.12s;
+}
+
+#toolbar .menu-item:hover .menu-trigger,
+#toolbar .menu-item:focus-within .menu-trigger {
+  background: var(--panel-2);
+}
+
+#toolbar .menu-dropdown {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  min-width: 210px;
+  padding: 4px 0;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  z-index: 200;
+}
+
+#toolbar .menu-item:hover .menu-dropdown,
+#toolbar .menu-item:focus-within .menu-dropdown {
+  display: block;
+}
+
+#toolbar .menu-dropdown button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  width: 100%;
+  padding: 7px 14px;
+  background: transparent;
+  color: var(--text);
+  border: none;
+  border-radius: 0;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
-  transition: background 0.15s;
+  white-space: nowrap;
+  transition: background 0.1s;
 }
 
-#toolbar button:hover {
+#toolbar .menu-dropdown button:hover {
   background: #232844;
+}
+
+#toolbar .menu-dropdown .menu-item-accent {
+  color: #cfe6ff;
+}
+
+#toolbar .menu-separator {
+  height: 1px;
+  margin: 4px 8px;
+  background: var(--line);
+}
+
+#toolbar .menu-shortcut {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.02em;
 }
 
 main {

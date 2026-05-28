@@ -90,6 +90,19 @@ try {
   check('facade has 1 input port', grouped.facadeInputs.length === 1, grouped.facadeInputs)
   check('facade has 1 output port', grouped.facadeOutputs.length === 1, grouped.facadeOutputs)
 
+  // Auto-tagging: every previously-untagged child must end up with a non-empty,
+  // distinct tag stamped during groupSelected().
+  const childTags = await page.evaluate((aId, bId) => {
+    const ed = window.__blocks.editor
+    return {
+      a: ed.getNode(aId)?.tag ?? '',
+      b: ed.getNode(bId)?.tag ?? '',
+    }
+  }, ids.a, ids.b)
+  check('child a got a non-empty random tag', /^[a-z0-9]{3,}$/.test(childTags.a), childTags)
+  check('child b got a non-empty random tag', /^[a-z0-9]{3,}$/.test(childTags.b), childTags)
+  check('the two random tags are distinct', childTags.a !== childTags.b, childTags)
+
   // Boundary edges rerouted, children hidden.
   const rerouted = await page.evaluate((aId, bId, facadeId) => {
     const ed = window.__blocks.editor
@@ -120,13 +133,15 @@ try {
 
   // Codegen: subclass + main class.
   const code = await page.evaluate(() => window.__blocks.runCodegen())
-  const subClassMatch = /^class\s+Group\w+\(nn\.Module\):/m.test(code)
+  const subClassMatch = /^class\s+\w+\(nn\.Module\):[\s\S]+^class\s+GeneratedModel\(nn\.Module\)/m.test(
+    code
+  )
   const subInit = /self\.\w+\s*=\s*ConvBlock\(in_ch=3, out_ch=16\)/.test(code)
   const subInit2 = /self\.\w+\s*=\s*ConvBlock\(in_ch=16, out_ch=32\)/.test(code)
-  const mainInstantiates = /self\.\w+\s*=\s*Group\w+\(\)/.test(code)
+  const mainInstantiates = /self\.\w+\s*=\s*Group\w*\(\)/.test(code)
   const mainHasGeneratedModel = /class\s+GeneratedModel\(nn\.Module\):/.test(code)
   const mainCallsGroup = /self\.\w+\(in0=/.test(code)
-  check('codegen emits a Group_* subclass', subClassMatch, code.split('\n').slice(0, 30).join('\n'))
+  check('codegen emits a subclass before the main class', subClassMatch, code.split('\n').slice(0, 30).join('\n'))
   check('subclass __init__ contains first ConvBlock', subInit)
   check('subclass __init__ contains second ConvBlock', subInit2)
   check('main class instantiates subgroup', mainInstantiates)
@@ -134,7 +149,7 @@ try {
   check('main forward calls facade with in0=…', mainCallsGroup, code)
   check(
     'subclass appears before main class',
-    code.indexOf('class Group') < code.indexOf('class GeneratedModel')
+    /^class\s+\w+\(nn\.Module\)/m.exec(code).index < code.indexOf('class GeneratedModel')
   )
 
   // Runtime-trace codegen: the subclass MUST return real tensors (not the
@@ -282,15 +297,68 @@ try {
   check('duplicated children get a fresh gid', duped.distinctGids === 2)
   check('every facade portMap points at live children', duped.facadeChildIdsValid)
 
-  // Original and copy generate the same subclass body (only class name differs).
+  // Visual color: both facades + all 4 children should land on the SAME
+  // --tag-color value because the group name is the same on both copies.
+  const colors = await page.evaluate(() => {
+    const area = window.__blocks.area
+    const facades = window.__blocks.editor.getNodes().filter((n) => n.entry.kind === 'group')
+    const children = window.__blocks.editor.getNodes().filter((n) => n.groupId)
+    const colorOf = (n) => area.nodeViews.get(n.id).element.style.getPropertyValue('--tag-color')
+    const tagged = (n) =>
+      area.nodeViews.get(n.id).element.classList.contains('tagged-node')
+    return {
+      facadeColors: facades.map(colorOf),
+      childColors: children.map(colorOf),
+      allTagged: [...facades, ...children].every(tagged),
+    }
+  })
+  check(
+    'duplicated groups share a single --tag-color across all facades/children',
+    colors.allTagged &&
+      new Set([...colors.facadeColors, ...colors.childColors].filter(Boolean)).size === 1,
+    colors
+  )
+
+  // Two groups with the same name should share a single emitted class
+  // (Encoder duplicated -> still one `class Encoder(nn.Module)`), plus
+  // GeneratedModel. The main class instantiates the shared class twice.
   const dupedCode = await page.evaluate(() => window.__blocks.runCodegen())
   const subClasses = (dupedCode.match(/^class\s+(\w+)\(nn\.Module\):/gm) || []).map((s) =>
     s.match(/class\s+(\w+)/)[1]
   )
   check(
-    'two subclasses + GeneratedModel in codegen',
-    subClasses.length === 3 && subClasses.includes('GeneratedModel'),
+    'duplicate groups share a single subclass (dedup by name)',
+    subClasses.length === 2 && subClasses.includes('GeneratedModel'),
     subClasses
+  )
+  const groupClass = subClasses.find((c) => c !== 'GeneratedModel')
+  const instantiateCount = (
+    dupedCode.match(new RegExp(`self\\.\\w+\\s*=\\s*${groupClass}\\(\\)`, 'g')) || []
+  ).length
+  check(
+    'main class instantiates the shared class twice',
+    instantiateCount === 2,
+    `instantiateCount=${instantiateCount}, code=${dupedCode}`
+  )
+
+  // Same tag on both facades -> weight sharing: one instance, two call sites.
+  const sharedTagCode = await page.evaluate(async () => {
+    const ed = window.__blocks.editor
+    for (const f of ed.getNodes().filter((n) => n.entry.kind === 'group')) {
+      window.__blocks.applyNodeTag(f, 'encoder')
+      window.__blocks.area.update('node', f.id)
+    }
+    return window.__blocks.runCodegen()
+  })
+  check(
+    'same tag on group facades -> one __init__ slot',
+    (sharedTagCode.match(/self\.encoder = \w+\(\)/g) || []).length === 1,
+    sharedTagCode
+  )
+  check(
+    'same tag on group facades -> two forward call sites',
+    (sharedTagCode.match(/self\.encoder\(/g) || []).length === 2,
+    sharedTagCode
   )
 
   // Tear down for the ungroup assertion: remove the duplicate so the rest of
@@ -316,12 +384,209 @@ try {
   check('ungroup deletes facade', ungrouped.facadeGone)
   check('ungroup clears groupId on children', ungrouped.orphanedChildren === 0)
 
-  // After ungroup, codegen should once again be a single class (no subgroup).
+  // After ungroup, codegen should be a single GeneratedModel class.
   const codeFlat = await page.evaluate(() => window.__blocks.runCodegen())
+  const classesFlat = (codeFlat.match(/^class\s+(\w+)\(nn\.Module\)/gm) || []).map((s) =>
+    s.match(/class\s+(\w+)/)[1]
+  )
   check(
-    'post-ungroup codegen has no Group_* subclass',
-    !/^class\s+Group\w+\(/m.test(codeFlat),
-    codeFlat
+    'post-ungroup codegen has only GeneratedModel',
+    classesFlat.length === 1 && classesFlat[0] === 'GeneratedModel',
+    classesFlat
+  )
+
+  // --- New scenario: pre-existing tags are preserved; facade-delete cascades.
+  const tagAndDelete = await page.evaluate(async () => {
+    const ed = window.__blocks.editor
+    await window.__blocks.clearGraph()
+    const input = await window.__blocks.createNode('Input')
+    input.values.shape = 'B 3 224 224'
+    input.values.dtype = 'float'
+    const a = await window.__blocks.createNode('ConvBlock')
+    a.values.in_ch = 3
+    a.values.out_ch = 16
+    // User-set tag on `a` must NOT be overwritten by the auto-random tag.
+    window.__blocks.applyNodeTag(a, 'my-conv')
+    const b = await window.__blocks.createNode('ConvBlock')
+    b.values.in_ch = 16
+    b.values.out_ch = 32
+    const out = await window.__blocks.createNode('Output')
+    out.values.name = 'features'
+    await window.__blocks.addConnection(input.id, 'out', a.id, 'x')
+    await window.__blocks.addConnection(a.id, 'out', b.id, 'x')
+    await window.__blocks.addConnection(b.id, 'out', out.id, 'x')
+    await window.__blocks.groupNodes([a.id, b.id])
+
+    const tags = { a: ed.getNode(a.id)?.tag, b: ed.getNode(b.id)?.tag }
+    const facade = ed.getNodes().find((n) => n.entry.kind === 'group')
+    const beforeIds = ed.getNodes().map((n) => n.id)
+
+    // Cascade-delete via the same code path the toolbar / Del key drive.
+    window.__blocks.state.selectedNodeId = facade.id
+    await window.__blocks.deleteSelected()
+
+    const afterNodes = ed.getNodes()
+    return {
+      tags,
+      beforeCount: beforeIds.length,
+      afterCount: afterNodes.length,
+      facadeStillThere: afterNodes.some((n) => n.entry.kind === 'group'),
+      childAStillThere: afterNodes.some((n) => n.id === a.id),
+      childBStillThere: afterNodes.some((n) => n.id === b.id),
+      inputStillThere: afterNodes.some((n) => n.id === input.id),
+      outputStillThere: afterNodes.some((n) => n.id === out.id),
+      remainingGroups: window.__blocks.state.groups.size,
+    }
+  })
+  check('pre-existing tag on child is NOT overwritten', tagAndDelete.tags.a === 'my-conv', tagAndDelete.tags)
+  check('untagged sibling still gets a random tag', /^[a-z0-9]{3,}$/.test(tagAndDelete.tags.b || ''), tagAndDelete.tags)
+  check('delete facade removes the facade itself', !tagAndDelete.facadeStillThere)
+  check('delete facade removes child a', !tagAndDelete.childAStillThere)
+  check('delete facade removes child b', !tagAndDelete.childBStillThere)
+  check('delete facade leaves unrelated Input alive', tagAndDelete.inputStillThere)
+  check('delete facade leaves unrelated Output alive', tagAndDelete.outputStillThere)
+  check('delete facade drops the group from state.groups', tagAndDelete.remainingGroups === 0)
+  check(
+    'node count drops by exactly 3 (facade + 2 children)',
+    tagAndDelete.beforeCount - tagAndDelete.afterCount === 3,
+    tagAndDelete
+  )
+
+  // --- New scenario: child positions follow the facade across collapse/expand.
+  // Drag the facade, then expand: children must land at facadePos + offset.
+  const drag = await page.evaluate(async () => {
+    const blocks = window.__blocks
+    const ed = blocks.editor
+    const area = blocks.area
+    await blocks.clearGraph()
+    const a = await blocks.createNode('ConvBlock')
+    a.values.in_ch = 3
+    a.values.out_ch = 16
+    const b = await blocks.createNode('ConvBlock')
+    b.values.in_ch = 16
+    b.values.out_ch = 32
+    await blocks.addConnection(a.id, 'out', b.id, 'x')
+    // Park children at known coords so we can compute the expected offset.
+    await area.translate(a.id, { x: 100, y: 200 })
+    await area.translate(b.id, { x: 400, y: 250 })
+    const aBefore = { ...area.nodeViews.get(a.id).position }
+    const bBefore = { ...area.nodeViews.get(b.id).position }
+    await blocks.groupNodes([a.id, b.id])
+    await new Promise((r) => setTimeout(r, 20))
+    const facade = ed.getNodes().find((n) => n.entry.kind === 'group')
+    const facadeAtGroup = { ...area.nodeViews.get(facade.id).position }
+    const group = blocks.state.groups.get(facade.entry.groupId)
+    const recordedOffsetA = group.childOffsets[a.id]
+    const recordedOffsetB = group.childOffsets[b.id]
+    // Move the facade by (~+300, ~-150) - Rete snaps to a grid so the actual
+    // position is whatever shows up after translate; read it back.
+    await area.translate(facade.id, { x: facadeAtGroup.x + 300, y: facadeAtGroup.y - 150 })
+    const facadeDragged = { ...area.nodeViews.get(facade.id).position }
+    await blocks.expandGroup(facade.entry.groupId)
+    await new Promise((r) => setTimeout(r, 20))
+    const aAfter = { ...area.nodeViews.get(a.id).position }
+    const bAfter = { ...area.nodeViews.get(b.id).position }
+    // Now collapse again from the dragged location; verify the facade lands
+    // where the user left it (and not at the original creation centroid).
+    const gid = facade.entry.groupId
+    await blocks.collapseGroup(gid)
+    await new Promise((r) => setTimeout(r, 20))
+    const facade2 = ed.getNodes().find((n) => n.entry.kind === 'group')
+    const facadeAfterRecollapse = { ...area.nodeViews.get(facade2.id).position }
+    return {
+      aBefore, bBefore,
+      facadeAtGroup,
+      recordedOffsetA,
+      recordedOffsetB,
+      facadeDragged,
+      aAfter, bAfter,
+      facadeAfterRecollapse,
+    }
+  })
+  // Allow a few pixels of slack: Rete snaps translate() targets to a grid,
+  // so positions can drift by up to ~8px from the requested values.
+  const eq = (n, m, eps = 2) => Math.abs(n - m) <= eps
+  check(
+    'child offset captured = aBefore - facadeAtGroup',
+    eq(drag.recordedOffsetA.dx, drag.aBefore.x - drag.facadeAtGroup.x) &&
+      eq(drag.recordedOffsetA.dy, drag.aBefore.y - drag.facadeAtGroup.y),
+    drag
+  )
+  check(
+    'child offset captured for b',
+    eq(drag.recordedOffsetB.dx, drag.bBefore.x - drag.facadeAtGroup.x) &&
+      eq(drag.recordedOffsetB.dy, drag.bBefore.y - drag.facadeAtGroup.y),
+    drag
+  )
+  // After dragging the facade and expanding, children must follow:
+  //   newChildPos == draggedFacadePos + originalOffset (post-grid-snap).
+  check(
+    'expand places child a at dragged facade + offset',
+    eq(drag.aAfter.x, drag.facadeDragged.x + drag.recordedOffsetA.dx) &&
+      eq(drag.aAfter.y, drag.facadeDragged.y + drag.recordedOffsetA.dy),
+    drag
+  )
+  check(
+    'expand places child b at dragged facade + offset',
+    eq(drag.bAfter.x, drag.facadeDragged.x + drag.recordedOffsetB.dx) &&
+      eq(drag.bAfter.y, drag.facadeDragged.y + drag.recordedOffsetB.dy),
+    drag
+  )
+  // Sanity: the new positions are NOT the original (pre-collapse) ones -
+  // i.e. we genuinely moved them, not just no-op'd.
+  check(
+    'children did NOT snap back to original absolute coords',
+    !(eq(drag.aAfter.x, drag.aBefore.x) && eq(drag.aAfter.y, drag.aBefore.y)),
+    drag
+  )
+  // Re-collapse must put the facade where the user left it.
+  check(
+    're-collapse keeps facade at the dragged position',
+    eq(drag.facadeAfterRecollapse.x, drag.facadeDragged.x) &&
+      eq(drag.facadeAfterRecollapse.y, drag.facadeDragged.y),
+    drag
+  )
+
+  // --- Autosave roundtrip preserves the offsets so this still works after reload.
+  const reloadDrag = await page.evaluate(async () => {
+    const blocks = window.__blocks
+    const ed = blocks.editor
+    const area = blocks.area
+    // Persist current state, then re-import to simulate a reload.
+    const snapshot = blocks.getGraphData()
+    await blocks.clearGraph()
+    await blocks.importGraph(snapshot)
+    await new Promise((r) => setTimeout(r, 20))
+    const facade = ed.getNodes().find((n) => n.entry.kind === 'group')
+    const facadePos = { ...area.nodeViews.get(facade.id).position }
+    const move = { x: facadePos.x - 50, y: facadePos.y + 80 }
+    await area.translate(facade.id, move)
+    await blocks.expandGroup(facade.entry.groupId)
+    await new Promise((r) => setTimeout(r, 20))
+    const children = ed.getNodes().filter((n) => n.groupId)
+    const childPositions = children.map((c) => ({
+      id: c.id,
+      pos: { ...area.nodeViews.get(c.id).position },
+    }))
+    return { move, childPositions, facadePosBeforeMove: facadePos }
+  })
+  check(
+    'after autosave roundtrip, all children still positioned relative to the facade',
+    reloadDrag.childPositions.length >= 2 &&
+      reloadDrag.childPositions.every(
+        (c) =>
+          Number.isFinite(c.pos.x) &&
+          Number.isFinite(c.pos.y) &&
+          // The expand point moved by (-50, +80) vs facadePosBeforeMove, so
+          // children should also have moved by exactly that delta. We don't
+          // know the offsets here, but we can verify NONE of them sit at the
+          // un-dragged facade's coords.
+          !(
+            Math.abs(c.pos.x - reloadDrag.facadePosBeforeMove.x) < 0.5 &&
+            Math.abs(c.pos.y - reloadDrag.facadePosBeforeMove.y) < 0.5
+          )
+      ),
+    reloadDrag
   )
 
   if (consoleErrors.length > 0) {

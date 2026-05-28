@@ -79,13 +79,13 @@ export function validate(editor) {
     }
   }
 
-  // 3a. Tag-based weight sharing: module nodes sharing a non-empty tag must
-  //     agree on block type AND non-default ctor values, otherwise codegen
-  //     would emit a self.<attr> backed by one set of ctor args yet
-  //     be called from a site that semantically expects another.
+  // 3a. Tag-based weight sharing: module nodes and group facades sharing a
+  //     non-empty tag must agree on block/group type (and ctor values for
+  //     modules), otherwise codegen would emit one self.<attr> backed by a
+  //     single instance yet called from sites that semantically expect another.
   const tagGroups = new Map()
   for (const n of nodes) {
-    if (n.entry.kind !== 'module') continue
+    if (n.entry.kind !== 'module' && n.entry.kind !== 'group') continue
     const t = String(n.tag ?? '').trim()
     if (!t) continue
     if (!tagGroups.has(t)) tagGroups.set(t, [])
@@ -98,7 +98,30 @@ export function validate(editor) {
       if (other.entry.name !== head.entry.name) {
         errors.push({
           kind: 'tag-conflict',
-          message: `Tag "${tag}" reused across different block types: ${head.entry.name} vs ${other.entry.name}. Same tag = shared weights, so types must match.`,
+          message:
+            head.entry.kind === 'module' && other.entry.kind === 'module'
+              ? `Tag "${tag}" reused across different block types: ${head.entry.name} vs ${other.entry.name}. Same tag = shared weights, so types must match.`
+              : `Tag "${tag}" reused across different types: ${head.entry.name} (${head.entry.kind}) vs ${other.entry.name} (${other.entry.kind}). Same tag = shared weights, so types must match.`,
+        })
+        continue
+      }
+      if (head.entry.kind === 'group' && other.entry.kind === 'group') {
+        const headIn = head.entry.inputs?.length ?? 0
+        const headOut = head.entry.outputs?.length ?? 0
+        const otherIn = other.entry.inputs?.length ?? 0
+        const otherOut = other.entry.outputs?.length ?? 0
+        if (headIn !== otherIn || headOut !== otherOut) {
+          errors.push({
+            kind: 'tag-conflict',
+            message: `Tag "${tag}" on group "${other.entry.name}": boundary ports differ (${headIn}in/${headOut}out vs ${otherIn}in/${otherOut}out). Weight-shared groups must have matching interfaces.`,
+          })
+        }
+        continue
+      }
+      if (head.entry.kind !== other.entry.kind) {
+        errors.push({
+          kind: 'tag-conflict',
+          message: `Tag "${tag}" reused across a block and a group (${head.entry.name}). Same tag = shared weights, so kinds must match.`,
         })
         continue
       }

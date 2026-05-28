@@ -10,6 +10,48 @@
   <body>
     <header id="toolbar">
       <div class="brand">Blocks Builder</div>
+
+      <nav class="menu-bar" aria-label="Application menu">
+        <div class="menu-item">
+          <button type="button" class="menu-trigger" aria-haspopup="true">File</button>
+          <div class="menu-dropdown" role="menu">
+            <button id="import-btn" type="button" role="menuitem" title="Import graph JSON">
+              Import JSON…
+            </button>
+            <button id="export-btn" type="button" role="menuitem">Export JSON</button>
+            <div class="menu-separator" role="separator"></div>
+            <button id="codegen-btn" type="button" role="menuitem" class="menu-item-accent">
+              Generate Python
+            </button>
+            <div class="menu-separator" role="separator"></div>
+            <button id="clear-btn" type="button" role="menuitem">Clear graph</button>
+          </div>
+        </div>
+
+        <div class="menu-item">
+          <button type="button" class="menu-trigger" aria-haspopup="true">Edit</button>
+          <div class="menu-dropdown" role="menu">
+            <button id="focus-input-btn" type="button" role="menuitem" title="Center on Input node">
+              Focus Input
+            </button>
+            <div class="menu-separator" role="separator"></div>
+            <button id="duplicate-btn" type="button" role="menuitem" title="Duplicate selected nodes (Ctrl/Cmd+D)">
+              Duplicate <span class="menu-shortcut">⌘D</span>
+            </button>
+            <button id="delete-btn" type="button" role="menuitem" title="Delete selected nodes (Del / Backspace)">
+              Delete <span class="menu-shortcut">Del</span>
+            </button>
+            <div class="menu-separator" role="separator"></div>
+            <button id="group-btn" type="button" role="menuitem" title="Combine selected nodes into a subgraph (Ctrl/Cmd+G)">
+              Group <span class="menu-shortcut">⌘G</span>
+            </button>
+            <button id="ungroup-btn" type="button" role="menuitem" title="Dissolve focused group (Ctrl/Cmd+Shift+G)">
+              Ungroup <span class="menu-shortcut">⌘⇧G</span>
+            </button>
+          </div>
+        </div>
+      </nav>
+
       <label class="select">
         Framework
         <select id="framework-select">
@@ -18,15 +60,6 @@
         </select>
       </label>
       <input id="search" type="search" placeholder="Search blocks (Ctrl-K)" />
-      <button id="focus-input-btn" title="Center on Input node">Focus Input</button>
-      <button id="duplicate-btn" title="Duplicate selected nodes (Ctrl/Cmd+D)">Duplicate</button>
-      <button id="delete-btn" title="Delete selected nodes (Del / Backspace)">Delete</button>
-      <button id="group-btn" title="Combine selected nodes into a subgraph (Ctrl/Cmd+G)">Group</button>
-      <button id="ungroup-btn" title="Dissolve focused group (Ctrl/Cmd+Shift+G)">Ungroup</button>
-      <button id="clear-btn">Clear graph</button>
-      <button id="import-btn" title="Import graph JSON">Import JSON</button>
-      <button id="export-btn">Export JSON</button>
-      <button id="codegen-btn">Generate Python</button>
       <input id="import-file-input" type="file" accept=".json,application/json" hidden />
     </header>
 

@@ -412,7 +412,7 @@ export function renderInspector(
   tagLabel.htmlFor = tagId
   tagLabel.textContent = 'Tag'
   const tagHelp =
-    node.entry.kind === 'module'
+    node.entry.kind === 'module' || node.entry.kind === 'group'
       ? 'label · same tag = shared weights'
       : 'label only'
   tagLabel.title = tagHelp
@@ -421,7 +421,8 @@ export function renderInspector(
   tagInput.id = tagId
   tagInput.type = 'text'
   tagInput.spellcheck = false
-  tagInput.placeholder = node.entry.kind === 'module' ? 'down1' : 'note'
+  tagInput.placeholder =
+    node.entry.kind === 'module' || node.entry.kind === 'group' ? 'down1' : 'note'
   tagInput.value = String(node.tag ?? '')
   tagInput.addEventListener('input', () => {
     if (typeof onTagChange === 'function') onTagChange(node, tagInput.value)

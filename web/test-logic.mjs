@@ -10,6 +10,7 @@ import {
   CONCAT_ENTRY,
   STACK_ENTRY,
   OUTPUT_ENTRY,
+  makeGroupEntry,
   RearrangeNode,
   ReshapeNode,
   paletteGroup,
@@ -306,6 +307,86 @@ console.log('codegen tag weight-sharing')
   const codeDisagree = generate([aWide, bWide], [], 'pytorch')
   const wideSlots = (codeDisagree.match(/self\.wide = ConvBlock\(/g) || []).length
   check('ctor-disagreement still collapses to one slot (validator rejects)', wideSlots === 1, wideSlots)
+
+  // Group facades sharing a tag -> one instance in GeneratedModel (same as modules).
+  const residual = {
+    name: 'ResidualBlock',
+    module: 'pytorch_blocks.core_blocks',
+    framework: 'pytorch',
+    kind: 'module',
+    ctor: [
+      { name: 'in_ch', type: 'int', default: null, required: true },
+      { name: 'out_ch', type: 'int', default: null, required: true },
+    ],
+    inputs: [{ name: 'x', shape: ['B', 'C', 'H', 'W'], dtype: 'float' }],
+    outputs: [{ name: 'out', shape: ['B', 'C', 'H', 'W'], dtype: 'float' }],
+    bindings: {},
+  }
+  const inputEntry = {
+    name: 'Input',
+    module: '__builtin__',
+    framework: 'any',
+    kind: 'input',
+    ctor: [
+      { name: 'name', type: 'str', default: 'x' },
+      { name: 'shape', type: 'str', default: 'B C H W' },
+      { name: 'dtype', type: 'str', default: 'float' },
+    ],
+    inputs: [],
+    outputs: [{ name: 'out', shape: ['B', 'C', 'H', 'W'], dtype: 'float' }],
+    bindings: {},
+  }
+  const mkFacade = (id, gid, childId, tag) => ({
+    id,
+    entry: makeGroupEntry(gid, 'Group1', {
+      inputs: [{ childNodeId: childId, childPort: 'x', shape: ['B', 3, 224, 224] }],
+      outputs: [{ childNodeId: childId, childPort: 'out', shape: ['B', 4, 224, 224] }],
+    }),
+    tag,
+    values: {},
+    groupId: null,
+  })
+  const c1 = make('c1', residual, { in_ch: 3, out_ch: 4 })
+  c1.groupId = 'g1'
+  const c2 = make('c2', residual, { in_ch: 3, out_ch: 4 })
+  c2.groupId = 'g2'
+  const f1 = mkFacade('f1', 'g1', 'c1', 'encoder')
+  const f2 = mkFacade('f2', 'g2', 'c2', 'encoder')
+  const inp = make('inp', inputEntry, { name: 'x' })
+  const codeSharedGroups = generate(
+    [inp, f1, f2, c1, c2],
+    [
+      { source: 'inp', sourceOutput: 'out', target: 'f1', targetInput: 'in0' },
+      { source: 'inp', sourceOutput: 'out', target: 'f2', targetInput: 'in0' },
+    ],
+    'pytorch'
+  )
+  check(
+    'shared tag on group facades emits ONE self.encoder = Group1(...) slot',
+    (codeSharedGroups.match(/self\.encoder = Group1\(\)/g) || []).length === 1,
+    codeSharedGroups
+  )
+  check(
+    'shared tag on groups: two forward call sites to self.encoder',
+    (codeSharedGroups.match(/self\.encoder\(/g) || []).length === 2,
+    codeSharedGroups
+  )
+  check(
+    'shared tag on groups: only one Group1 class definition',
+    (codeSharedGroups.match(/^class Group1\(nn\.Module\):/gm) || []).length === 1,
+    codeSharedGroups
+  )
+
+  // Different tags (or empty) -> separate instances, current behaviour preserved.
+  const f3 = mkFacade('f3', 'g3', 'c3', '')
+  const c3 = make('c3', residual, { in_ch: 3, out_ch: 4 })
+  c3.groupId = 'g3'
+  const f4 = mkFacade('f4', 'g4', 'c4', 'other')
+  const c4 = make('c4', residual, { in_ch: 3, out_ch: 4 })
+  c4.groupId = 'g4'
+  const codeUntaggedGroups = generate([inp, f3, f4, c3, c4], [], 'pytorch')
+  const separateInits = (codeUntaggedGroups.match(/= Group1\(\)/g) || []).length
+  check('untagged / distinct-tag groups get separate instances', separateInits === 2, separateInits)
 }
 
 // --- validator: tag conflict ---

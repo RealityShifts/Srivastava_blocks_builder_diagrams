@@ -101,8 +101,8 @@ export function planGraph(nodes, connections) {
     }
   }
 
-  // Module-kind nodes sharing a (sanitized, non-empty) tag get the *same*
-  // attribute - that's how weight tying works: one `self.<attr> = Block(...)`
+  // Module- and group-kind nodes sharing a (sanitized, non-empty) tag get the
+  // *same* attribute - that's how weight tying works: one `self.<attr> = ...`
   // in __init__, multiple call sites in forward. Non-module kinds (input,
   // rearrange, reshape) never share.
   const attrName = new Map()
@@ -110,7 +110,9 @@ export function planGraph(nodes, connections) {
   ordered.forEach((n, i) => {
     if (n.entry.kind === 'input') return
     const tag =
-      n.entry.kind === 'module' ? sanitizePyIdent(n.tag ?? '', '') : ''
+      n.entry.kind === 'module' || n.entry.kind === 'group'
+        ? sanitizePyIdent(n.tag ?? '', '')
+        : ''
     if (tag) {
       if (!sharedKeyToAttr.has(tag)) {
         sharedKeyToAttr.set(tag, allocAttr(tag))
@@ -214,8 +216,16 @@ export function generate(nodes, connections, framework, options = {}) {
   }
   lines.push('')
 
+  // Emit each unique class name once. When two groups share a name (e.g.
+  // because the user duplicated a group), the second one reuses the first's
+  // class definition rather than emitting a redefinition. Each facade still
+  // gets its own `self.<attr> = ClassName()` instance in the main class.
   const subClassSections = []
+  const emittedClassNames = new Set()
   for (const [gid, facade] of facadesByGid) {
+    const cls = classNames.get(gid)
+    if (emittedClassNames.has(cls)) continue
+    emittedClassNames.add(cls)
     const children = childrenByGid.get(gid) || []
     const internals = internalByGid.get(gid) || []
     const view = buildSubgraphView(facade, children, internals)
@@ -225,7 +235,7 @@ export function generate(nodes, connections, framework, options = {}) {
       view.nodes,
       view.connections,
       framework,
-      classNames.get(gid),
+      cls,
       classNames,
       options
     )
@@ -710,13 +720,14 @@ function partitionByGroup(nodes, connections) {
   return { facadesByGid, childrenByGid, internalByGid }
 }
 
-function groupClassName(facadeName, gid) {
+function groupClassName(facadeName, _gid) {
+  // Class name comes purely from the user-facing group name so that two
+  // groups sharing a name (e.g. duplicating "Encoder") map to the *same*
+  // generated class instead of `Encoder_aaaa` and `Encoder_bbbb`. Multiple
+  // facades that resolve to the same class are deduped in `generate()` so
+  // Python doesn't see a redefinition.
   const sane = sanitizePyIdent(facadeName || 'Group', 'Group')
-  const pascal = sane.charAt(0).toUpperCase() + sane.slice(1)
-  // A short suffix from the gid disambiguates two groups that the user happens
-  // to name identically; without it Python would refuse the duplicate class.
-  const tag = String(gid || '').replace(/[^A-Za-z0-9]/g, '').slice(-4)
-  return tag ? `${pascal}_${tag}` : pascal
+  return sane.charAt(0).toUpperCase() + sane.slice(1)
 }
 
 /**
