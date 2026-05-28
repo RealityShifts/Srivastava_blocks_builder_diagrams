@@ -142,6 +142,93 @@ try {
     afterReload.every((n) => /·\s*shared/.test(n.label)),
     afterReload
   )
+
+  // --- 7) Copy a tagged group + external const, expand/collapse the copy ---
+  // Regression for: (a) facade tag dropped on paste, (b) external const wired
+  // into a child's __param__ port gets dangled after expand→collapse of the
+  // pasted copy because the cloned child lost its exposed-param input.
+  const groupClipboard = await page.evaluate(async () => {
+    const blocks = window.__blocks
+    const ed = blocks.editor
+    await blocks.clearGraph()
+    const conv = await blocks.createNode('ConvBlock')
+    conv.values.in_ch = 3
+    conv.values.out_ch = 16
+    conv.values.kernel_size = 3
+    conv.exposeParam('kernel_size')
+    const k = await blocks.createNode('Constant')
+    k.values.value = 5
+    await blocks.addConnection(k.id, 'out', conv.id, '__param__kernel_size')
+    await blocks.groupNodes([conv.id])
+    const facade = ed.getNodes().find((n) => n.entry.kind === 'group')
+    window.__blocks.applyNodeTag(facade, 'enc')
+    blocks.area.update('node', facade.id)
+    const constNode = ed.getNodes().find((n) => n.entry.kind === 'const')
+    // Multi-select const + facade through rete's selector (the only way
+    // copySelection sees more than one node). selector.add expects an entity
+    // with translate/unselect stubs and an `accumulate` second arg.
+    const noop = () => {}
+    blocks.selector.add(
+      { label: 'node', id: constNode.id, translate: noop, unselect: noop },
+      true
+    )
+    blocks.selector.add(
+      { label: 'node', id: facade.id, translate: noop, unselect: noop },
+      true
+    )
+    blocks.copySelection()
+    await blocks.pasteClipboard()
+    // Find the pasted facade (the one whose entry.groupId differs from the original).
+    const facades = ed.getNodes().filter((n) => n.entry.kind === 'group')
+    const pastedFacade =
+      facades.find((n) => n.entry.groupId !== facade.entry.groupId) || facades[1]
+    const pastedTag = pastedFacade?.tag
+    // Find the cloned const + child that belong to the pasted group.
+    const pastedChildren = ed.getNodes().filter(
+      (n) => n.groupId && n.groupId === pastedFacade.entry.groupId
+    )
+    const child = pastedChildren[0]
+    const beforeExpand = ed
+      .getConnections()
+      .filter((c) => c.target === pastedFacade.id && c.targetInput.startsWith('__param__'))
+      .length
+    await blocks.expandGroup(pastedFacade.entry.groupId)
+    const childParamEdges = ed
+      .getConnections()
+      .filter((c) => c.target === child.id && c.targetInput.startsWith('__param__'))
+      .length
+    await blocks.collapseGroup(pastedFacade.entry.groupId)
+    const facadeAfter = ed
+      .getNodes()
+      .filter((n) => n.entry.kind === 'group')
+      .find((n) => n.entry.groupId === pastedFacade.entry.groupId)
+    const afterCollapse = ed
+      .getConnections()
+      .filter(
+        (c) => c.target === facadeAfter.id && c.targetInput.startsWith('__param__')
+      ).length
+    return { pastedTag, beforeExpand, childParamEdges, afterCollapse }
+  })
+  check(
+    'pasted group facade carries the original tag',
+    groupClipboard.pastedTag === 'enc',
+    groupClipboard
+  )
+  check(
+    'const → pasted facade __param__ edge exists right after paste',
+    groupClipboard.beforeExpand === 1,
+    groupClipboard
+  )
+  check(
+    'expand routes const → child __param__ on the cloned child',
+    groupClipboard.childParamEdges === 1,
+    groupClipboard
+  )
+  check(
+    'recollapse restores const → facade __param__ (no dangling)',
+    groupClipboard.afterCollapse === 1,
+    groupClipboard
+  )
 } catch (e) {
   console.error('TEST FAILED:', e.stack)
   fail++

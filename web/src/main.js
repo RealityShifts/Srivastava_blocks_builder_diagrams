@@ -362,10 +362,19 @@ function copySelection() {
     if (n.entry.kind === 'group') {
       spec.groupId = n.entry.groupId
       spec.portMap = n.entry.portMap
-    } else if (n.groupId && fullGroups.has(n.groupId)) {
-      // Only persist the membership when the *whole* group was copied;
-      // otherwise the child is meant to land as a standalone.
-      spec.groupId = n.groupId
+    } else {
+      // Persist which ctor params are exposed as __param__* input ports so a
+      // paste can reattach external constants. Without this, expanding the
+      // pasted group would re-route const -> child.__param__X onto a child
+      // that no longer has that port and the edge would be silently dropped.
+      spec.exposedParams = Object.keys(n.inputs || {})
+        .filter((k) => k.startsWith('__param__'))
+        .map((k) => k.replace(/^__param__/, ''))
+      if (n.groupId && fullGroups.has(n.groupId)) {
+        // Only persist group membership when the *whole* group was copied;
+        // otherwise the child is meant to land as a standalone.
+        spec.groupId = n.groupId
+      }
     }
     payload.nodes.push(spec)
   }
@@ -447,6 +456,9 @@ async function pasteClipboard() {
     const node = await createNode(spec.name, pos)
     if (!node) continue
     if (spec.values) Object.assign(node.values, spec.values)
+    for (const p of spec.exposedParams || []) {
+      node.exposeParam?.(p)
+    }
     if (typeof spec.tag === 'string' && spec.tag) {
       applyNodeTag(node, spec.tag)
       area.update('node', node.id)
@@ -494,6 +506,11 @@ async function pasteClipboard() {
       })
     }
     markFacadeElement(facade.id)
+    if (typeof spec.tag === 'string' && spec.tag) {
+      applyNodeTag(facade, spec.tag)
+      area.update('node', facade.id)
+      applyTagStyle(facade)
+    }
     idMap.set(spec.id, facade.id)
   }
 
@@ -528,6 +545,13 @@ async function pasteClipboard() {
     const srcNode = editor.getNode(source)
     const tgtNode = editor.getNode(target)
     if (!srcNode || !tgtNode) continue
+    // Defensive: if the saved edge points at a __param__* port (e.g. a const
+    // wired into a child's exposed ctor param), make sure the target node
+    // actually has that input port. Mirrors importGraph's behaviour.
+    if (String(c.targetInput || '').startsWith('__param__')) {
+      const pName = String(c.targetInput).replace(/^__param__/, '')
+      tgtNode.exposeParam?.(pName)
+    }
     try {
       const conn = new ClassicPreset.Connection(srcNode, c.sourceOutput, tgtNode, c.targetInput)
       await editor.addConnection(conn)
@@ -1821,6 +1845,9 @@ if (typeof window !== 'undefined') {
     },
     get area() {
       return area
+    },
+    get selector() {
+      return selector
     },
     state,
     createNode,
