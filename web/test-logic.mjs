@@ -1,7 +1,7 @@
 // Quick smoke test of the pure-JS modules (no rete / DOM needed).
 import { normalize, freshen, prettyShape } from './src/shape.js'
 import { unifyShape, UnifyError } from './src/unify.js'
-import { generate, inputForwardArgName } from './src/codegen.js'
+import { generate, inputForwardArgName, outputReturnArgName } from './src/codegen.js'
 import {
   parseEinopsPattern,
   parseLengthsString,
@@ -1077,16 +1077,39 @@ console.log('codegen (explicit Output node)')
     { source: 'c1', sourceOutput: 'out', target: 'o1', targetInput: 'x' },
   ]
   const code = generate([inp, c1, c2, outNode], conns, 'pytorch')
-  const ret = (code.match(/return\s+([A-Za-z_][A-Za-z0-9_]*)/) || [])[1] || ''
   check(
-    'with Output node, return points to Output input source (c1), not leaf c2',
-    /conv_block_1/.test(ret),
-    { ret, code }
+    'with Output node, assigns default return alias y from wired source',
+    /y = conv_block_1/.test(code) && /return y/.test(code),
+    code
   )
   check(
     'with Output node, leaf output is ignored',
-    !/conv_block_2/.test(ret),
-    { ret, code }
+    !/return conv_block_2/.test(code),
+    code
+  )
+
+  check(
+    'outputReturnArgName prefers custom name over tag',
+    outputReturnArgName({ values: { name: 'logits' }, tag: 'head' }) === 'logits'
+  )
+  check(
+    'outputReturnArgName uses tag when name is default y',
+    outputReturnArgName({ values: { name: 'y' }, tag: 'features' }) === 'features'
+  )
+  const outTagged = make('o2', OUTPUT_ENTRY, { name: 'y' })
+  outTagged.tag = 'features'
+  const codeOutTag = generate(
+    [inp, c1, outTagged],
+    [
+      { source: 'inp', sourceOutput: 'out', target: 'c1', targetInput: 'x' },
+      { source: 'c1', sourceOutput: 'out', target: 'o2', targetInput: 'x' },
+    ],
+    'pytorch'
+  )
+  check(
+    'codegen return uses Output tag when name is y',
+    /features = conv_block_1/.test(codeOutTag) && /return features/.test(codeOutTag),
+    codeOutTag
   )
 }
 

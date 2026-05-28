@@ -78,6 +78,18 @@ export function inputForwardArgName(node) {
   return sanitizePyIdent(rawName, 'x')
 }
 
+/**
+ * Return variable for an explicit Output node. Custom `name` (when not the
+ * default `y`) wins; otherwise a non-empty tag is used; else `y`.
+ */
+export function outputReturnArgName(node) {
+  const rawName = String(node.values?.name ?? '').trim()
+  if (rawName && rawName !== 'y') return sanitizePyIdent(rawName, 'y')
+  const tag = sanitizePyIdent(node.tag ?? '', '')
+  if (tag) return tag
+  return sanitizePyIdent(rawName, 'y')
+}
+
 // ---------------------------------------------------------------------------
 // jaxtyping annotations
 //
@@ -194,6 +206,13 @@ export function planGraph(nodes, connections) {
     }
   }
 
+  const outputReturnFor = new Map()
+  for (const n of ordered) {
+    if (n.entry.kind === 'output') {
+      outputReturnFor.set(n.id, allocLocal(outputReturnArgName(n)))
+    }
+  }
+
   // Module- and group-kind nodes sharing a (sanitized, non-empty) tag get the
   // *same* attribute - that's how weight tying works: one `self.<attr> = ...`
   // in __init__, multiple call sites in forward. Non-module kinds (input,
@@ -268,6 +287,7 @@ export function planGraph(nodes, connections) {
   return {
     ordered,
     inputArgFor,
+    outputReturnFor,
     attrName,
     localName,
     imports,
@@ -585,6 +605,7 @@ function emitClassBody(lines, nodes, connections, framework, className, classNam
   const {
     ordered,
     inputArgFor,
+    outputReturnFor,
     attrName,
     localName,
     incoming,
@@ -798,9 +819,15 @@ function emitClassBody(lines, nodes, connections, framework, className, classNam
   // nodes named `out0`, `out1`, ...; the return tuple must match that order
   // because the caller in the main class unpacks positionally. Plain topo
   // order can interleave them, so we sort by the trailing index for subclasses.
-  const explicitOutputs = isSubclass
-    ? findExplicitOutputsOrdered(ordered, incoming, outputVarFor)
-    : findExplicitOutputs(ordered, incoming, outputVarFor)
+  const explicitReturnEntries = isSubclass
+    ? collectExplicitReturnsOrdered(ordered, incoming, outputVarFor, outputReturnFor)
+    : collectExplicitReturns(ordered, incoming, outputVarFor, outputReturnFor)
+  if (!trace) {
+    for (const { alias, srcVar } of explicitReturnEntries) {
+      if (alias !== srcVar) lines.push(`        ${alias} = ${srcVar}`)
+    }
+  }
+  const explicitOutputs = explicitReturnEntries.map((e) => e.alias)
   const terminals = findTerminals(ordered, connections)
   if (trace) {
     lines.push('        return _runtime_shapes')
@@ -1173,28 +1200,33 @@ function findEntryInputs(nodes, connections, usedNames = new Set()) {
   return out
 }
 
-/** Return vars wired into explicit Output nodes (topo order). */
-function findExplicitOutputs(ordered, incoming, outputVarFor) {
+function explicitReturnEntry(outNode, incoming, outputVarFor, outputReturnFor) {
+  const key = `${outNode.id}/x`
+  const edges = incoming.get(key) ?? []
+  if (edges.length === 0) return null
+  const c = edges[0]
+  const srcVar = outputVarFor.get(`${c.source}/${c.sourceOutput}`)
+  if (!srcVar) return null
+  const alias = outputReturnFor.get(outNode.id) ?? srcVar
+  return { alias, srcVar, node: outNode }
+}
+
+/** Return aliases for explicit Output nodes (topo order). */
+function collectExplicitReturns(ordered, incoming, outputVarFor, outputReturnFor) {
   const out = []
   for (const n of ordered) {
     if (n.entry.kind !== 'output') continue
-    const key = `${n.id}/x`
-    const edges = incoming.get(key) ?? []
-    if (edges.length === 0) continue
-    const c = edges[0]
-    const v = outputVarFor.get(`${c.source}/${c.sourceOutput}`)
-    if (v) out.push(v)
+    const entry = explicitReturnEntry(n, incoming, outputVarFor, outputReturnFor)
+    if (entry) out.push(entry)
   }
   return out
 }
 
 /**
- * Like findExplicitOutputs, but sorts the Output nodes by the trailing
- * numeric index in `values.name` (e.g. "out0" < "out1" < "out10"). Used for
- * sub-class returns so the tuple order matches the facade's portMap order
- * regardless of topo sort.
+ * Like collectExplicitReturns, but sorts Output nodes by the trailing numeric
+ * index in `values.name` (e.g. "out0" < "out1" < "out10").
  */
-function findExplicitOutputsOrdered(ordered, incoming, outputVarFor) {
+function collectExplicitReturnsOrdered(ordered, incoming, outputVarFor, outputReturnFor) {
   const outNodes = ordered.filter((n) => n.entry.kind === 'output')
   outNodes.sort((a, b) => {
     const ai = parseInt(String(a.values?.name ?? '').replace(/^\D+/, ''), 10)
@@ -1205,12 +1237,8 @@ function findExplicitOutputsOrdered(ordered, incoming, outputVarFor) {
   })
   const out = []
   for (const n of outNodes) {
-    const key = `${n.id}/x`
-    const edges = incoming.get(key) ?? []
-    if (edges.length === 0) continue
-    const c = edges[0]
-    const v = outputVarFor.get(`${c.source}/${c.sourceOutput}`)
-    if (v) out.push(v)
+    const entry = explicitReturnEntry(n, incoming, outputVarFor, outputReturnFor)
+    if (entry) out.push(entry)
   }
   return out
 }
