@@ -11,6 +11,7 @@ import { LitPlugin, Presets as LitPresets } from '@retejs/lit-plugin'
 
 import {
   makeNode,
+  makeGroupEntry,
   INPUT_ENTRY,
   OUTPUT_ENTRY,
   CONST_ENTRY,
@@ -51,6 +52,18 @@ const state = {
   runtimeErrorNodeId: null,
   restoring: false, // true while restoreFromAutosave is mutating the editor
   clipboard: null, // in-memory copy of last copy/duplicate (mirrors localStorage)
+  // groupId -> { id, name, collapsed, facadeNodeId, portMap, savedPosition }
+  // See groupSelected/expandGroup/collapseGroup for the lifecycle. The portMap
+  // is the source of truth used by validator and codegen to "see through" a
+  // collapsed facade back to its underlying child ports.
+  groups: new Map(),
+}
+
+let _groupCounter = 0
+function freshGroupId() {
+  // Monotonic + random suffix so re-importing on top of an existing graph
+  // doesn't collide.
+  return `g${++_groupCounter}_${Math.random().toString(36).slice(2, 8)}`
 }
 
 // --- autosave (localStorage, single slot, debounced) ---
@@ -241,23 +254,51 @@ function applyAllConnectionStyles() {
 
 /** Snapshot selection (or focused node) into in-memory + localStorage. */
 function copySelection() {
-  const ids = selectedNodeIds()
-  if (ids.size === 0) return false
+  const initial = selectedNodeIds()
+  if (initial.size === 0) return false
+
+  // If a facade is in the selection, pull its children + facade into the
+  // payload automatically - copying a "single" group should always copy the
+  // whole subgraph, never half of it. Plain child-only selections are left
+  // alone (they'll paste as standalone nodes without the group association).
+  const ids = new Set(initial)
+  const fullGroups = new Set()
+  for (const id of initial) {
+    const n = editor.getNode(id)
+    if (n?.entry?.kind === 'group') fullGroups.add(n.entry.groupId)
+  }
+  for (const gid of fullGroups) {
+    const facade = getFacadeNode(gid)
+    if (facade) ids.add(facade.id)
+    for (const child of getGroupChildren(gid)) ids.add(child.id)
+  }
+
   const payload = {
     version: 1,
     framework: state.framework,
     nodes: [],
     connections: [],
+    groups: [],
   }
   for (const n of editor.getNodes()) {
     if (!ids.has(n.id)) continue
-    payload.nodes.push({
+    const spec = {
       id: n.id,
       name: n.entry.name,
+      kind: n.entry.kind,
       tag: n.tag ?? '',
       values: { ...n.values },
       position: nodePosition(n),
-    })
+    }
+    if (n.entry.kind === 'group') {
+      spec.groupId = n.entry.groupId
+      spec.portMap = n.entry.portMap
+    } else if (n.groupId && fullGroups.has(n.groupId)) {
+      // Only persist the membership when the *whole* group was copied;
+      // otherwise the child is meant to land as a standalone.
+      spec.groupId = n.groupId
+    }
+    payload.nodes.push(spec)
   }
   for (const c of editor.getConnections()) {
     if (ids.has(c.source) && ids.has(c.target)) {
@@ -268,6 +309,17 @@ function copySelection() {
         targetInput: c.targetInput,
       })
     }
+  }
+  for (const gid of fullGroups) {
+    const g = state.groups.get(gid)
+    if (!g) continue
+    payload.groups.push({
+      id: g.id,
+      name: g.name,
+      collapsed: g.collapsed,
+      facadeNodeId: g.facadeNodeId,
+      savedPosition: g.savedPosition,
+    })
   }
   state.clipboard = payload
   try {
@@ -304,8 +356,21 @@ async function pasteClipboard() {
   if (selector) {
     for (const n of editor.getNodes()) selector.remove({ label: 'node', id: n.id })
   }
+
+  // Fresh group ids so a paste alongside the original doesn't collide on the
+  // gid registry / facade entry.groupId.
+  const gidMap = new Map()
+  for (const g of payload.groups ?? []) gidMap.set(g.id, freshGroupId())
+
+  // Phase 1: regular (non-facade) nodes. Facades have to wait until their
+  // childNodeIds can be remapped, so split them out.
   const idMap = new Map()
+  const facadeSpecs = []
   for (const spec of payload.nodes) {
+    if (spec.kind === 'group') {
+      facadeSpecs.push(spec)
+      continue
+    }
     const pos = spec.position
       ? { x: spec.position.x + PASTE_OFFSET_PX, y: spec.position.y + PASTE_OFFSET_PX }
       : undefined
@@ -317,8 +382,67 @@ async function pasteClipboard() {
       area.update('node', node.id)
       applyTagStyle(node)
     }
+    if (spec.groupId && gidMap.has(spec.groupId)) {
+      node.groupId = gidMap.get(spec.groupId)
+    }
     idMap.set(spec.id, node.id)
   }
+
+  // Phase 2: rebuild each facade with a fresh portMap whose childNodeIds
+  // point at the freshly-cloned children.
+  for (const spec of facadeSpecs) {
+    const newGid = gidMap.get(spec.groupId) ?? freshGroupId()
+    if (!gidMap.has(spec.groupId)) gidMap.set(spec.groupId, newGid)
+    const portMap = spec.portMap || { inputs: [], outputs: [] }
+    const boundary = {
+      inputs: (portMap.inputs || []).map((m) => ({
+        childNodeId: idMap.get(m.childNodeId) ?? m.childNodeId,
+        childPort: m.childPort,
+        shape: m.shape,
+        dtype: 'any',
+      })),
+      outputs: (portMap.outputs || []).map((m) => ({
+        childNodeId: idMap.get(m.childNodeId) ?? m.childNodeId,
+        childPort: m.childPort,
+        shape: m.shape,
+        dtype: 'any',
+      })),
+    }
+    const entry = makeGroupEntry(newGid, spec.name, boundary)
+    const facade = makeNode(entry)
+    await editor.addNode(facade)
+    if (spec.position) {
+      await area.translate(facade.id, {
+        x: spec.position.x + PASTE_OFFSET_PX,
+        y: spec.position.y + PASTE_OFFSET_PX,
+      })
+    }
+    markFacadeElement(facade.id)
+    idMap.set(spec.id, facade.id)
+  }
+
+  // Phase 3: register the new state.groups entries.
+  for (const g of payload.groups ?? []) {
+    const newGid = gidMap.get(g.id)
+    if (!newGid) continue
+    const newFacadeId = g.facadeNodeId ? idMap.get(g.facadeNodeId) : null
+    const facade = newFacadeId ? editor.getNode(newFacadeId) : null
+    state.groups.set(newGid, {
+      id: newGid,
+      name: g.name || 'Group',
+      collapsed: Boolean(g.collapsed),
+      facadeNodeId: newFacadeId ?? null,
+      portMap: facade?.entry?.portMap ?? { inputs: [], outputs: [] },
+      savedPosition: g.savedPosition
+        ? {
+            x: g.savedPosition.x + PASTE_OFFSET_PX,
+            y: g.savedPosition.y + PASTE_OFFSET_PX,
+          }
+        : { x: 0, y: 0 },
+    })
+  }
+
+  // Phase 4: intra-selection edges (id-remapped).
   for (const c of payload.connections ?? []) {
     const source = idMap.get(c.source)
     const target = idMap.get(c.target)
@@ -334,6 +458,10 @@ async function pasteClipboard() {
       // place that creates a shape conflict; silent skip is fine here.
     }
   }
+
+  // Phase 5: ensure collapsed groups stay visually collapsed (CSS).
+  if ((payload.groups ?? []).length > 0) applyAllGroupStyles()
+
   refreshInspector()
   queueValidation()
   queueAutosave()
@@ -496,6 +624,8 @@ async function bootstrap() {
   document.getElementById('focus-input-btn').addEventListener('click', () => focusInputNode())
   document.getElementById('duplicate-btn').addEventListener('click', () => duplicateSelection())
   document.getElementById('delete-btn').addEventListener('click', () => deleteSelected())
+  document.getElementById('group-btn').addEventListener('click', () => groupSelected())
+  document.getElementById('ungroup-btn').addEventListener('click', () => ungroupFocused())
   document.getElementById('run-shapes-btn').addEventListener('click', () => runRuntimeShapeCheck())
   document.getElementById('batch-size').addEventListener('input', (e) => {
     state.batchSize = Math.max(1, Math.trunc(Number(e.target.value) || 2))
@@ -529,6 +659,12 @@ async function bootstrap() {
     if (mod && key === 'd') {
       e.preventDefault()
       duplicateSelection()
+      return
+    }
+    if (mod && key === 'g') {
+      e.preventDefault()
+      if (e.shiftKey) ungroupFocused()
+      else groupSelected()
       return
     }
     if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -595,6 +731,7 @@ async function clearGraph() {
   state.runtimeShapes = null
   state.runtimeError = null
   state.runtimeErrorNodeId = null
+  state.groups.clear()
   refreshInspector()
   queueValidation()
 }
@@ -605,6 +742,7 @@ async function importGraph(data) {
   }
   const nodesIn = Array.isArray(data.nodes) ? data.nodes : []
   const connsIn = Array.isArray(data.connections) ? data.connections : []
+  const groupsIn = Array.isArray(data.groups) ? data.groups : []
   const frameworkIn = data.framework
 
   if (frameworkIn && frameworkIn !== state.framework) {
@@ -618,9 +756,21 @@ async function importGraph(data) {
 
   await clearGraph()
 
+  // Phase A: split specs into regular nodes vs group facades. Regular nodes
+  // are created first so the facade's portMap childNodeIds can be remapped
+  // to the freshly-allocated ids.
+  const facadeSpecs = []
+  const regularSpecs = []
+  for (const s of nodesIn) {
+    if (s?.kind === 'group') facadeSpecs.push(s)
+    else regularSpecs.push(s)
+  }
+
   const idMap = new Map()
   let dropped = 0
-  for (const spec of nodesIn) {
+
+  // Phase B: regular nodes.
+  for (const spec of regularSpecs) {
     const name = spec?.name
     if (typeof name !== 'string') {
       dropped++
@@ -648,9 +798,64 @@ async function importGraph(data) {
       area.update('node', node.id)
       applyTagStyle(node)
     }
+    if (typeof spec?.groupId === 'string') {
+      node.groupId = spec.groupId
+    }
     idMap.set(spec.id, node.id)
   }
 
+  // Phase C: facade nodes, rebuilt from saved portMap with remapped child ids.
+  for (const spec of facadeSpecs) {
+    const portMap = spec?.portMap || { inputs: [], outputs: [] }
+    const remap = (m) => ({
+      ...m,
+      childNodeId: idMap.get(m.childNodeId) ?? m.childNodeId,
+    })
+    const boundary = {
+      inputs: (portMap.inputs || []).map((m) => ({
+        childNodeId: idMap.get(m.childNodeId) ?? m.childNodeId,
+        childPort: m.childPort,
+        shape: m.shape,
+        dtype: 'any',
+      })),
+      outputs: (portMap.outputs || []).map((m) => ({
+        childNodeId: idMap.get(m.childNodeId) ?? m.childNodeId,
+        childPort: m.childPort,
+        shape: m.shape,
+        dtype: 'any',
+      })),
+    }
+    const entry = makeGroupEntry(spec.groupId, spec.name, boundary)
+    const facade = makeNode(entry)
+    await editor.addNode(facade)
+    const pos =
+      spec?.position &&
+      Number.isFinite(spec.position.x) &&
+      Number.isFinite(spec.position.y)
+        ? { x: spec.position.x, y: spec.position.y }
+        : undefined
+    if (pos) await area.translate(facade.id, pos)
+    markFacadeElement(facade.id)
+    idMap.set(spec.id, facade.id)
+  }
+
+  // Phase D: rebuild state.groups from the saved descriptors.
+  state.groups.clear()
+  for (const g of groupsIn) {
+    if (!g?.id) continue
+    const newFacadeId = g.facadeNodeId ? idMap.get(g.facadeNodeId) : null
+    const facade = newFacadeId ? editor.getNode(newFacadeId) : null
+    state.groups.set(g.id, {
+      id: g.id,
+      name: g.name || 'Group',
+      collapsed: Boolean(g.collapsed),
+      facadeNodeId: newFacadeId ?? null,
+      portMap: facade?.entry?.portMap ?? { inputs: [], outputs: [] },
+      savedPosition: g.savedPosition ?? { x: 0, y: 0 },
+    })
+  }
+
+  // Phase E: connections (id-remapped).
   let restoredConnections = 0
   for (const c of connsIn) {
     const source = idMap.get(c?.source)
@@ -678,8 +883,16 @@ async function importGraph(data) {
     }
   }
 
+  // Phase F: apply collapsed-state CSS so hidden children stay hidden.
+  applyAllGroupStyles()
+
   queueValidation()
-  return { nodes: idMap.size, connections: restoredConnections, dropped }
+  return {
+    nodes: idMap.size,
+    connections: restoredConnections,
+    groups: state.groups.size,
+    dropped,
+  }
 }
 
 /** Delete every selected node (and the picked node as a fallback). */
@@ -692,6 +905,18 @@ async function deleteSelected() {
   }
   if (ids.size === 0 && state.selectedNodeId) ids.add(state.selectedNodeId)
   if (ids.size === 0) return
+
+  // Facades: dissolve their groups so children survive as plain nodes.
+  for (const id of ids) {
+    const n = editor.getNode(id)
+    if (!n || !isGroupFacade(n)) continue
+    const gid = n.entry.groupId
+    for (const child of getGroupChildren(gid)) {
+      child.groupId = null
+      setNodeHidden(child.id, false)
+    }
+    state.groups.delete(gid)
+  }
 
   // Remove incident connections first - rete throws otherwise.
   for (const c of [...editor.getConnections()]) {
@@ -709,6 +934,414 @@ async function deleteSelected() {
   state.runtimeErrorNodeId = null
   refreshInspector()
   queueValidation()
+}
+
+// ---------------------------------------------------------------------------
+// Subgraph grouping
+//
+// A group is a real BlockNode (kind:'group') whose ports proxy boundary
+// child ports. Children of the group always live in editor.getNodes() with
+// node.groupId === <gid>; they're CSS-hidden when the group is collapsed.
+// Boundary edges are *rerouted in the model* on collapse/expand so the
+// facade really is the only thing the user can wire to when collapsed.
+//
+// state.groups[gid].portMap is the round-trip table used by validator and
+// codegen to translate facade endpoints back to the underlying children.
+// ---------------------------------------------------------------------------
+
+function getGroupChildren(groupId) {
+  return editor.getNodes().filter((n) => n.groupId === groupId)
+}
+
+function isGroupFacade(n) {
+  return n?.entry?.kind === 'group'
+}
+
+/** Find the facade node carrying a given groupId, if any. */
+function getFacadeNode(groupId) {
+  for (const n of editor.getNodes()) {
+    if (isGroupFacade(n) && n.entry.groupId === groupId) return n
+  }
+  return null
+}
+
+/** Inspect every connection and classify it w.r.t. the given child set. */
+function classifyEdges(childIds) {
+  const internal = []
+  const inputBoundary = [] // external -> child
+  const outputBoundary = [] // child -> external
+  for (const c of editor.getConnections()) {
+    const srcIn = childIds.has(c.source)
+    const tgtIn = childIds.has(c.target)
+    if (srcIn && tgtIn) internal.push(c)
+    else if (!srcIn && tgtIn) inputBoundary.push(c)
+    else if (srcIn && !tgtIn) outputBoundary.push(c)
+  }
+  return { internal, inputBoundary, outputBoundary }
+}
+
+/**
+ * Given a set of child node ids, compute the facade port layout: one
+ * input port per *(childNode, childInput)* pair that has any external
+ * edge into it, and one output port per *(childNode, childOutput)* pair
+ * that has any external edge out of it. Param-kind inputs are skipped -
+ * those are init-time wiring, not part of the runtime subgraph interface.
+ */
+function computeBoundary(childIds, sub) {
+  const { inputBoundary, outputBoundary, internal } = classifyEdges(childIds)
+  const inputs = []
+  const outputs = []
+  const seenIn = new Map() // `${childId}/${childInput}` -> facade index
+  const seenOut = new Map()
+
+  for (const c of inputBoundary) {
+    const child = editor.getNode(c.target)
+    if (!child) continue
+    const portSpec = child.inputs?.[c.targetInput]?.portSpec
+    if (portSpec?.kind === 'param') continue // param wiring isn't a tensor edge
+    const key = `${c.target}/${c.targetInput}`
+    if (seenIn.has(key)) continue
+    seenIn.set(key, inputs.length)
+    const shape = child.freshenedShape?.(c.targetInput, 'in') ?? ['...']
+    inputs.push({
+      childNodeId: c.target,
+      childPort: c.targetInput,
+      shape,
+      dtype: portSpec?.dtype ?? 'any',
+      optional: Boolean(portSpec?.optional),
+    })
+  }
+  for (const c of outputBoundary) {
+    const child = editor.getNode(c.source)
+    if (!child) continue
+    const key = `${c.source}/${c.sourceOutput}`
+    if (seenOut.has(key)) continue
+    seenOut.set(key, outputs.length)
+    const portSpec = child.outputs?.[c.sourceOutput]?.portSpec
+    const shape = child.freshenedShape?.(c.sourceOutput, 'out') ?? ['...']
+    outputs.push({
+      childNodeId: c.source,
+      childPort: c.sourceOutput,
+      shape,
+      dtype: portSpec?.dtype ?? 'any',
+    })
+  }
+  return { inputs, outputs, internal, inputBoundary, outputBoundary, seenIn, seenOut }
+}
+
+function centroid(nodes) {
+  if (nodes.length === 0) return { x: 0, y: 0 }
+  let sx = 0
+  let sy = 0
+  let count = 0
+  for (const n of nodes) {
+    const p = nodePosition(n)
+    if (!p) continue
+    sx += p.x
+    sy += p.y
+    count++
+  }
+  if (count === 0) return { x: 0, y: 0 }
+  return { x: sx / count, y: sy / count }
+}
+
+function setNodeHidden(nodeId, hidden) {
+  const el = area?.nodeViews?.get(nodeId)?.element
+  if (!el) return
+  el.classList.toggle('group-hidden', hidden)
+}
+
+function markFacadeElement(nodeId) {
+  const el = area?.nodeViews?.get(nodeId)?.element
+  if (!el) return
+  el.classList.add('group-facade')
+}
+
+function applyAllGroupStyles() {
+  for (const n of editor.getNodes()) {
+    const el = area?.nodeViews?.get(n.id)?.element
+    if (!el) continue
+    if (isGroupFacade(n)) el.classList.add('group-facade')
+    if (n.groupId) {
+      const g = state.groups.get(n.groupId)
+      if (g?.collapsed) el.classList.add('group-hidden')
+      else el.classList.remove('group-hidden')
+    }
+  }
+  for (const c of editor.getConnections()) {
+    const s = editor.getNode(c.source)
+    const t = editor.getNode(c.target)
+    if (s?.groupId && s.groupId === t?.groupId) {
+      const g = state.groups.get(s.groupId)
+      setConnectionHidden(c.id, Boolean(g?.collapsed))
+    }
+  }
+}
+
+function setConnectionHidden(connectionId, hidden) {
+  const view = area?.connectionViews?.get(connectionId)
+  const el = view?.element
+  if (!el) return
+  el.classList.toggle('group-hidden', hidden)
+}
+
+/**
+ * Reroute every boundary edge of the given group from its child endpoint to
+ * the corresponding facade endpoint (or the reverse). Returns silently on
+ * any partial failure since the validator picks up the resulting state.
+ */
+async function rerouteBoundaryEdges(group, direction /* 'to-facade' | 'to-children' */) {
+  const { facadeNodeId, portMap } = group
+  const facade = facadeNodeId ? editor.getNode(facadeNodeId) : null
+  if (!facade && direction === 'to-facade') return
+  const inputByChild = new Map()
+  for (const m of portMap.inputs) {
+    inputByChild.set(`${m.childNodeId}/${m.childPort}`, m.facadePort)
+  }
+  const outputByChild = new Map()
+  for (const m of portMap.outputs) {
+    outputByChild.set(`${m.childNodeId}/${m.childPort}`, m.facadePort)
+  }
+  const inputByFacade = new Map(portMap.inputs.map((m) => [m.facadePort, m]))
+  const outputByFacade = new Map(portMap.outputs.map((m) => [m.facadePort, m]))
+
+  for (const c of [...editor.getConnections()]) {
+    if (direction === 'to-facade') {
+      // child boundary -> facade
+      const inFacadePort = inputByChild.get(`${c.target}/${c.targetInput}`)
+      const outFacadePort = outputByChild.get(`${c.source}/${c.sourceOutput}`)
+      if (inFacadePort && c.source !== facadeNodeId) {
+        await editor.removeConnection(c.id)
+        await safeAddConnection(c.source, c.sourceOutput, facadeNodeId, inFacadePort)
+      } else if (outFacadePort && c.target !== facadeNodeId) {
+        await editor.removeConnection(c.id)
+        await safeAddConnection(facadeNodeId, outFacadePort, c.target, c.targetInput)
+      }
+    } else {
+      // facade -> child
+      if (c.target === facadeNodeId) {
+        const m = inputByFacade.get(c.targetInput)
+        if (!m) continue
+        await editor.removeConnection(c.id)
+        await safeAddConnection(c.source, c.sourceOutput, m.childNodeId, m.childPort)
+      } else if (c.source === facadeNodeId) {
+        const m = outputByFacade.get(c.sourceOutput)
+        if (!m) continue
+        await editor.removeConnection(c.id)
+        await safeAddConnection(m.childNodeId, m.childPort, c.target, c.targetInput)
+      }
+    }
+  }
+}
+
+async function safeAddConnection(source, sourceOutput, target, targetInput) {
+  const srcNode = editor.getNode(source)
+  const tgtNode = editor.getNode(target)
+  if (!srcNode || !tgtNode) return false
+  try {
+    const conn = new ClassicPreset.Connection(srcNode, sourceOutput, tgtNode, targetInput)
+    await editor.addConnection(conn)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Group the current selection into a new collapsed subgraph node. Resolves
+ * the selection from the rete selector by default; tests can pass an
+ * explicit id set to bypass the selector.
+ */
+async function groupSelected(explicitIds) {
+  const ids = explicitIds ?? selectedNodeIds()
+  if (ids.size < 1) {
+    flashDiagnostic('Select at least one node to group')
+    return
+  }
+  for (const id of ids) {
+    const n = editor.getNode(id)
+    if (isGroupFacade(n)) {
+      flashDiagnostic('Cannot nest a group inside another group (yet)')
+      return
+    }
+    if (n?.groupId) {
+      flashDiagnostic('Some selected nodes are already in a group')
+      return
+    }
+    if (n?.entry?.kind === 'input' || n?.entry?.kind === 'output') {
+      flashDiagnostic('Input/Output nodes cannot be inside a group')
+      return
+    }
+  }
+
+  const groupId = freshGroupId()
+  const childNodes = [...ids].map((id) => editor.getNode(id)).filter(Boolean)
+  for (const n of childNodes) n.groupId = groupId
+
+  const boundary = computeBoundary(ids)
+  const center = centroid(childNodes)
+  const name = `Group${state.groups.size + 1}`
+  const facadeEntry = makeGroupEntry(groupId, name, boundary)
+  const facade = makeNode(facadeEntry)
+  await editor.addNode(facade)
+  await area.translate(facade.id, center)
+  markFacadeElement(facade.id)
+
+  const group = {
+    id: groupId,
+    name,
+    collapsed: true,
+    facadeNodeId: facade.id,
+    portMap: facadeEntry.portMap,
+    savedPosition: center,
+  }
+  state.groups.set(groupId, group)
+
+  await rerouteBoundaryEdges(group, 'to-facade')
+
+  // Hide children & internal edges visually.
+  for (const n of childNodes) setNodeHidden(n.id, true)
+  for (const c of editor.getConnections()) {
+    if (
+      childNodes.some((n) => n.id === c.source) &&
+      childNodes.some((n) => n.id === c.target)
+    ) {
+      setConnectionHidden(c.id, true)
+    }
+  }
+
+  // Select the facade so the user immediately sees it as a unit.
+  if (selector) {
+    for (const n of editor.getNodes()) selector.remove({ label: 'node', id: n.id })
+    selector.add({
+      label: 'node',
+      id: facade.id,
+      translate: () => {},
+      unselect: () => {},
+    })
+  }
+  state.selectedNodeId = facade.id
+  refreshInspector()
+  queueValidation()
+  queueAutosave()
+}
+
+/**
+ * Re-show the children of a collapsed group and remove the facade. The group
+ * association is preserved so the user can re-collapse later.
+ */
+async function expandGroup(groupId) {
+  const group = state.groups.get(groupId)
+  if (!group || !group.collapsed) return
+  const facade = group.facadeNodeId ? editor.getNode(group.facadeNodeId) : null
+
+  // Reroute boundary edges from facade back to children before deleting the
+  // facade (so we don't lose the wiring).
+  await rerouteBoundaryEdges(group, 'to-children')
+
+  // Drop the facade node + its incident connections to it that didn't reroute.
+  if (facade) {
+    for (const c of [...editor.getConnections()]) {
+      if (c.source === facade.id || c.target === facade.id) {
+        await editor.removeConnection(c.id)
+      }
+    }
+    await editor.removeNode(facade.id)
+  }
+  group.facadeNodeId = null
+  group.collapsed = false
+
+  // Reveal children + their internal edges.
+  for (const n of getGroupChildren(groupId)) setNodeHidden(n.id, false)
+  for (const c of editor.getConnections()) {
+    const s = editor.getNode(c.source)
+    const t = editor.getNode(c.target)
+    if (s?.groupId === groupId && t?.groupId === groupId) setConnectionHidden(c.id, false)
+  }
+
+  refreshInspector()
+  queueValidation()
+  queueAutosave()
+}
+
+/** Collapse an already-grouped (but currently expanded) set of children. */
+async function collapseGroup(groupId) {
+  const group = state.groups.get(groupId)
+  if (!group || group.collapsed) return
+  const children = getGroupChildren(groupId)
+  if (children.length === 0) {
+    // Group has no children left; just drop it.
+    state.groups.delete(groupId)
+    refreshInspector()
+    return
+  }
+  const childIds = new Set(children.map((n) => n.id))
+  const boundary = computeBoundary(childIds)
+  const center = group.savedPosition ?? centroid(children)
+  const facadeEntry = makeGroupEntry(groupId, group.name, boundary)
+  const facade = makeNode(facadeEntry)
+  await editor.addNode(facade)
+  await area.translate(facade.id, center)
+  markFacadeElement(facade.id)
+
+  group.facadeNodeId = facade.id
+  group.portMap = facadeEntry.portMap
+  group.collapsed = true
+
+  await rerouteBoundaryEdges(group, 'to-facade')
+
+  for (const n of children) setNodeHidden(n.id, true)
+  for (const c of editor.getConnections()) {
+    const s = editor.getNode(c.source)
+    const t = editor.getNode(c.target)
+    if (s?.groupId === groupId && t?.groupId === groupId) setConnectionHidden(c.id, true)
+  }
+  state.selectedNodeId = facade.id
+  refreshInspector()
+  queueValidation()
+  queueAutosave()
+}
+
+/**
+ * Dissolve a group permanently. If currently collapsed, expand first; then
+ * clear groupId on every child and forget the group state.
+ */
+async function ungroup(groupId) {
+  const group = state.groups.get(groupId)
+  if (!group) return
+  if (group.collapsed) await expandGroup(groupId)
+  for (const n of getGroupChildren(groupId)) n.groupId = null
+  state.groups.delete(groupId)
+  refreshInspector()
+  queueValidation()
+  queueAutosave()
+}
+
+/** Resolve "the group currently being focused", whether via a facade or a child selection. */
+function focusedGroupId() {
+  const node = state.selectedNodeId ? editor.getNode(state.selectedNodeId) : null
+  if (!node) return null
+  if (isGroupFacade(node)) return node.entry.groupId
+  if (node.groupId) return node.groupId
+  return null
+}
+
+async function ungroupFocused() {
+  const gid = focusedGroupId()
+  if (!gid) {
+    flashDiagnostic('Select a group facade or a grouped node first')
+    return
+  }
+  await ungroup(gid)
+}
+
+async function toggleCollapseFocused() {
+  const gid = focusedGroupId()
+  if (!gid) return
+  const g = state.groups.get(gid)
+  if (!g) return
+  if (g.collapsed) await expandGroup(gid)
+  else await collapseGroup(gid)
 }
 
 function isEditingText(el) {
@@ -851,8 +1484,35 @@ function refreshInspector() {
       queueValidation()
       queueAutosave()
       refreshInspector()
+    },
+    {
+      getName: (gid) => state.groups.get(gid)?.name ?? '',
+      isCollapsed: (gid) => Boolean(state.groups.get(gid)?.collapsed),
+      rename: (gid, value) => {
+        const g = state.groups.get(gid)
+        if (!g) return
+        g.name = String(value ?? '').trim() || g.name
+        const facade = g.facadeNodeId ? editor.getNode(g.facadeNodeId) : null
+        if (facade) {
+          facade.entry.name = g.name
+          facade.label = g.name
+          area.update('node', facade.id)
+        }
+        queueAutosave()
+      },
+      toggle: (gid) => expandGroupOrCollapse(gid),
+      ungroup: (gid) => ungroup(gid),
     }
   )
+}
+
+// The inspector's toggle action needs to act on a specific gid (not the
+// currently-focused selection), so we route through a small helper.
+async function expandGroupOrCollapse(groupId) {
+  const g = state.groups.get(groupId)
+  if (!g) return
+  if (g.collapsed) await expandGroup(groupId)
+  else await collapseGroup(groupId)
 }
 
 async function addConstantForParam(targetNode, param) {
@@ -934,26 +1594,45 @@ function exportGraph() {
 function getGraphData() {
   return {
     framework: state.framework,
-    nodes: editor.getNodes().map((n) => ({
-      id: n.id,
-      name: n.entry.name,
-      tag: n.tag ?? '',
-      values: n.values,
-      exposedParams: Object.keys(n.inputs || {})
-        .filter((k) => k.startsWith('__param__'))
-        .map((k) => k.replace(/^__param__/, '')),
-      position: (() => {
-        const view = area?.nodeViews?.get(n.id)
-        const p = view?.position
-        if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return undefined
-        return { x: p.x, y: p.y }
-      })(),
-    })),
+    nodes: editor.getNodes().map((n) => {
+      const view = area?.nodeViews?.get(n.id)
+      const p = view?.position
+      const position =
+        p && Number.isFinite(p.x) && Number.isFinite(p.y) ? { x: p.x, y: p.y } : undefined
+      // Two flavours of "groupId" in the spec, distinguished by `kind`:
+      //   - kind === 'group'  -> this is a facade; groupId is its identity
+      //   - everything else   -> groupId is "I am a member of group X"
+      const base = {
+        id: n.id,
+        name: n.entry.name,
+        kind: n.entry.kind,
+        tag: n.tag ?? '',
+        values: n.values,
+        exposedParams: Object.keys(n.inputs || {})
+          .filter((k) => k.startsWith('__param__'))
+          .map((k) => k.replace(/^__param__/, '')),
+        position,
+      }
+      if (n.entry.kind === 'group') {
+        base.groupId = n.entry.groupId
+        base.portMap = n.entry.portMap
+      } else if (n.groupId) {
+        base.groupId = n.groupId
+      }
+      return base
+    }),
     connections: editor.getConnections().map((c) => ({
       source: c.source,
       sourceOutput: c.sourceOutput,
       target: c.target,
       targetInput: c.targetInput,
+    })),
+    groups: [...state.groups.values()].map((g) => ({
+      id: g.id,
+      name: g.name,
+      collapsed: g.collapsed,
+      facadeNodeId: g.facadeNodeId,
+      savedPosition: g.savedPosition,
     })),
   }
 }
@@ -996,6 +1675,10 @@ if (typeof window !== 'undefined') {
     applyNodeTag,
     AUTOSAVE_KEY,
     CLIPBOARD_KEY,
+    groupNodes: (ids) => groupSelected(new Set(ids)),
+    expandGroup,
+    collapseGroup,
+    ungroup,
     runCodegen: () =>
       generateCode(editor.getNodes(), editor.getConnections(), state.framework),
     addConnection: async (source, sourceOutput, target, targetInput) => {

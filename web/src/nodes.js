@@ -24,6 +24,10 @@ export class BlockNode extends ClassicPreset.Node {
     // module-kind nodes: two ConvBlocks tagged "down1" emit one self.down1 in
     // codegen and call it from each forward-pass site.
     this.tag = ''
+    // null for top-level nodes; set to a groupId for nodes belonging to a
+    // subgraph. Group facades themselves carry their own group id under
+    // entry.groupId, NOT here.
+    this.groupId = null
     this.values = Object.fromEntries(
       entry.ctor.map((p) => [p.name, p.default])
     )
@@ -527,12 +531,94 @@ export class ReshapeNode extends BlockNode {
   }
 }
 
+/**
+ * Facade node for a collapsed group. Shape on each facade port is whatever
+ * shape the underlying child port had at collapse time, so the validator sees
+ * the same axes flowing through the group as if the children were inline.
+ */
+export class GroupNode extends BlockNode {
+  constructor(entry) {
+    super(entry)
+    // entry.portMap captures shapes that were *already* freshened against
+    // the underlying child's id at collapse time. We pass them through
+    // verbatim - re-freshening would mint a brand-new variable and break
+    // unification with the (still-present) child node.
+    this._facadeShapes = {
+      in: new Map(),
+      out: new Map(),
+    }
+    for (const m of entry.portMap?.inputs || []) {
+      this._facadeShapes.in.set(m.facadePort, m.shape)
+    }
+    for (const m of entry.portMap?.outputs || []) {
+      this._facadeShapes.out.set(m.facadePort, m.shape)
+    }
+  }
+
+  freshenedShape(portName, side) {
+    const shape = this._facadeShapes[side === 'in' ? 'in' : 'out']?.get(portName)
+    return shape ?? null
+  }
+}
+
+/**
+ * Build a synthetic manifest entry for a group facade. The boundary describes
+ * which child ports stick out of the group; we expose them as `in0..inN`
+ * inputs and `out0..outM` outputs on the facade.
+ *
+ * @param {object} groupId   stable group identifier (used in tooltips/labels)
+ * @param {string} name      user-facing group name
+ * @param {object} boundary  { inputs: [{shape, dtype, optional, variadic}], outputs: [...] }
+ */
+export function makeGroupEntry(groupId, name, boundary) {
+  const inputs = boundary.inputs.map((b, i) => ({
+    name: `in${i}`,
+    shape: b.shape ?? ['...'],
+    dtype: b.dtype ?? 'any',
+    optional: Boolean(b.optional),
+    variadic: false,
+  }))
+  const outputs = boundary.outputs.map((b, i) => ({
+    name: `out${i}`,
+    shape: b.shape ?? ['...'],
+    dtype: b.dtype ?? 'any',
+    optional: false,
+    variadic: false,
+  }))
+  return {
+    name: name || 'Group',
+    module: '__group__',
+    framework: 'any',
+    kind: 'group',
+    ctor: [],
+    inputs,
+    outputs,
+    bindings: {},
+    groupId,
+    portMap: {
+      inputs: boundary.inputs.map((b, i) => ({
+        facadePort: `in${i}`,
+        childNodeId: b.childNodeId,
+        childPort: b.childPort,
+        shape: b.shape,
+      })),
+      outputs: boundary.outputs.map((b, i) => ({
+        facadePort: `out${i}`,
+        childNodeId: b.childNodeId,
+        childPort: b.childPort,
+        shape: b.shape,
+      })),
+    },
+  }
+}
+
 /** Pick the right node class for a manifest entry. */
 export function makeNode(entry) {
   if (entry.kind === 'input') return new InputNode(entry)
   if (entry.kind === 'output') return new OutputNode(entry)
   if (entry.kind === 'rearrange') return new RearrangeNode(entry)
   if (entry.kind === 'reshape') return new ReshapeNode(entry)
+  if (entry.kind === 'group') return new GroupNode(entry)
   return new BlockNode(entry)
 }
 
@@ -540,6 +626,9 @@ export function makeNode(entry) {
 export function paletteGroup(entry) {
   if (entry.module === '__builtin__') return 'built-in'
   if (entry.module === '__utility__') return 'utility'
+  // Group facades never end up in the palette; if they ever do, hide them
+  // under a neutral heading so they don't pretend to be a real block.
+  if (entry.module === '__group__') return 'groups'
   // Custom blocks live in models/customblocks/<framework>/<file>.py and the
   // build_manifest tool labels them "custom.<file>". Surface that as a
   // distinct top-level palette section so user blocks don't get visually

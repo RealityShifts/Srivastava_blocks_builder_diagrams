@@ -118,11 +118,15 @@ export function validate(editor) {
     const key = `${c.target}/${c.targetInput}`
     incoming.set(key, (incoming.get(key) ?? 0) + 1)
   }
+  // Child ports whose boundary edge was rerouted to a (collapsed) group
+  // facade no longer have a direct incoming edge - that's expected, not a
+  // warning. We pull the ownership map out of every facade's portMap.
+  const ownedByFacade = collectFacadeOwnership(nodes)
   for (const n of nodes) {
     for (const port of n.entry.inputs) {
       if (port.optional || port.variadic) continue
       const key = `${n.id}/${port.name}`
-      if (!incoming.get(key)) {
+      if (!incoming.get(key) && !ownedByFacade.inputs.has(key)) {
         warnings.push({
           kind: 'unconnected',
           message: `${describeNode(n)}:${port.name} is required but has no input`,
@@ -228,4 +232,25 @@ function ctorValueEqual(a, b) {
 
 function shortId(id) {
   return String(id).slice(0, 6)
+}
+
+/**
+ * Build the set of (childNodeId/childPort) keys that are currently proxied by
+ * a group facade. Used to suppress false "required input is unconnected"
+ * warnings: when the boundary edge has been rerouted to the facade, the
+ * child's own input port looks dangling but is in fact wired through.
+ */
+function collectFacadeOwnership(nodes) {
+  const inputs = new Set()
+  const outputs = new Set()
+  for (const n of nodes) {
+    if (n.entry?.kind !== 'group') continue
+    for (const m of n.entry.portMap?.inputs || []) {
+      inputs.add(`${m.childNodeId}/${m.childPort}`)
+    }
+    for (const m of n.entry.portMap?.outputs || []) {
+      outputs.add(`${m.childNodeId}/${m.childPort}`)
+    }
+  }
+  return { inputs, outputs }
 }

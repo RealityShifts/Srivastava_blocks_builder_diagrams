@@ -497,6 +497,53 @@ main {
   border-color: var(--tag-color) !important;
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--tag-color) 60%, transparent), var(--shadow);
 }
+
+/* Subgraph grouping: hide member nodes + their internal edges when the
+   group is collapsed. The facade node remains the only visible thing. */
+.group-hidden {
+  display: none !important;
+}
+
+/* Group facade: a real Rete node, styled to read as a labeled "container". */
+.group-facade rete-node {
+  --node-color: rgba(108, 182, 255, 0.28);
+  --node-color-hover: rgba(108, 182, 255, 0.38);
+  --node-color-selected: rgba(108, 182, 255, 0.55);
+  border: 2px dashed rgba(108, 182, 255, 0.7) !important;
+  border-radius: 14px !important;
+}
+.group-facade rete-node.selected {
+  border-style: solid !important;
+  box-shadow: 0 0 0 2px rgba(108, 182, 255, 0.5), var(--shadow);
+}
+
+/* Inspector group panel (rename + collapse + ungroup controls). */
+#inspector .group-panel {
+  margin: 6px 0 12px;
+  padding: 8px 10px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--panel-2));
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
+  border-radius: 6px;
+}
+#inspector .group-panel-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+#inspector .group-panel-buttons {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+#inspector .group-panel .mini-btn.danger {
+  color: var(--err);
+  border-color: color-mix(in srgb, var(--err) 30%, var(--line));
+}
+#inspector .group-panel .mini-btn.danger:hover {
+  background: color-mix(in srgb, var(--err) 12%, var(--panel-2));
+}
 .rete .node .title {
   color: var(--text) !important;
   font-weight: 500;

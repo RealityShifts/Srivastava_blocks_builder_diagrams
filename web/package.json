@@ -13,7 +13,8 @@
     "test:info-tab": "node test-info-tab.mjs",
     "test:runtime": "node test-runtime.mjs",
     "test:autosave": "node test-autosave.mjs",
-    "test:tags-clipboard": "node test-tags-clipboard.mjs"
+    "test:tags-clipboard": "node test-tags-clipboard.mjs",
+    "test:groups": "node test-groups.mjs"
   },
   "dependencies": {
     "@retejs/lit-plugin": "^2.0.5",

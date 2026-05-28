@@ -160,6 +160,58 @@ export function filterPalette(rootEl, query) {
 let _currentNodeId = null
 let _activeTab = 'params' // 'params' | 'info' — persists across selections
 
+function buildGroupPanel(node, actions) {
+  const wrap = document.createElement('div')
+  wrap.className = 'group-panel'
+
+  const isFacade = node.entry.kind === 'group'
+  const gid = isFacade ? node.entry.groupId : node.groupId
+
+  const title = document.createElement('div')
+  title.className = 'group-panel-title'
+  title.textContent = isFacade ? 'Group' : 'Member of group'
+  wrap.appendChild(title)
+
+  const nameRow = document.createElement('div')
+  nameRow.className = 'row'
+  const label = document.createElement('label')
+  label.textContent = 'Name'
+  const input = document.createElement('input')
+  input.type = 'text'
+  input.spellcheck = false
+  input.value = String(actions.getName?.(gid) ?? node.entry.name ?? '')
+  input.placeholder = 'Encoder'
+  input.addEventListener('input', () => actions.rename?.(gid, input.value))
+  nameRow.appendChild(label)
+  nameRow.appendChild(input)
+  wrap.appendChild(nameRow)
+
+  const btnRow = document.createElement('div')
+  btnRow.className = 'group-panel-buttons'
+
+  const toggleBtn = document.createElement('button')
+  toggleBtn.type = 'button'
+  toggleBtn.className = 'mini-btn'
+  const collapsed = actions.isCollapsed?.(gid)
+  toggleBtn.textContent = collapsed ? 'Expand' : 'Collapse'
+  toggleBtn.title = collapsed
+    ? 'Show the contained nodes for editing'
+    : 'Collapse into a single facade node'
+  toggleBtn.addEventListener('click', () => actions.toggle?.(gid))
+  btnRow.appendChild(toggleBtn)
+
+  const ungroupBtn = document.createElement('button')
+  ungroupBtn.type = 'button'
+  ungroupBtn.className = 'mini-btn danger'
+  ungroupBtn.textContent = 'Ungroup'
+  ungroupBtn.title = 'Dissolve this group (children stay)'
+  ungroupBtn.addEventListener('click', () => actions.ungroup?.(gid))
+  btnRow.appendChild(ungroupBtn)
+
+  wrap.appendChild(btnRow)
+  return wrap
+}
+
 function buildPortsSection(node, sub, runtimeShapes) {
   const ports = document.createElement('div')
   ports.className = 'ports'
@@ -305,7 +357,8 @@ export function renderInspector(
   blockInfo,
   onTagChange,
   onAddConst,
-  onToggleParamPort
+  onToggleParamPort,
+  groupActions
 ) {
   if (!node) {
     _currentNodeId = null
@@ -343,6 +396,12 @@ export function renderInspector(
     node.entry.kind
   )}</span>`
   rootEl.appendChild(header)
+
+  // Group controls. Shown when the node is either the group facade itself or
+  // a member of a group (groupId set). The action callbacks come from main.js.
+  if (groupActions && (node.entry.kind === 'group' || node.groupId)) {
+    rootEl.appendChild(buildGroupPanel(node, groupActions))
+  }
 
   // Tag row. For module-kind nodes the tag also acts as a weight-sharing key:
   // two ConvBlocks tagged "down1" share one Python attribute.

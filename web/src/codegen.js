@@ -175,28 +175,83 @@ export function planGraph(nodes, connections) {
 }
 
 /**
- * @param {Array} nodes      array of BlockNode
+ * @param {Array} nodes      array of BlockNode (top-level + grouped + facades)
  * @param {Array} connections array of {source, sourceOutput, target, targetInput}
  * @param {'pytorch'|'flax'} framework
  * @param {{ trace?: boolean }} options  trace=true records tensor.shape per port
+ *
+ * If the graph contains group facades (kind === 'group'), every group is
+ * emitted as its own nn.Module / nnx.Module subclass, and the main class
+ * instantiates the subclasses at the facade locations.
  */
 export function generate(nodes, connections, framework, options = {}) {
-  const trace = options.trace === true
-  const plan = planGraph(nodes, connections)
-  if (!plan) return '# empty graph\n'
+  const partition = partitionByGroup(nodes, connections)
+  const { facadesByGid, childrenByGid, internalByGid } = partition
 
-  const {
-    ordered,
-    inputArgFor,
-    attrName,
-    localName,
-    imports,
-    incoming,
-    outputVarFor,
-  } = plan
+  // Assign Python class names to groups up front so both the main class and
+  // any cross-references (e.g. nested calls) agree.
+  const classNames = new Map()
+  for (const [gid, facade] of facadesByGid) {
+    classNames.set(gid, groupClassName(facade.entry.name, gid))
+  }
 
-  // ------------------- imports -------------------
+  // Top-level view excludes group children entirely and treats facades as
+  // ordinary module-kind nodes (their class is defined below in the same file).
+  const topNodes = nodes.filter((n) => !n.groupId)
+  const topConnections = connections.filter((c) => {
+    const src = nodes.find((n) => n.id === c.source)
+    const tgt = nodes.find((n) => n.id === c.target)
+    return !src?.groupId && !tgt?.groupId
+  })
+
+  // Imports are emitted once across all classes, then we emit subclass bodies
+  // followed by the main class.
   const lines = ['from __future__ import annotations', '']
+  emitFrameworkImports(lines, framework)
+  emitUserImports(lines, nodes)
+  if (nodes.some((n) => n.entry.kind === 'rearrange')) {
+    lines.push('from einops import rearrange')
+  }
+  lines.push('')
+
+  const subClassSections = []
+  for (const [gid, facade] of facadesByGid) {
+    const children = childrenByGid.get(gid) || []
+    const internals = internalByGid.get(gid) || []
+    const view = buildSubgraphView(facade, children, internals)
+    const subLines = []
+    emitClassBody(
+      subLines,
+      view.nodes,
+      view.connections,
+      framework,
+      classNames.get(gid),
+      classNames,
+      options
+    )
+    subClassSections.push(subLines.join('\n'))
+  }
+  if (subClassSections.length > 0) {
+    lines.push(subClassSections.join('\n\n'))
+    lines.push('')
+  }
+
+  // Main class. If there's truly nothing top-level (e.g. user grouped the
+  // entire graph), still emit a hollow main class so the file is valid.
+  if (topNodes.length === 0) return lines.join('\n') + '# empty graph\n'
+  emitClassBody(
+    lines,
+    topNodes,
+    topConnections,
+    framework,
+    'GeneratedModel',
+    classNames,
+    options
+  )
+  return lines.join('\n')
+}
+
+function emitFrameworkImports(lines, framework) {
   if (framework === 'pytorch') {
     lines.push('import torch')
     lines.push('import torch.nn as nn')
@@ -205,19 +260,50 @@ export function generate(nodes, connections, framework, options = {}) {
     lines.push('import jax.numpy as jnp')
     lines.push('import flax.nnx as nnx')
   }
+}
+
+function emitUserImports(lines, allNodes) {
+  const imports = new Map()
+  for (const n of allNodes) {
+    if (n.entry.kind === 'input') continue
+    if (n.entry.kind === 'group') continue // facades are defined locally
+    if (n.entry.module?.startsWith('__')) continue
+    if (!imports.has(n.entry.module)) imports.set(n.entry.module, new Set())
+    imports.get(n.entry.module).add(n.entry.name)
+  }
   for (const [mod, names] of imports) {
     lines.push(`from ${mod} import ${[...names].sort().join(', ')}`)
   }
-  if (ordered.some((n) => n.entry.kind === 'rearrange')) {
-    lines.push('from einops import rearrange')
+}
+
+function emitClassBody(lines, nodes, connections, framework, className, classNames, options) {
+  // Subclasses (anything other than the main entry point) MUST always return
+  // real tensors so the main class's wiring keeps working - even in trace
+  // mode. Without this, the subclass would emit `return _runtime_shapes` and
+  // the caller would receive a dict, then `hasattr(dict, 'shape')` is false
+  // and every downstream port comes back with an empty shape list. Trace
+  // recording is the main class's job only; expand a group if you want to
+  // see internal child shapes for that subgraph.
+  const isSubclass = className !== 'GeneratedModel'
+  const trace = options.trace === true && !isSubclass
+  const plan = planGraph(nodes, connections)
+  if (!plan) {
+    lines.push(`# empty graph for ${className}`)
+    return
   }
-  lines.push('')
 
-  // ------------------- class -------------------
+  const {
+    ordered,
+    inputArgFor,
+    attrName,
+    localName,
+    incoming,
+    outputVarFor,
+  } = plan
+
   const baseClass = framework === 'pytorch' ? 'nn.Module' : 'nnx.Module'
-  lines.push(`class GeneratedModel(${baseClass}):`)
+  lines.push(`class ${className}(${baseClass}):`)
 
-  // ------- __init__ -------
   if (framework === 'pytorch') {
     lines.push('    def __init__(self):')
     lines.push('        super().__init__()')
@@ -225,18 +311,24 @@ export function generate(nodes, connections, framework, options = {}) {
     lines.push('    def __init__(self, *, rngs: nnx.Rngs):')
   }
 
-  const moduleNodes = ordered.filter((n) => n.entry.kind === 'module')
+  const moduleNodes = ordered.filter(
+    (n) => n.entry.kind === 'module' || n.entry.kind === 'group'
+  )
   if (moduleNodes.length === 0) lines.push('        pass')
-  // Shared-weight nodes (same tag) collapse into one __init__ slot. Iterate
-  // over module nodes and emit one assignment per unique attr name.
   const emittedAttrs = new Set()
   for (const n of moduleNodes) {
     const attr = attrName.get(n.id)
     if (emittedAttrs.has(attr)) continue
     emittedAttrs.add(attr)
-    const args = ctorArgs(n)
-    if (framework === 'flax') args.push('rngs=rngs')
-    lines.push(`        self.${attr} = ${n.entry.name}(${args.join(', ')})`)
+    if (n.entry.kind === 'group') {
+      const sub = classNames.get(n.entry.groupId) || groupClassName(n.entry.name, n.entry.groupId)
+      const args = framework === 'flax' ? ['rngs=rngs'] : []
+      lines.push(`        self.${attr} = ${sub}(${args.join(', ')})`)
+    } else {
+      const args = ctorArgs(n)
+      if (framework === 'flax') args.push('rngs=rngs')
+      lines.push(`        self.${attr} = ${n.entry.name}(${args.join(', ')})`)
+    }
   }
   lines.push('')
 
@@ -344,7 +436,13 @@ export function generate(nodes, connections, framework, options = {}) {
     }
   }
 
-  const explicitOutputs = findExplicitOutputs(ordered, incoming, outputVarFor)
+  // Sub-classes have their boundary outputs represented as virtual Output
+  // nodes named `out0`, `out1`, ...; the return tuple must match that order
+  // because the caller in the main class unpacks positionally. Plain topo
+  // order can interleave them, so we sort by the trailing index for subclasses.
+  const explicitOutputs = isSubclass
+    ? findExplicitOutputsOrdered(ordered, incoming, outputVarFor)
+    : findExplicitOutputs(ordered, incoming, outputVarFor)
   const terminals = findTerminals(ordered, connections)
   if (trace) {
     lines.push('        return _runtime_shapes')
@@ -365,8 +463,6 @@ export function generate(nodes, connections, framework, options = {}) {
     lines.push(`        return (${vs.join(', ')})`)
   }
   lines.push('')
-
-  return lines.join('\n')
 }
 
 /**
@@ -403,9 +499,10 @@ function buildCallExpr(node, callArgs, attrName, framework) {
     if (framework === 'pytorch') return `torch.stack(${tensors}, dim=${dim})`
     return `jnp.stack(${tensors}, axis=${dim})`
   }
-  return node.entry.kind === 'module'
-    ? `self.${attrName.get(node.id)}(${callArgs.join(', ')})`
-    : `${node.entry.name}(${callArgs.join(', ')})`
+  if (node.entry.kind === 'module' || node.entry.kind === 'group') {
+    return `self.${attrName.get(node.id)}(${callArgs.join(', ')})`
+  }
+  return `${node.entry.name}(${callArgs.join(', ')})`
 }
 
 function constLiteral(node) {
@@ -546,6 +643,161 @@ function findExplicitOutputs(ordered, incoming, outputVarFor) {
     if (v) out.push(v)
   }
   return out
+}
+
+/**
+ * Like findExplicitOutputs, but sorts the Output nodes by the trailing
+ * numeric index in `values.name` (e.g. "out0" < "out1" < "out10"). Used for
+ * sub-class returns so the tuple order matches the facade's portMap order
+ * regardless of topo sort.
+ */
+function findExplicitOutputsOrdered(ordered, incoming, outputVarFor) {
+  const outNodes = ordered.filter((n) => n.entry.kind === 'output')
+  outNodes.sort((a, b) => {
+    const ai = parseInt(String(a.values?.name ?? '').replace(/^\D+/, ''), 10)
+    const bi = parseInt(String(b.values?.name ?? '').replace(/^\D+/, ''), 10)
+    const ax = Number.isFinite(ai) ? ai : 0
+    const bx = Number.isFinite(bi) ? bi : 0
+    return ax - bx
+  })
+  const out = []
+  for (const n of outNodes) {
+    const key = `${n.id}/x`
+    const edges = incoming.get(key) ?? []
+    if (edges.length === 0) continue
+    const c = edges[0]
+    const v = outputVarFor.get(`${c.source}/${c.sourceOutput}`)
+    if (v) out.push(v)
+  }
+  return out
+}
+
+// ---------------------------------------------------------------------------
+// Subgraph helpers - turn a (facade, children, internal edges) triple into a
+// self-contained node + connection list that planGraph/emitClassBody can
+// chew on like any other graph. Virtual Input/Output nodes stand in for the
+// facade's boundary ports so the subclass gets a clean forward(self, in0, ...)
+// signature.
+// ---------------------------------------------------------------------------
+
+function partitionByGroup(nodes, connections) {
+  const facadesByGid = new Map()
+  for (const n of nodes) {
+    if (n.entry?.kind === 'group' && n.entry.groupId) {
+      facadesByGid.set(n.entry.groupId, n)
+    }
+  }
+  const childrenByGid = new Map()
+  const internalByGid = new Map()
+  for (const gid of facadesByGid.keys()) {
+    childrenByGid.set(gid, [])
+    internalByGid.set(gid, [])
+  }
+  const byId = new Map(nodes.map((n) => [n.id, n]))
+  for (const n of nodes) {
+    if (n.entry?.kind === 'group') continue
+    if (n.groupId && childrenByGid.has(n.groupId)) {
+      childrenByGid.get(n.groupId).push(n)
+    }
+  }
+  for (const c of connections) {
+    const src = byId.get(c.source)
+    const tgt = byId.get(c.target)
+    if (src?.groupId && src.groupId === tgt?.groupId && internalByGid.has(src.groupId)) {
+      internalByGid.get(src.groupId).push(c)
+    }
+  }
+  return { facadesByGid, childrenByGid, internalByGid }
+}
+
+function groupClassName(facadeName, gid) {
+  const sane = sanitizePyIdent(facadeName || 'Group', 'Group')
+  const pascal = sane.charAt(0).toUpperCase() + sane.slice(1)
+  // A short suffix from the gid disambiguates two groups that the user happens
+  // to name identically; without it Python would refuse the duplicate class.
+  const tag = String(gid || '').replace(/[^A-Za-z0-9]/g, '').slice(-4)
+  return tag ? `${pascal}_${tag}` : pascal
+}
+
+/**
+ * Construct a virtual graph that represents one group as a standalone class:
+ * synthetic Input nodes feed each boundary input, synthetic Output nodes
+ * collect each boundary output, and the internal edges are the rest of the
+ * subgraph's structure.
+ */
+function buildSubgraphView(facade, children, internalConnections) {
+  const inputs = facade.entry.portMap?.inputs || []
+  const outputs = facade.entry.portMap?.outputs || []
+
+  const makeVirtual = (id, entry, values) => ({
+    id,
+    entry,
+    label: entry.name,
+    tag: '',
+    groupId: null,
+    values,
+    inputs: Object.fromEntries(
+      (entry.inputs || []).map((p) => [p.name, { portSpec: p }])
+    ),
+    outputs: Object.fromEntries(
+      (entry.outputs || []).map((p) => [p.name, { portSpec: p }])
+    ),
+    freshenedShape() { return null },
+    applyParamBindings() {},
+  })
+
+  const virtualInputs = inputs.map((m, i) =>
+    makeVirtual(
+      `__sg_in_${facade.id}_${i}`,
+      {
+        kind: 'input',
+        name: 'Input',
+        module: '__builtin__',
+        ctor: [],
+        inputs: [],
+        outputs: [
+          { name: 'out', shape: m.shape ?? ['...'], dtype: 'any', optional: false, variadic: false },
+        ],
+        bindings: {},
+      },
+      { name: `in${i}`, shape: '', dtype: 'any' }
+    )
+  )
+  const virtualOutputs = outputs.map((m, i) =>
+    makeVirtual(
+      `__sg_out_${facade.id}_${i}`,
+      {
+        kind: 'output',
+        name: 'Output',
+        module: '__builtin__',
+        ctor: [],
+        inputs: [
+          { name: 'x', shape: ['...'], dtype: 'any', optional: false, variadic: false },
+        ],
+        outputs: [],
+        bindings: {},
+      },
+      { name: `out${i}` }
+    )
+  )
+
+  const inputEdges = inputs.map((m, i) => ({
+    source: `__sg_in_${facade.id}_${i}`,
+    sourceOutput: 'out',
+    target: m.childNodeId,
+    targetInput: m.childPort,
+  }))
+  const outputEdges = outputs.map((m, i) => ({
+    source: m.childNodeId,
+    sourceOutput: m.childPort,
+    target: `__sg_out_${facade.id}_${i}`,
+    targetInput: 'x',
+  }))
+
+  return {
+    nodes: [...virtualInputs, ...children, ...virtualOutputs],
+    connections: [...inputEdges, ...internalConnections, ...outputEdges],
+  }
 }
 
 /** Output ports that have no outgoing edges ⇒ return values. */
