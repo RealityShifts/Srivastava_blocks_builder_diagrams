@@ -89,14 +89,54 @@ function renderInlineMd(text) {
 
 // ---------- palette ----------
 
+const PALETTE_EXPANDED_BY_DEFAULT = new Set(['built-in', 'utility'])
+const paletteCollapsed = new Map()
+
+function paletteSectionCollapsed(name) {
+  if (paletteCollapsed.has(name)) return paletteCollapsed.get(name)
+  return !PALETTE_EXPANDED_BY_DEFAULT.has(name)
+}
+
+function setPaletteSectionCollapsed(name, collapsed) {
+  paletteCollapsed.set(name, collapsed)
+}
+
+function syncSectionCollapsed(section) {
+  const name = section.dataset.group
+  const collapsed = paletteSectionCollapsed(name)
+  section.classList.toggle('collapsed', collapsed)
+  section.querySelector('.palette-section-header')?.setAttribute(
+    'aria-expanded',
+    String(!collapsed)
+  )
+}
+
 export function renderPalette(rootEl, entries, onCreate) {
   rootEl.replaceChildren()
   const groups = groupByModule(entries)
   for (const [moduleName, list] of groups) {
-    const title = document.createElement('div')
-    title.className = 'group-title'
-    title.textContent = moduleName
-    rootEl.appendChild(title)
+    const section = document.createElement('div')
+    section.className = 'palette-section'
+    section.dataset.group = moduleName
+    if (paletteSectionCollapsed(moduleName)) section.classList.add('collapsed')
+
+    const header = document.createElement('button')
+    header.type = 'button'
+    header.className = 'palette-section-header'
+    header.setAttribute('aria-expanded', String(!section.classList.contains('collapsed')))
+    header.innerHTML =
+      `<span class="palette-section-chevron" aria-hidden="true"></span>` +
+      `<span class="palette-section-label">${moduleName}</span>` +
+      `<span class="palette-section-count">${list.length}</span>`
+    header.addEventListener('click', () => {
+      const collapsed = !section.classList.contains('collapsed')
+      section.classList.toggle('collapsed', collapsed)
+      header.setAttribute('aria-expanded', String(!collapsed))
+      setPaletteSectionCollapsed(moduleName, collapsed)
+    })
+
+    const body = document.createElement('div')
+    body.className = 'palette-section-body'
     for (const entry of list) {
       const item = document.createElement('div')
       item.className = 'block-item'
@@ -109,8 +149,12 @@ export function renderPalette(rootEl, entries, onCreate) {
         e.dataTransfer.effectAllowed = 'copy'
         e.dataTransfer.setData('application/x-block-name', entry.name)
       })
-      rootEl.appendChild(item)
+      body.appendChild(item)
     }
+
+    section.appendChild(header)
+    section.appendChild(body)
+    rootEl.appendChild(section)
   }
 }
 
@@ -124,6 +168,8 @@ function describePorts(entry) {
           entry.kind === 'reshape' ||
           entry.kind === 'concat' ||
           entry.kind === 'stack' ||
+          entry.kind === 'pool' ||
+          entry.kind === 'upsample' ||
           entry.kind === 'const'
         ? 'op'
         : entry.kind === 'input'
@@ -136,20 +182,23 @@ function describePorts(entry) {
 
 export function filterPalette(rootEl, query) {
   const q = query.trim().toLowerCase()
-  rootEl.querySelectorAll('.block-item').forEach((el) => {
-    el.style.display = !q || el.dataset.name.toLowerCase().includes(q) ? '' : 'none'
-  })
-  rootEl.querySelectorAll('.group-title').forEach((tl) => {
-    let next = tl.nextElementSibling
+  rootEl.querySelectorAll('.palette-section').forEach((section) => {
     let any = false
-    while (next && !next.classList.contains('group-title')) {
-      if (next.style.display !== 'none') {
-        any = true
-        break
+    section.querySelectorAll('.block-item').forEach((el) => {
+      const show = !q || el.dataset.name.toLowerCase().includes(q)
+      el.style.display = show ? '' : 'none'
+      if (show) any = true
+    })
+    if (q) {
+      section.style.display = any ? '' : 'none'
+      if (any) {
+        section.classList.remove('collapsed')
+        section.querySelector('.palette-section-header')?.setAttribute('aria-expanded', 'true')
       }
-      next = next.nextElementSibling
+    } else {
+      section.style.display = ''
+      syncSectionCollapsed(section)
     }
-    tl.style.display = any ? '' : 'none'
   })
 }
 

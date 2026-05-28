@@ -305,6 +305,12 @@ export function generate(nodes, connections, framework, options = {}) {
   if (nodes.some((n) => n.entry.kind === 'rearrange')) {
     lines.push('from einops import rearrange')
   }
+  if (framework === 'flax' && nodes.some((n) => n.entry.kind === 'pool')) {
+    lines.push('from flax.linen.pooling import avg_pool, max_pool')
+  }
+  if (framework === 'flax' && nodes.some((n) => n.entry.kind === 'upsample')) {
+    lines.push('import jax.image')
+  }
   lines.push('')
 
   // Emit each unique class name once. When two groups share a name (e.g.
@@ -811,6 +817,27 @@ function buildCallExpr(node, callArgs, attrName, framework) {
     if (framework === 'pytorch') return `torch.stack(${tensors}, dim=${dim})`
     return `jnp.stack(${tensors}, axis=${dim})`
   }
+  if (node.entry.kind === 'pool') {
+    const xVar = positionalSource(callArgs, 'x')
+    const { kernel, stride, padding, mode } = parsePoolParams(node.values)
+    if (framework === 'pytorch') {
+      const fn = mode === 'avg' ? 'avg_pool2d' : 'max_pool2d'
+      return `torch.nn.functional.${fn}(${xVar}, kernel_size=${kernel}, stride=${stride}, padding=${padding})`
+    }
+    const poolFn = mode === 'avg' ? 'avg_pool' : 'max_pool'
+    const pad =
+      padding > 0 ? `((${padding}, ${padding}), (${padding}, ${padding}))` : "'VALID'"
+    return `jnp.transpose(${poolFn}(jnp.transpose(${xVar}, (0, 2, 3, 1)), window_shape=(${kernel}, ${kernel}), strides=(${stride}, ${stride}), padding=${pad}), (0, 3, 1, 2))`
+  }
+  if (node.entry.kind === 'upsample') {
+    const xVar = positionalSource(callArgs, 'x')
+    const scale = parseScaleFactor(node.values?.scale_factor, 2)
+    const align = parseBoolValue(node.values?.align_corners, false)
+    if (framework === 'pytorch') {
+      return `torch.nn.functional.interpolate(${xVar}, scale_factor=${scale}, mode='bilinear', align_corners=${align ? 'True' : 'False'})`
+    }
+    return `jnp.transpose(jax.image.resize(jnp.transpose(${xVar}, (0, 2, 3, 1)), (${xVar}.shape[0], int(${xVar}.shape[2] * ${scale}), int(${xVar}.shape[3] * ${scale}), ${xVar}.shape[1]), method='linear'), (0, 3, 1, 2))`
+  }
   if (node.entry.kind === 'module' || node.entry.kind === 'group') {
     return `self.${attrName.get(node.id)}(${callArgs.join(', ')})`
   }
@@ -976,6 +1003,31 @@ function parseReshapeDims(s) {
     if (/^-?\d+$/.test(t)) dims.push(Number(t))
   }
   return dims.length ? dims : [-1]
+}
+
+function parseBoolValue(v, fallback = false) {
+  if (v === true || v === 'true' || v === '1' || v === 1) return true
+  if (v === false || v === 'false' || v === '0' || v === 0) return false
+  return fallback
+}
+
+function parseScaleFactor(v, fallback = 2) {
+  if (v === null || v === undefined || v === '') return fallback
+  const n = Number(v)
+  return Number.isFinite(n) && n > 0 ? n : fallback
+}
+
+/** stride=0 means "same as kernel_size" (PyTorch default behaviour). */
+function parsePoolParams(values = {}) {
+  const kernel = parseAxisDim(values.kernel_size, 2)
+  const strideRaw = values.stride
+  const stride =
+    strideRaw === null || strideRaw === undefined || strideRaw === '' || Number(strideRaw) === 0
+      ? kernel
+      : parseAxisDim(strideRaw, kernel)
+  const padding = parseAxisDim(values.padding, 0)
+  const mode = String(values.mode ?? 'max').toLowerCase() === 'avg' ? 'avg' : 'max'
+  return { kernel, stride, padding, mode }
 }
 
 function ctorArgs(node, paramRef = new Map()) {

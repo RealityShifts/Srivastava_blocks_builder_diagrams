@@ -417,6 +417,83 @@ export const STACK_ENTRY = {
 }
 
 /**
+ * 2D pooling (max or average) on NCHW tensors. Emits functional pool2d
+ * calls in forward() — no nn.Module wrapper.
+ */
+export const POOL_ENTRY = {
+  name: 'Pool2d',
+  module: '__utility__',
+  framework: 'any',
+  kind: 'pool',
+  ctor: [
+    {
+      name: 'mode',
+      type: 'str',
+      default: 'max',
+      required: false,
+      choices: ['max', 'avg'],
+    },
+    {
+      name: 'kernel_size',
+      type: 'int',
+      default: 2,
+      required: false,
+    },
+    {
+      name: 'stride',
+      type: 'int',
+      default: 0,
+      required: false,
+    },
+    {
+      name: 'padding',
+      type: 'int',
+      default: 0,
+      required: false,
+    },
+  ],
+  inputs: [
+    { name: 'x', shape: ['B', 'C', 'H', 'W'], dtype: 'float', optional: false, variadic: false },
+  ],
+  outputs: [
+    { name: 'out', shape: ['...'], dtype: 'float', optional: false, variadic: false },
+  ],
+  bindings: {},
+}
+
+/**
+ * Upsample spatial dims with bilinear (linear) interpolation. Uses
+ * F.interpolate(..., mode='bilinear') on PyTorch and jax.image.resize on Flax.
+ */
+export const UPSAMPLE_ENTRY = {
+  name: 'Upsample',
+  module: '__utility__',
+  framework: 'any',
+  kind: 'upsample',
+  ctor: [
+    {
+      name: 'scale_factor',
+      type: 'float',
+      default: 2,
+      required: false,
+    },
+    {
+      name: 'align_corners',
+      type: 'bool',
+      default: false,
+      required: false,
+    },
+  ],
+  inputs: [
+    { name: 'x', shape: ['B', 'C', 'H', 'W'], dtype: 'float', optional: false, variadic: false },
+  ],
+  outputs: [
+    { name: 'out', shape: ['...'], dtype: 'float', optional: false, variadic: false },
+  ],
+  bindings: {},
+}
+
+/**
  * Split one side of an einops pattern into top-level groups. Each output item
  * is either a bare identifier ("b"), the rest token "...", a literal int
  * ("1"), or a normalized parenthesized group ("(h w)"). Throws on unbalanced

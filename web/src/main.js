@@ -19,6 +19,8 @@ import {
   RESHAPE_ENTRY,
   CONCAT_ENTRY,
   STACK_ENTRY,
+  POOL_ENTRY,
+  UPSAMPLE_ENTRY,
   applyNodeTag,
   colorForTag,
   parseShapeString,
@@ -812,6 +814,8 @@ async function loadManifest() {
     RESHAPE_ENTRY,
     CONCAT_ENTRY,
     STACK_ENTRY,
+    POOL_ENTRY,
+    UPSAMPLE_ENTRY,
     ...fetched,
   ]
   state.byName = new Map(state.entries.map((e) => [e.name, e]))

@@ -173,7 +173,7 @@ main {
 }
 #palette {
   border-right: 1px solid var(--line);
-  padding: 8px;
+  padding: 6px 4px;
 }
 #sidebar {
   border-left: 1px solid var(--line);
@@ -181,12 +181,73 @@ main {
   flex-direction: column;
 }
 
-#palette .group-title {
-  margin: 8px 6px 4px;
+#palette .palette-section {
+  margin-bottom: 2px;
+}
+
+#palette .palette-section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  margin: 0;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
   color: var(--muted);
+  font: inherit;
   font-size: 11px;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.6px;
+  letter-spacing: 0.5px;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+}
+#palette .palette-section-header:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+#palette .palette-section-chevron {
+  flex: 0 0 10px;
+  font-size: 10px;
+  line-height: 1;
+  opacity: 0.85;
+}
+#palette .palette-section-chevron::before {
+  content: '▾';
+}
+#palette .palette-section.collapsed .palette-section-chevron::before {
+  content: '▸';
+}
+
+#palette .palette-section-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#palette .palette-section-count {
+  flex: 0 0 auto;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+#palette .palette-section-body {
+  padding-left: 4px;
+}
+#palette .palette-section.collapsed .palette-section-body {
+  display: none;
 }
 
 #palette .block-item {

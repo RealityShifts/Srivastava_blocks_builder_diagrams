@@ -1420,6 +1420,67 @@
     "bindings": {}
   },
   {
+    "name": "Pool2d",
+    "module": "flax_blocks.core_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "kernel_size",
+        "type": "int",
+        "default": 2,
+        "required": false
+      },
+      {
+        "name": "stride",
+        "type": "any",
+        "default": null,
+        "required": false
+      },
+      {
+        "name": "padding",
+        "type": "int",
+        "default": 0,
+        "required": false
+      },
+      {
+        "name": "mode",
+        "type": "str",
+        "default": "max",
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "H_out",
+          "W_out",
+          "C"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
     "name": "ResidualBlock",
     "module": "flax_blocks.core_blocks",
     "framework": "flax",
@@ -1629,6 +1690,55 @@
         "shape": [
           "B",
           "D_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "Upsample",
+    "module": "flax_blocks.core_blocks",
+    "framework": "flax",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "scale_factor",
+        "type": "int",
+        "default": 2,
+        "required": false
+      },
+      {
+        "name": "mode",
+        "type": "str",
+        "default": "linear",
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "H",
+          "W",
+          "C"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "H_out",
+          "W_out",
+          "C"
         ],
         "dtype": "float",
         "optional": false,

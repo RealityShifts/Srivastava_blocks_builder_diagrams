@@ -1328,6 +1328,67 @@
     "bindings": {}
   },
   {
+    "name": "Pool2d",
+    "module": "pytorch_blocks.core_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "kernel_size",
+        "type": "int",
+        "default": 2,
+        "required": false
+      },
+      {
+        "name": "stride",
+        "type": "int",
+        "default": null,
+        "required": false
+      },
+      {
+        "name": "padding",
+        "type": "int",
+        "default": 0,
+        "required": false
+      },
+      {
+        "name": "mode",
+        "type": "str",
+        "default": "max",
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "C",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "C",
+          "H_out",
+          "W_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
     "name": "RMSNorm",
     "module": "pytorch_blocks.core_blocks",
     "framework": "pytorch",
@@ -1545,6 +1606,61 @@
       {
         "shape": [
           "..."
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {}
+  },
+  {
+    "name": "Upsample",
+    "module": "pytorch_blocks.core_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "scale_factor",
+        "type": "int",
+        "default": 2,
+        "required": false
+      },
+      {
+        "name": "mode",
+        "type": "str",
+        "default": "bilinear",
+        "required": false
+      },
+      {
+        "name": "align_corners",
+        "type": "bool",
+        "default": false,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "C",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "C",
+          "H_out",
+          "W_out"
         ],
         "dtype": "float",
         "optional": false,

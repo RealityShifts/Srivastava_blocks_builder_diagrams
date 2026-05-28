@@ -9,6 +9,8 @@ import {
   RESHAPE_ENTRY,
   CONCAT_ENTRY,
   STACK_ENTRY,
+  POOL_ENTRY,
+  UPSAMPLE_ENTRY,
   OUTPUT_ENTRY,
   CONST_ENTRY,
   makeGroupEntry,
@@ -655,9 +657,70 @@ console.log('codegen (concat + stack)')
   )
 }
 
+console.log('codegen (pool + upsample)')
+{
+  const inputEntry = {
+    name: 'Input',
+    module: '__builtin__',
+    framework: 'any',
+    kind: 'input',
+    ctor: [
+      { name: 'name', type: 'str', default: 'x' },
+      { name: 'shape', type: 'str', default: 'B C H W' },
+      { name: 'dtype', type: 'str', default: 'float' },
+    ],
+    inputs: [],
+    outputs: [{ name: 'out', shape: ['B', 'C', 'H', 'W'], dtype: 'float' }],
+    bindings: {},
+  }
+  const make = (id, entry, values = {}) => ({
+    id,
+    entry,
+    tag: '',
+    values: {
+      ...Object.fromEntries(entry.ctor.map((p) => [p.name, p.default])),
+      ...values,
+    },
+  })
+  const inp = make('in1', inputEntry, { name: 'x' })
+  const pool = make('pool', POOL_ENTRY, { mode: 'max', kernel_size: 2, stride: 0, padding: 0 })
+  const up = make('up', UPSAMPLE_ENTRY, { scale_factor: 2, align_corners: false })
+  const conns = [
+    { source: 'in1', sourceOutput: 'out', target: 'pool', targetInput: 'x' },
+    { source: 'pool', sourceOutput: 'out', target: 'up', targetInput: 'x' },
+  ]
+  const codePt = generate([inp, pool, up], conns, 'pytorch')
+  check(
+    'pytorch pool uses max_pool2d',
+    codePt.includes('torch.nn.functional.max_pool2d(x, kernel_size=2, stride=2, padding=0)'),
+    codePt
+  )
+  check(
+    'pytorch upsample uses bilinear interpolate',
+    codePt.includes("torch.nn.functional.interpolate(pool2d_1, scale_factor=2, mode='bilinear', align_corners=False)"),
+    codePt
+  )
+  check('pool/upsample skip block imports', !codePt.includes('__utility__'), codePt)
+
+  const poolAvg = make('pool2', POOL_ENTRY, { mode: 'avg', kernel_size: 3, stride: 2, padding: 1 })
+  const codeFlax = generate([inp, poolAvg], conns.slice(0, 1).map((c) => ({ ...c, target: 'pool2' })), 'flax')
+  check('flax pool imports linen pooling', codeFlax.includes('from flax.linen.pooling import avg_pool, max_pool'), codeFlax)
+  check('flax avg pool transposes NCHW<->NHWC', codeFlax.includes('avg_pool(jnp.transpose('), codeFlax)
+
+  const codeFlaxUp = generate(
+    [inp, up],
+    [{ source: 'in1', sourceOutput: 'out', target: 'up', targetInput: 'x' }],
+    'flax'
+  )
+  check('flax upsample imports jax.image', codeFlaxUp.includes('import jax.image'), codeFlaxUp)
+  check('flax upsample uses jax.image.resize linear', codeFlaxUp.includes("method='linear'"), codeFlaxUp)
+}
+
 console.log('paletteGroup')
 {
   check('Concat maps to utility palette', paletteGroup(CONCAT_ENTRY) === 'utility')
+  check('Pool2d maps to utility palette', paletteGroup(POOL_ENTRY) === 'utility')
+  check('Upsample maps to utility palette', paletteGroup(UPSAMPLE_ENTRY) === 'utility')
   check('Input stays in built-in', paletteGroup(inputEntryForPalette()) === 'built-in')
   check('Constant stays in built-in', paletteGroup(CONST_ENTRY) === 'built-in')
 }
