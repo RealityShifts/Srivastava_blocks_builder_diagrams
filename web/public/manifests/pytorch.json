@@ -762,6 +762,12 @@
         "type": "int",
         "default": 1,
         "required": false
+      },
+      {
+        "name": "bias",
+        "type": "bool",
+        "default": true,
+        "required": false
       }
     ],
     "inputs": [
@@ -1166,7 +1172,7 @@
       {
         "name": "bias",
         "type": "bool",
-        "default": false,
+        "default": true,
         "required": false
       },
       {
@@ -1254,7 +1260,7 @@
       {
         "name": "bias",
         "type": "bool",
-        "default": false,
+        "default": true,
         "required": false
       }
     ],
@@ -2963,6 +2969,42 @@
         "type": "str",
         "default": null,
         "required": true
+      },
+      {
+        "name": "in_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_ch",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "kernel_size",
+        "type": "int",
+        "default": 3,
+        "required": false
+      },
+      {
+        "name": "stride",
+        "type": "int",
+        "default": 1,
+        "required": false
+      },
+      {
+        "name": "padding",
+        "type": "int",
+        "default": 0,
+        "required": false
+      },
+      {
+        "name": "bias",
+        "type": "bool",
+        "default": true,
+        "required": false
       }
     ],
     "inputs": [
@@ -2993,7 +3035,10 @@
         "name": "out"
       }
     ],
-    "bindings": {}
+    "bindings": {
+      "C_in": "in_ch",
+      "C_out": "out_ch"
+    }
   },
   {
     "name": "VAE",

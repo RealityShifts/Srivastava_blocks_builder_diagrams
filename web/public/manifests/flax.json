@@ -742,6 +742,12 @@
         "type": "int",
         "default": 1,
         "required": false
+      },
+      {
+        "name": "use_bias",
+        "type": "bool",
+        "default": true,
+        "required": false
       }
     ],
     "inputs": [
@@ -1239,7 +1245,7 @@
       {
         "name": "use_bias",
         "type": "bool",
-        "default": false,
+        "default": true,
         "required": false
       },
       {
@@ -1322,6 +1328,12 @@
         "name": "dilation",
         "type": "int",
         "default": 1,
+        "required": false
+      },
+      {
+        "name": "use_bias",
+        "type": "bool",
+        "default": true,
         "required": false
       }
     ],
@@ -3095,6 +3107,12 @@
         "name": "kernel_size",
         "type": "int",
         "default": 3,
+        "required": false
+      },
+      {
+        "name": "use_bias",
+        "type": "bool",
+        "default": true,
         "required": false
       }
     ],
