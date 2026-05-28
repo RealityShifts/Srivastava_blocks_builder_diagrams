@@ -16,6 +16,7 @@ import {
   boundarySignaturesMatch,
   applySignatureToBoundary,
 } from './groupBoundary.js'
+import { copyNodeValues, nodeTagKey, nodesInSameTagFamily } from './tagSync.js'
 import {
   makeNode,
   makeGroupEntry,
@@ -1146,6 +1147,64 @@ function applyGroupTag(g, tag) {
   if (facade) restoreNodeTag(facade, tag)
 }
 
+function findPeerNodeWithTag(excludeId, tag) {
+  const key = nodeTagKey(tag)
+  if (!key) return null
+  for (const n of editor.getNodes()) {
+    if (n.id === excludeId) continue
+    if (nodeTagKey(n.tag) !== key) continue
+    return n
+  }
+  return null
+}
+
+function forEachPeerNode(sourceNode, fn) {
+  const key = nodeTagKey(sourceNode?.tag)
+  if (!key) return
+  for (const n of editor.getNodes()) {
+    if (n.id === sourceNode.id) continue
+    if (nodeTagKey(n.tag) !== key) continue
+    if (!nodesInSameTagFamily(sourceNode, n)) continue
+    fn(n)
+  }
+}
+
+function syncTaggedNodePeers(sourceNode) {
+  if (!nodeTagKey(sourceNode?.tag)) return
+  forEachPeerNode(sourceNode, (peer) => {
+    copyNodeValues(sourceNode, peer)
+    area.update('node', peer.id)
+    applyTagStyle(peer)
+  })
+}
+
+function adoptTaggedPeerValues(node, tag) {
+  const peer = findPeerNodeWithTag(node.id, tag)
+  if (!peer || !nodesInSameTagFamily(peer, node)) return false
+  copyNodeValues(peer, node)
+  area.update('node', node.id)
+  return true
+}
+
+async function syncTaggedPeerParamPort(sourceNode, param, shouldExpose) {
+  const key = `__param__${param.name}`
+  for (const peer of editor.getNodes()) {
+    if (peer.id === sourceNode.id) continue
+    if (!nodesInSameTagFamily(sourceNode, peer)) continue
+    if (shouldExpose) {
+      peer.exposeParam?.(param.name)
+    } else {
+      for (const c of [...editor.getConnections()]) {
+        if (c.target === peer.id && c.targetInput === key) {
+          await editor.removeConnection(c.id)
+        }
+      }
+      peer.hideParam?.(param.name)
+    }
+    await area.update('node', peer.id)
+  }
+}
+
 function groupBoundarySignature(g) {
   const facade = g.facadeNodeId ? editor.getNode(g.facadeNodeId) : null
   if (facade?.entry) return boundarySignatureFromEntry(facade.entry)
@@ -1800,6 +1859,8 @@ function refreshInspector(options = {}) {
     node,
     state.lastResult?.sub ?? new Map(),
     () => {
+      const n = state.selectedNodeId ? editor.getNode(state.selectedNodeId) : null
+      if (n) syncTaggedNodePeers(n)
       state.runtimeShapes = null
       state.runtimeError = null
       state.runtimeErrorNodeId = null
@@ -1819,6 +1880,11 @@ function refreshInspector(options = {}) {
         const newKey = String(newTag ?? '').trim()
         if (newKey) void alignTaggedGroupToPeers(gid, newKey)
         applyAllTagStyles()
+      } else {
+        const newKey = String(newTag ?? '').trim()
+        if (newKey) {
+          if (!adoptTaggedPeerValues(n, newKey)) syncTaggedNodePeers(n)
+        }
       }
       area.update('node', n.id)
       applyTagStyle(n)
@@ -1843,6 +1909,7 @@ function refreshInspector(options = {}) {
         }
         targetNode.hideParam?.(param.name)
       }
+      await syncTaggedPeerParamPort(targetNode, param, shouldExpose)
       await area.update('node', targetNode.id)
       queueValidation()
       queueAutosave()

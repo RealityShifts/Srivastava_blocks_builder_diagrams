@@ -519,8 +519,8 @@ export function renderInspector(
   tagLabel.textContent = 'Tag'
   const tagHelp =
     node.entry.kind === 'module' || node.entry.kind === 'group'
-      ? 'label · same tag = shared weights'
-      : 'label only'
+      ? 'label · same tag = shared weights + synced params'
+      : 'label · same tag = synced params'
   tagLabel.title = tagHelp
   tagRow.appendChild(tagLabel)
   const tagInput = document.createElement('input')

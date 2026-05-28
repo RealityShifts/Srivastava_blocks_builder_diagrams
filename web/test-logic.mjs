@@ -25,6 +25,7 @@ import {
   boundarySignaturesMatch,
   applySignatureToBoundary,
 } from './src/groupBoundary.js'
+import { copyNodeValues, nodesInSameTagFamily } from './src/tagSync.js'
 
 let pass = 0
 let fail = 0
@@ -502,6 +503,25 @@ console.log('codegen tag weight-sharing')
     codeSharedGroups
   )
 
+  // Synced tag template can add facade ports without child bindings yet.
+  const fUnmapped = mkFacade('fu', 'gu', 'cu', '')
+  fUnmapped.entry = makeGroupEntry('gu', 'Group1', {
+    inputs: [
+      { childNodeId: 'cu', childPort: 'x', shape: ['B', 3, 224, 224] },
+      { shape: ['B', 3, 224, 224] },
+    ],
+    outputs: [{ childNodeId: 'cu', childPort: 'out', shape: ['B', 4, 224, 224] }],
+  })
+  const cu = make('cu', residual, { in_ch: 3, out_ch: 4 })
+  cu.groupId = 'gu'
+  let threw = false
+  try {
+    generate([inp, fUnmapped, cu], [{ source: 'inp', sourceOutput: 'out', target: 'fu', targetInput: 'in0' }], 'pytorch')
+  } catch {
+    threw = true
+  }
+  check('group with unmapped synced port does not crash codegen', !threw, threw)
+
   // Different tags (or empty) -> separate instances, current behaviour preserved.
   const f3 = mkFacade('f3', 'g3', 'c3', '')
   const c3 = make('c3', residual, { in_ch: 3, out_ch: 4 })
@@ -512,6 +532,29 @@ console.log('codegen tag weight-sharing')
   const codeUntaggedGroups = generate([inp, f3, f4, c3, c4], [], 'pytorch')
   const separateInits = (codeUntaggedGroups.match(/= Group1\(\)/g) || []).length
   check('untagged / distinct-tag groups get separate instances', separateInits === 2, separateInits)
+}
+
+// --- tag sync ---
+console.log('tag sync')
+{
+  const conv = {
+    name: 'ConvBlock',
+    kind: 'module',
+    ctor: [
+      { name: 'in_ch', type: 'int' },
+      { name: 'out_ch', type: 'int' },
+    ],
+  }
+  const a = { id: 'a', entry: conv, tag: 'stem', values: { in_ch: 3, out_ch: 16 } }
+  const b = { id: 'b', entry: conv, tag: 'stem', values: { in_ch: 3, out_ch: 32 } }
+  check('nodesInSameTagFamily matches same block + tag', nodesInSameTagFamily(a, b))
+  check(
+    'copyNodeValues mirrors ctor fields onto peer',
+    copyNodeValues(a, b) && b.values.out_ch === 16,
+    b.values
+  )
+  const c = { id: 'c', entry: { ...conv, name: 'Linear' }, tag: 'stem', values: {} }
+  check('copyNodeValues skips different block types', !copyNodeValues(a, c))
 }
 
 // --- group boundary signatures ---

@@ -20,7 +20,8 @@ function topoSort(nodes, connections) {
     out.set(n.id, [])
   }
   for (const c of connections) {
-    indeg.set(c.target, (indeg.get(c.target) ?? 0) + 1)
+    if (!out.has(c.source) || !indeg.has(c.target)) continue
+    indeg.set(c.target, indeg.get(c.target) + 1)
     out.get(c.source).push(c.target)
   }
   const queue = [...indeg.entries()].filter(([, d]) => d === 0).map(([k]) => k)
@@ -149,7 +150,9 @@ function jaxtypingAnno(shape, dtype, tensorType, usedDtypes) {
  */
 export function planGraph(nodes, connections) {
   if (nodes.length === 0) return null
-  const ordered = topoSort(nodes, connections)
+  const nodeIds = new Set(nodes.map((n) => n.id))
+  const wired = connections.filter((c) => nodeIds.has(c.source) && nodeIds.has(c.target))
+  const ordered = topoSort(nodes, wired)
 
   // Two separate Python namespaces: `self.*` attributes vs. forward()-scope
   // locals. Splitting them lets `self.shared` and local `shared` coexist
@@ -224,7 +227,7 @@ export function planGraph(nodes, connections) {
   }
 
   const incoming = new Map()
-  for (const c of connections) {
+  for (const c of wired) {
     const key = `${c.target}/${c.targetInput}`
     if (!incoming.has(key)) incoming.set(key, [])
     incoming.get(key).push(c)
@@ -249,7 +252,7 @@ export function planGraph(nodes, connections) {
     }
   }
 
-  const entryInputs = findEntryInputs(ordered, connections, localPool)
+  const entryInputs = findEntryInputs(ordered, wired, localPool)
   return {
     ordered,
     inputArgFor,
@@ -297,6 +300,7 @@ export function generate(nodes, connections, framework, options = {}) {
   const topConnections = connections.filter((c) => {
     const src = byIdAll.get(c.source)
     const tgt = byIdAll.get(c.target)
+    if (!src || !tgt) return false
     return !isGroupedAway(src) && !isGroupedAway(tgt)
   })
 
@@ -1309,18 +1313,22 @@ function buildSubgraphView(facade, children, internalConnections) {
     )
   )
 
-  const inputEdges = inputs.map((m, i) => ({
-    source: `__sg_in_${facade.id}_${i}`,
-    sourceOutput: 'out',
-    target: m.childNodeId,
-    targetInput: m.childPort,
-  }))
-  const outputEdges = outputs.map((m, i) => ({
-    source: m.childNodeId,
-    sourceOutput: m.childPort,
-    target: `__sg_out_${facade.id}_${i}`,
-    targetInput: 'x',
-  }))
+  const inputEdges = inputs
+    .map((m, i) => ({
+      source: `__sg_in_${facade.id}_${i}`,
+      sourceOutput: 'out',
+      target: m.childNodeId,
+      targetInput: m.childPort,
+    }))
+    .filter((c) => c.target && c.targetInput)
+  const outputEdges = outputs
+    .map((m, i) => ({
+      source: m.childNodeId,
+      sourceOutput: m.childPort,
+      target: `__sg_out_${facade.id}_${i}`,
+      targetInput: 'x',
+    }))
+    .filter((c) => c.source && c.sourceOutput)
 
   return {
     nodes: [...virtualInputs, ...children, ...virtualOutputs],
