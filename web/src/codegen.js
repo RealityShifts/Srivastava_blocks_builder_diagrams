@@ -750,6 +750,7 @@ function emitClassBody(lines, nodes, connections, framework, className, classNam
     }
     // Build the argument expression for each input port of this node.
     const callArgs = []
+    const danglingPorts = []
     for (const port of n.entry.inputs) {
       const key = `${n.id}/${port.name}`
       const incomingEdges = incoming.get(key) ?? []
@@ -758,7 +759,11 @@ function emitClassBody(lines, nodes, connections, framework, className, classNam
         if (port.optional) {
           // skip
         } else {
-          callArgs.push(`${port.name}=None  # TODO: dangling required input`)
+          // Emit a valid `=None` arg and flag it in a trailing comment on the
+          // whole statement. An inline `# ...` here would comment out the rest
+          // of the call (including the closing paren) and break the file.
+          callArgs.push(`${port.name}=None`)
+          danglingPorts.push(port.name)
         }
         continue
       }
@@ -777,6 +782,9 @@ function emitClassBody(lines, nodes, connections, framework, className, classNam
     }
 
     const callExpr = buildCallExpr(n, callArgs, attrName, framework)
+    const danglingComment = danglingPorts.length
+      ? `  # TODO: wire dangling required input${danglingPorts.length > 1 ? 's' : ''}: ${danglingPorts.join(', ')}`
+      : ''
 
     const multi = n.entry.outputs.length > 1
     if (trace) {
@@ -785,7 +793,7 @@ function emitClassBody(lines, nodes, connections, framework, className, classNam
         const targets = n.entry.outputs
           .map((p) => outputVarFor.get(`${n.id}/${p.name}`))
           .join(', ')
-        lines.push(`            ${targets} = ${callExpr}`)
+        lines.push(`            ${targets} = ${callExpr}${danglingComment}`)
         for (const port of n.entry.outputs) {
           const v = outputVarFor.get(`${n.id}/${port.name}`)
           lines.push(
@@ -795,7 +803,7 @@ function emitClassBody(lines, nodes, connections, framework, className, classNam
       } else {
         const v = localName.get(n.id)
         const portName = n.entry.outputs[0]?.name ?? 'out'
-        lines.push(`            ${v} = ${callExpr}`)
+        lines.push(`            ${v} = ${callExpr}${danglingComment}`)
         lines.push(
           `            _runtime_shapes[${JSON.stringify(`${n.id}/${portName}`)}] = (list(${v}.shape) if hasattr(${v}, 'shape') else [])`
         )
@@ -808,10 +816,10 @@ function emitClassBody(lines, nodes, connections, framework, className, classNam
       const targets = n.entry.outputs
         .map((p) => outputVarFor.get(`${n.id}/${p.name}`))
         .join(', ')
-      lines.push(`        ${targets} = ${callExpr}`)
+      lines.push(`        ${targets} = ${callExpr}${danglingComment}`)
     } else {
       const v = localName.get(n.id)
-      lines.push(`        ${v} = ${callExpr}`)
+      lines.push(`        ${v} = ${callExpr}${danglingComment}`)
     }
   }
 

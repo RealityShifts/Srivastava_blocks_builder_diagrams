@@ -711,7 +711,28 @@ export function renderDiagnostics(rootEl, result) {
 
 export function showCode(code) {
   const dlg = document.getElementById('codegen-dialog')
-  document.getElementById('codegen-output').textContent = code
+  const out = document.getElementById('codegen-output')
+  // Render one <span class="code-line"> per line so a CSS counter can show a
+  // line-number gutter. The numbers live in a ::before, so they are not part
+  // of textContent and don't leak into Copy or text selection.
+  const lines = String(code).split('\n')
+  // A trailing newline yields a final empty element; drop it so we don't
+  // number a phantom blank line, but keep the newline so copied text is
+  // byte-identical to the generated source.
+  let trailingNewline = false
+  if (lines.length > 1 && lines[lines.length - 1] === '') {
+    lines.pop()
+    trailingNewline = true
+  }
+  const frag = document.createDocumentFragment()
+  lines.forEach((ln, i) => {
+    const span = document.createElement('span')
+    span.className = 'code-line'
+    const isLast = i === lines.length - 1
+    span.textContent = ln + (!isLast || trailingNewline ? '\n' : '')
+    frag.appendChild(span)
+  })
+  out.replaceChildren(frag)
   if (typeof dlg.showModal === 'function') dlg.showModal()
   else dlg.setAttribute('open', '')
 }

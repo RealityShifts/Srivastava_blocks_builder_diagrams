@@ -15,7 +15,9 @@
     "test:autosave": "node test-autosave.mjs",
     "test:tags-clipboard": "node test-tags-clipboard.mjs",
     "test:groups": "node test-groups.mjs",
-    "test:group-copy-cycle": "node test-group-copy-cycle.mjs"
+    "test:group-copy-cycle": "node test-group-copy-cycle.mjs",
+    "test:history-paste-select": "node test-history-paste-select.mjs",
+    "test:group-name-sync": "node test-group-name-sync.mjs"
   },
   "dependencies": {
     "@retejs/lit-plugin": "^2.0.5",

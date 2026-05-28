@@ -117,8 +117,86 @@ const AUTOSAVE_DEBOUNCE_MS = 800
 let autosaveTimer = null
 function queueAutosave() {
   if (state.restoring) return
+  queueHistory()
   clearTimeout(autosaveTimer)
   autosaveTimer = setTimeout(saveToStorage, AUTOSAVE_DEBOUNCE_MS)
+}
+
+// --- undo / redo (snapshot-based) ------------------------------------------
+// We snapshot the full serialized graph (getGraphData) rather than tracking
+// individual rete ops, because the editor's "state" also lives in
+// state.groups / tags / collapse flags / child offsets. importGraph already
+// rebuilds all of that faithfully (it backs autosave restore), so replaying a
+// snapshot is the one reliable way to undo a group/tag operation too.
+const HISTORY_LIMIT = 100
+const HISTORY_DEBOUNCE_MS = 350
+let historyTimer = null
+
+function snapshotGraph() {
+  return JSON.stringify(getGraphData())
+}
+
+function initHistory() {
+  state.history = { stack: [snapshotGraph()], index: 0, applying: false }
+}
+
+function queueHistory() {
+  if (state.restoring || state.history?.applying) return
+  clearTimeout(historyTimer)
+  historyTimer = setTimeout(recordHistory, HISTORY_DEBOUNCE_MS)
+}
+
+/** Commit the current graph as a new history entry, dropping any redo branch. */
+function recordHistory() {
+  const h = state.history
+  if (!h || h.applying || state.restoring) return
+  const snap = snapshotGraph()
+  if (snap === h.stack[h.index]) return // nothing actually changed
+  h.stack = h.stack.slice(0, h.index + 1)
+  h.stack.push(snap)
+  if (h.stack.length > HISTORY_LIMIT) h.stack.shift()
+  h.index = h.stack.length - 1
+}
+
+async function applyHistorySnapshot(snap) {
+  const h = state.history
+  h.applying = true
+  state.restoring = true // suppress autosave + peer-sync during the rebuild
+  try {
+    await importGraph(JSON.parse(snap))
+  } finally {
+    state.restoring = false
+    h.applying = false
+  }
+  // importGraph assigns fresh node ids, so the rebuilt graph serializes
+  // differently than the stored snapshot. Renormalize the current entry to the
+  // live serialization so the next undo's flush sees "no change" and steps
+  // correctly instead of recording the rebuild as a new edit.
+  h.stack[h.index] = snapshotGraph()
+  refreshTagAtlas()
+  applyAllGroupStyles()
+  applyAllConnectionStyles()
+  refreshInspector()
+  queueValidation()
+  saveToStorage()
+}
+
+async function undo() {
+  const h = state.history
+  if (!h) return
+  // Capture any edit still sitting in the debounce window before stepping back.
+  clearTimeout(historyTimer)
+  recordHistory()
+  if (h.index <= 0) return
+  h.index -= 1
+  await applyHistorySnapshot(h.stack[h.index])
+}
+
+async function redo() {
+  const h = state.history
+  if (!h || h.index >= h.stack.length - 1) return
+  h.index += 1
+  await applyHistorySnapshot(h.stack[h.index])
 }
 
 function saveToStorage() {
@@ -639,9 +717,40 @@ async function pasteClipboard() {
   if ((payload.groups ?? []).length > 0) applyAllGroupStyles()
   refreshTagAtlas()
 
+  // Keep the freshly pasted nodes selected (skip children hidden inside a
+  // collapsed group; their facade represents them and stays selected).
+  const pastedVisible = [...idMap.values()].filter((id) => {
+    const n = editor.getNode(id)
+    if (!n) return false
+    if (n.entry?.kind === 'group') return true
+    if (!n.groupId) return true
+    return !state.groups.get(n.groupId)?.collapsed
+  })
+  selectNodeIds(pastedVisible)
+
   refreshInspector()
   queueValidation()
   queueAutosave()
+}
+
+/** Replace the current selection with exactly `ids`. */
+function selectNodeIds(ids) {
+  const sn = nodeSelection?.selectableNodes
+  if (!sn) return
+  // Clear the current selection through the same API that drives picking, so
+  // selector.isSelected stays in sync (a bare selector.add/remove does not).
+  for (const n of editor.getNodes()) {
+    if (selector?.isSelected({ label: 'node', id: n.id })) sn.unselect(n.id)
+  }
+  let first = null
+  for (const id of ids) {
+    if (!editor.getNode(id)) continue
+    // accumulate=true on every node (we cleared above); a non-accumulating
+    // select replaces the selection, so only the last id would survive.
+    sn.select(id, true)
+    if (first === null) first = id
+  }
+  state.selectedNodeId = first
 }
 
 async function duplicateSelection() {
@@ -852,6 +961,18 @@ async function bootstrap() {
       duplicateSelection()
       return
     }
+    if (mod && key === 'z') {
+      e.preventDefault()
+      if (e.shiftKey) redo()
+      else undo()
+      return
+    }
+    if (mod && key === 'y') {
+      // Windows-style redo.
+      e.preventDefault()
+      redo()
+      return
+    }
     if (mod && key === 'g') {
       e.preventDefault()
       if (e.shiftKey) ungroupFocused()
@@ -867,6 +988,7 @@ async function bootstrap() {
 
   await Promise.all([loadManifest(), loadBlockInfo()])
   await restoreFromAutosave()
+  initHistory()
   queueValidation()
 }
 
@@ -1229,6 +1351,62 @@ function forEachPeerGroup(sourceGid, tag, fn) {
   }
 }
 
+function groupName(g) {
+  return String(g?.name ?? '').trim()
+}
+
+/**
+ * Structural peers must share the same generated subgraph. Codegen keys the
+ * emitted class on the group *name* (two same-name groups collapse to one
+ * class) and the weight-shared instance on the *tag*, so groups that share
+ * EITHER a name or a tag must keep identical internals — otherwise the single
+ * class body is wrong for the other instances. Tag stays the weight-sharing
+ * key; name additionally drives structural sync.
+ */
+function groupsAreStructuralPeers(a, b) {
+  if (!a || !b) return false
+  const an = groupName(a).toLowerCase()
+  const bn = groupName(b).toLowerCase()
+  if (an && an === bn) return true
+  const at = groupTag(a).toLowerCase()
+  const bt = groupTag(b).toLowerCase()
+  return Boolean(at && at === bt)
+}
+
+function groupHasStructuralPeers(groupId) {
+  const src = state.groups.get(groupId)
+  if (!src) return false
+  for (const [gid, g] of state.groups) {
+    if (gid === groupId) continue
+    if (groupsAreStructuralPeers(src, g)) return true
+  }
+  return false
+}
+
+/** Fullest group among `groupId` + its structural peers (the sync source). */
+function canonicalStructuralGroupId(groupId) {
+  const src = state.groups.get(groupId)
+  if (!src) return null
+  let best = groupId
+  let bestCount = getGroupChildren(groupId).length
+  for (const [gid, g] of state.groups) {
+    if (gid === groupId) continue
+    if (!groupsAreStructuralPeers(src, g)) continue
+    const count = getGroupChildren(gid).length
+    if (count > bestCount) {
+      bestCount = count
+      best = gid
+    }
+  }
+  return best
+}
+
+/** Push the fullest structural-peer's layout onto every peer of `groupId`. */
+async function syncStructuralGroupPeers(groupId) {
+  const canonical = canonicalStructuralGroupId(groupId)
+  if (canonical) await syncPeerGroupStructure(canonical)
+}
+
 function applyGroupName(g, name) {
   g.name = name
   const facade = g.facadeNodeId ? editor.getNode(g.facadeNodeId) : null
@@ -1398,11 +1576,11 @@ async function alignGroupBoundary(groupId, signature) {
 }
 
 async function syncPeerGroupBoundaries(sourceGid, signature) {
-  const tag = groupTag(state.groups.get(sourceGid))
-  if (!tag || !signature) return
+  const sourceGroup = state.groups.get(sourceGid)
+  if (!sourceGroup || !signature) return
   for (const [peerGid, peer] of state.groups) {
     if (peerGid === sourceGid) continue
-    if (groupTag(peer).toLowerCase() !== tag.toLowerCase()) continue
+    if (!groupsAreStructuralPeers(sourceGroup, peer)) continue
     await alignGroupBoundary(peerGid, signature)
   }
 }
@@ -1414,17 +1592,6 @@ async function alignTaggedGroupToPeers(gid, tag) {
 }
 
 let syncingPeerGroups = false
-
-function taggedGroupHasPeers(groupId) {
-  const tag = groupTag(state.groups.get(groupId))
-  if (!tag) return false
-  const key = tag.toLowerCase()
-  for (const [gid, g] of state.groups) {
-    if (gid === groupId) continue
-    if (groupTag(g).toLowerCase() === key) return true
-  }
-  return false
-}
 
 function groupChildrenByTag(groupId) {
   const map = new Map()
@@ -1659,8 +1826,7 @@ async function syncPeerGroupStructure(sourceGid) {
   if (syncingPeerGroups || state.restoring) return
   const sourceGroup = state.groups.get(sourceGid)
   if (!sourceGroup) return
-  const tag = groupTag(sourceGroup)
-  if (!tag || !taggedGroupHasPeers(sourceGid)) return
+  if (!groupHasStructuralPeers(sourceGid)) return
 
   syncingPeerGroups = true
   try {
@@ -1669,7 +1835,7 @@ async function syncPeerGroupStructure(sourceGid) {
 
     for (const [peerGid, peerGroup] of state.groups) {
       if (peerGid === sourceGid) continue
-      if (groupTag(peerGroup).toLowerCase() !== tag.toLowerCase()) continue
+      if (!groupsAreStructuralPeers(sourceGroup, peerGroup)) continue
 
       const { map: sourceToPeer, orphanPeerIds } = buildSourceToPeerChildMap(sourceGid, peerGid)
 
@@ -1703,24 +1869,27 @@ async function syncPeerGroupStructure(sourceGid) {
   }
 }
 
-/** Push the fullest tagged group's structure to every instance with that tag. */
+/**
+ * Push the fullest structure onto every group reachable from this tag. Routes
+ * through the structural canonical so same-*name* peers (different tags) sync
+ * too, not just same-tag instances.
+ */
 async function syncAllTaggedGroupInstances(tag) {
-  const canonical = canonicalTaggedGroupId(tag)
-  if (!canonical) return
-  await syncPeerGroupStructure(canonical)
+  const seed = canonicalTaggedGroupId(tag)
+  if (!seed) return
+  await syncStructuralGroupPeers(seed)
 }
 
 async function removePeerChildrenByTags(sourceGid, tagKeys) {
   if (syncingPeerGroups || state.restoring || tagKeys.size === 0) return
   const sourceGroup = state.groups.get(sourceGid)
-  const tag = groupTag(sourceGroup)
-  if (!tag) return
+  if (!sourceGroup || !groupHasStructuralPeers(sourceGid)) return
 
   syncingPeerGroups = true
   try {
     for (const [peerGid, peerGroup] of state.groups) {
       if (peerGid === sourceGid) continue
-      if (groupTag(peerGroup).toLowerCase() !== tag.toLowerCase()) continue
+      if (!groupsAreStructuralPeers(sourceGroup, peerGroup)) continue
 
       const peerByTag = groupChildrenByTag(peerGid)
       for (const key of tagKeys) {
@@ -2171,7 +2340,7 @@ async function addNodesToGroup(groupId, explicitIds) {
     if (s?.groupId === groupId && t?.groupId === groupId) setConnectionHidden(c.id, false)
   }
 
-  await syncPeerGroupStructure(groupId)
+  await syncStructuralGroupPeers(groupId)
 
   refreshInspector()
   queueValidation()
@@ -2283,9 +2452,11 @@ async function collapseGroup(groupId) {
   applyTagStyle(facade)
   for (const child of children) applyTagStyle(child)
   state.selectedNodeId = facade.id
+  // Structural sync keys on name-or-tag; the tag-atlas bookkeeping (weight
+  // sharing) stays gated on a real tag.
+  await syncStructuralGroupPeers(groupId)
   if (tag) {
     const sig = boundarySignatureFromBoundary(boundary)
-    await syncAllTaggedGroupInstances(tag)
     registerGroupMember(state.tagAtlas, group, facade)
     recordGroupMeta(state.tagAtlas, group, { boundarySignature: sig })
   }
@@ -2554,6 +2725,10 @@ function refreshInspector(options = {}) {
           const peer = state.groups.get(peerGid)
           if (peer) applyGroupName(peer, newName)
         }
+        // Renaming may have made this group a structural peer of another
+        // (same name => same generated class), so re-sync their internals.
+        void syncStructuralGroupPeers(gid)
+        queueValidation()
         queueAutosave()
       },
       toggle: (gid) => expandGroupOrCollapse(gid),
@@ -2751,8 +2926,14 @@ if (typeof window !== 'undefined') {
     copySelection,
     pasteClipboard,
     duplicateSelection,
+    initHistory,
+    undo,
+    redo,
+    selectNodeIds,
+    isNodeSelected: (id) => Boolean(selector?.isSelected({ label: 'node', id })),
     applyNodeTag: applyNodeTagOnNode,
     syncPeerGroupStructure,
+    syncStructuralGroupPeers,
     syncAllTaggedGroupInstances,
     refreshTagAtlas,
     get tagAtlasSummary() {

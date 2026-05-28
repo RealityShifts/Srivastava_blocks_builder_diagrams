@@ -781,3 +781,21 @@ main {
   font-size: 12px;
   background: var(--bg);
 }
+/* Line-number gutter for the generated code. The number is generated content
+   (::before), so it is never part of the copied/selected text. */
+#codegen-output {
+  counter-reset: codeline;
+}
+#codegen-output .code-line::before {
+  counter-increment: codeline;
+  content: counter(codeline);
+  display: inline-block;
+  width: 3.5ch;
+  margin-right: 1ch;
+  padding-right: 1ch;
+  border-right: 1px solid var(--line);
+  color: var(--muted, #888);
+  text-align: right;
+  user-select: none;
+  -webkit-user-select: none;
+}
