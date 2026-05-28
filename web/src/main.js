@@ -24,6 +24,7 @@ import {
   POOL_ENTRY,
   UPSAMPLE_ENTRY,
   applyNodeTag,
+  computeNodeLabel,
   colorForTag,
   parseShapeString,
 } from './nodes.js'
@@ -1103,6 +1104,42 @@ function getFacadeNode(groupId) {
   return null
 }
 
+/** Non-empty tag on a group (facade node or persisted facadeTag). */
+function groupTag(g) {
+  if (!g) return ''
+  const facade = g.facadeNodeId ? editor.getNode(g.facadeNodeId) : null
+  return String(g.facadeTag ?? facade?.tag ?? '').trim()
+}
+
+/** Invoke fn(peerGid, peerGroup) for every other group sharing the same tag. */
+function forEachPeerGroup(sourceGid, tag, fn) {
+  const key = String(tag ?? '').trim().toLowerCase()
+  if (!key) return
+  for (const [gid, g] of state.groups) {
+    if (gid === sourceGid) continue
+    if (groupTag(g).toLowerCase() !== key) continue
+    fn(gid, g)
+  }
+}
+
+function applyGroupName(g, name) {
+  g.name = name
+  const facade = g.facadeNodeId ? editor.getNode(g.facadeNodeId) : null
+  if (facade) {
+    facade.entry.name = name
+    facade.label = computeNodeLabel(facade)
+    area.update('node', facade.id)
+    applyTagStyle(facade)
+  }
+  for (const child of getGroupChildren(g.id)) applyTagStyle(child)
+}
+
+function applyGroupTag(g, tag) {
+  g.facadeTag = String(tag ?? '')
+  const facade = g.facadeNodeId ? editor.getNode(g.facadeNodeId) : null
+  if (facade) restoreNodeTag(facade, tag)
+}
+
 /** Inspect every connection and classify it w.r.t. the given child set. */
 function classifyEdges(childIds) {
   const internal = []
@@ -1658,10 +1695,14 @@ function refreshInspector(options = {}) {
     state.runtimeShapes,
     state.blockInfo,
     (n, newTag) => {
+      const oldTag = String(n.tag ?? '').trim()
       applyNodeTag(n, newTag)
       if (n.entry?.kind === 'group') {
-        const g = state.groups.get(n.entry.groupId)
+        const gid = n.entry.groupId
+        const g = state.groups.get(gid)
         if (g) g.facadeTag = String(newTag ?? '')
+        forEachPeerGroup(gid, oldTag, (_peerGid, peer) => applyGroupTag(peer, newTag))
+        applyAllTagStyles()
       }
       area.update('node', n.id)
       applyTagStyle(n)
@@ -1697,22 +1738,22 @@ function refreshInspector(options = {}) {
       setDescription: (gid, value) => {
         const g = state.groups.get(gid)
         if (!g) return
-        g.description = String(value ?? '')
+        const text = String(value ?? '')
+        const tag = groupTag(g)
+        g.description = text
+        forEachPeerGroup(gid, tag, (_peerGid, peer) => {
+          peer.description = text
+        })
         queueAutosave()
       },
       isCollapsed: (gid) => Boolean(state.groups.get(gid)?.collapsed),
       rename: (gid, value) => {
         const g = state.groups.get(gid)
         if (!g) return
-        g.name = String(value ?? '').trim() || g.name
-        const facade = g.facadeNodeId ? editor.getNode(g.facadeNodeId) : null
-        if (facade) {
-          facade.entry.name = g.name
-          facade.label = g.name
-          area.update('node', facade.id)
-          applyTagStyle(facade)
-        }
-        for (const child of getGroupChildren(gid)) applyTagStyle(child)
+        const tag = groupTag(g)
+        const newName = String(value ?? '').trim() || g.name
+        applyGroupName(g, newName)
+        forEachPeerGroup(gid, tag, (_peerGid, peer) => applyGroupName(peer, newName))
         queueAutosave()
       },
       toggle: (gid) => expandGroupOrCollapse(gid),

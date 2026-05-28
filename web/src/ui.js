@@ -344,7 +344,7 @@ function buildGroupInfoPanel(gid, actions) {
   const lead = document.createElement('p')
   lead.className = 'info-desc'
   lead.textContent =
-    'Notes for this subgraph — purpose, wiring expectations, training tips, or anything that helps you (or a collaborator) understand what lives inside.'
+    'Notes for this subgraph. Groups that share the same tag keep name, tag, and description in sync.'
   panel.appendChild(lead)
 
   const title = document.createElement('p')
