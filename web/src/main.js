@@ -73,6 +73,7 @@ const state = {
   selectedNodeId: null,
   lastResult: null,
   runtimeShapes: null,
+  runtimeNumParams: null,
   batchSize: 2,
   runtimeRunning: false,
   runtimeError: null,
@@ -746,6 +747,7 @@ async function bootstrap() {
   document.getElementById('framework-select').addEventListener('change', async (e) => {
     state.framework = e.target.value
     state.runtimeShapes = null
+    state.runtimeNumParams = null
     state.runtimeError = null
     state.runtimeErrorNodeId = null
     await loadManifest()
@@ -796,6 +798,7 @@ async function bootstrap() {
   document.getElementById('batch-size').addEventListener('input', (e) => {
     state.batchSize = Math.max(1, Math.trunc(Number(e.target.value) || 2))
     state.runtimeShapes = null
+    state.runtimeNumParams = null
     state.runtimeError = null
     state.runtimeErrorNodeId = null
     queueValidation()
@@ -900,6 +903,7 @@ async function clearGraph() {
   for (const n of [...editor.getNodes()]) await editor.removeNode(n.id)
   state.selectedNodeId = null
   state.runtimeShapes = null
+  state.runtimeNumParams = null
   state.runtimeError = null
   state.runtimeErrorNodeId = null
   state.groups.clear()
@@ -1147,6 +1151,7 @@ async function deleteSelected() {
   }
   if (ids.has(state.selectedNodeId)) state.selectedNodeId = null
   state.runtimeShapes = null
+  state.runtimeNumParams = null
   state.runtimeError = null
   state.runtimeErrorNodeId = null
   refreshInspector()
@@ -2377,6 +2382,7 @@ function refreshRuntimePanel() {
     lastResult: state.lastResult,
     batchSize: state.batchSize,
     runtimeShapes: state.runtimeShapes,
+    runtimeNumParams: state.runtimeNumParams,
     running: state.runtimeRunning,
     lastError: state.runtimeError,
   })
@@ -2390,11 +2396,13 @@ async function runRuntimeShapeCheck() {
   refreshRuntimePanel()
   applyRuntimeErrorHighlight()
   try {
-    const { shapes } = await runShapeCheck(editor, state.framework, state.batchSize)
+    const { shapes, numParams } = await runShapeCheck(editor, state.framework, state.batchSize)
     state.runtimeShapes = shapes
+    state.runtimeNumParams = numParams
     state.runtimeErrorNodeId = null
   } catch (e) {
     state.runtimeShapes = null
+    state.runtimeNumParams = null
     state.runtimeError = e.message || String(e)
     state.runtimeErrorNodeId = e.nodeId || null
   } finally {
@@ -2415,6 +2423,7 @@ function refreshInspector(options = {}) {
       const n = state.selectedNodeId ? editor.getNode(state.selectedNodeId) : null
       if (n) syncTaggedNodePeers(n)
       state.runtimeShapes = null
+      state.runtimeNumParams = null
       state.runtimeError = null
       state.runtimeErrorNodeId = null
       queueValidation()
@@ -2457,6 +2466,7 @@ function refreshInspector(options = {}) {
       area.update('node', n.id)
       applyTagStyle(n)
       state.runtimeShapes = null
+      state.runtimeNumParams = null
       state.runtimeError = null
       state.runtimeErrorNodeId = null
       queueValidation()

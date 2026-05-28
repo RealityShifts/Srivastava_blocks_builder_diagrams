@@ -19,7 +19,7 @@ Expected payload::
 
 Response::
 
-    {"ok": true, "shapes": {"nodeId/out": [2, 3, 224, 224], ...}}
+    {"ok": true, "shapes": {"nodeId/out": [2, 3, 224, 224], ...}, "num_params": 12345}
 """
 
 from __future__ import annotations
@@ -104,7 +104,8 @@ def run_payload(payload: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(f"traced forward must return dict, got {type(out).__name__}")
 
     shapes = {str(k): [int(d) for d in v] for k, v in out.items()}
-    return {"ok": True, "shapes": shapes}
+    num_params = sum(p.numel() for p in model.parameters())
+    return {"ok": True, "shapes": shapes, "num_params": int(num_params)}
 
 
 class Handler(BaseHTTPRequestHandler):

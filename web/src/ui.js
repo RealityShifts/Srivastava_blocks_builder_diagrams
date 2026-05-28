@@ -729,7 +729,20 @@ export function wireCodeDialog() {
   })
 }
 
-export function updateRuntimePanel({ framework, lastResult, batchSize, runtimeShapes, running, lastError }) {
+function formatParamCount(n) {
+  if (n == null || !Number.isFinite(n)) return null
+  return Number(n).toLocaleString('en-US')
+}
+
+export function updateRuntimePanel({
+  framework,
+  lastResult,
+  batchSize,
+  runtimeShapes,
+  runtimeNumParams,
+  running,
+  lastError,
+}) {
   const btn = document.getElementById('run-shapes-btn')
   const status = document.getElementById('runtime-status')
   const batchInput = document.getElementById('batch-size')
@@ -758,7 +771,9 @@ export function updateRuntimePanel({ framework, lastResult, batchSize, runtimeSh
     status.textContent = lastError
     status.className = 'err'
   } else if (runtimeShapes?.size) {
-    status.textContent = `Runtime shapes captured for ${runtimeShapes.size} port(s).`
+    const ports = `Runtime shapes captured for ${runtimeShapes.size} port(s).`
+    const params = formatParamCount(runtimeNumParams)
+    status.textContent = params != null ? `${ports} ${params} parameter(s).` : ports
     status.className = 'ok'
   } else if (!(lastResult?.ok ?? false)) {
     status.textContent = 'Fix graph errors before running.'

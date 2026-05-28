@@ -169,5 +169,9 @@ export async function runShapeCheck(editor, framework, batchSize = 2) {
     throw err
   }
   const shapes = new Map(Object.entries(body.shapes ?? {}))
-  return { shapes, payload }
+  const numParams =
+    typeof body.num_params === 'number' && Number.isFinite(body.num_params)
+      ? Math.trunc(body.num_params)
+      : null
+  return { shapes, numParams, payload }
 }

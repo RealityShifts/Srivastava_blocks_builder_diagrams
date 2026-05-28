@@ -69,6 +69,7 @@ try {
   const body = await res.json()
   check('runner HTTP 200', res.ok, body)
   check('conv output spatial dims computed', body.shapes?.['c1/out']?.join(' ') === '2 16 32 32', body.shapes)
+  check('runner reports num_params', typeof body.num_params === 'number' && body.num_params > 0, body.num_params)
 
   // 3. UI button path via __blocks
   await page.goto(process.env.URL || 'http://127.0.0.1:5173/', { waitUntil: 'networkidle0' })
@@ -93,9 +94,11 @@ try {
       conv: window.__blocks.state.runtimeShapes?.get(
         `${window.__blocks.editor.getNodes()[1].id}/out`
       ),
+      numParams: window.__blocks.state.runtimeNumParams,
       err: window.__blocks.state.runtimeError,
     }))
     check('UI runtime check captured conv shape', rt.conv?.join(' ') === '2 16 32 32', rt)
+    check('UI runtime check reports parameter count', typeof rt.numParams === 'number' && rt.numParams > 0, rt)
   } else {
     console.log('  skip UI test (dev server not running on 5173)')
   }
