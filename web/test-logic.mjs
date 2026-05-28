@@ -1,7 +1,7 @@
 // Quick smoke test of the pure-JS modules (no rete / DOM needed).
 import { normalize, freshen, prettyShape } from './src/shape.js'
 import { unifyShape, UnifyError } from './src/unify.js'
-import { generate } from './src/codegen.js'
+import { generate, inputForwardArgName } from './src/codegen.js'
 import {
   parseEinopsPattern,
   parseLengthsString,
@@ -272,6 +272,42 @@ console.log('codegen jaxtyping annotations')
     /def forward\(self, x: Shaped\[Tensor, "\.\.\."\]\)/.test(code2),
     code2
   )
+
+  // Input tag becomes forward arg when name is still the default `x`.
+  check(
+    'inputForwardArgName prefers custom name over tag',
+    inputForwardArgName({ values: { name: 'rgb' }, tag: 'stem' }) === 'rgb'
+  )
+  check(
+    'inputForwardArgName uses tag when name is default x',
+    inputForwardArgName({ values: { name: 'x' }, tag: 'stem' }) === 'stem'
+  )
+  check(
+    'inputForwardArgName uses tag when name is empty',
+    inputForwardArgName({ values: { name: '' }, tag: 'images' }) === 'images'
+  )
+  const mkTagged = (id, entry, values = {}, tag = '') => ({
+    id,
+    entry,
+    tag,
+    values: {
+      ...Object.fromEntries(entry.ctor.map((p) => [p.name, p.default])),
+      ...values,
+    },
+  })
+  const inpTag = mkTagged('inpT', inputEntry, { name: 'x', shape: 'B 3 224 224', dtype: 'float' }, 'images')
+  const cTag = mk('cTag', conv, { in_ch: 3, out_ch: 16 })
+  const codeTag = generate(
+    [inpTag, cTag],
+    [{ source: 'inpT', sourceOutput: 'out', target: 'cTag', targetInput: 'x' }],
+    'pytorch'
+  )
+  check(
+    'codegen forward arg uses Input tag when name is x',
+    /def forward\(self, images: Float\[Tensor, "B 3 224 224"\]\)/.test(codeTag),
+    codeTag
+  )
+  check('codegen wires tagged Input arg into block', /self\.conv_block_1\(x=images\)/.test(codeTag), codeTag)
 
   // Multi-output return -> tuple[...]
   const fork = {

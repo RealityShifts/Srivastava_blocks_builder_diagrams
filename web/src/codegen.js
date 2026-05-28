@@ -66,6 +66,18 @@ export function sanitizePyIdent(raw, fallback = 'x') {
   return out || fallback
 }
 
+/**
+ * Python forward() argument for an Input node. A custom `name` (when not the
+ * default `x`) wins; otherwise a non-empty tag is used; else `x`.
+ */
+export function inputForwardArgName(node) {
+  const rawName = String(node.values?.name ?? '').trim()
+  if (rawName && rawName !== 'x') return sanitizePyIdent(rawName, 'x')
+  const tag = sanitizePyIdent(node.tag ?? '', '')
+  if (tag) return tag
+  return sanitizePyIdent(rawName, 'x')
+}
+
 // ---------------------------------------------------------------------------
 // jaxtyping annotations
 //
@@ -178,7 +190,7 @@ export function planGraph(nodes, connections) {
   const inputArgFor = new Map()
   for (const n of ordered) {
     if (n.entry.kind === 'input') {
-      inputArgFor.set(n.id, allocLocal(sanitizePyIdent(n.values?.name, 'x')))
+      inputArgFor.set(n.id, allocLocal(inputForwardArgName(n)))
     }
   }
 
