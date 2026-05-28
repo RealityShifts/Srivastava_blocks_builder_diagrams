@@ -606,30 +606,20 @@ async function pasteClipboard() {
     const newGid = gidMap.get(spec.groupId) ?? freshGroupId()
     if (!gidMap.has(spec.groupId)) gidMap.set(spec.groupId, newGid)
     const portMap = spec.portMap || { inputs: [], outputs: [] }
-    // Derive the proxied port's dtype from the freshly-cloned child (as
-    // computeBoundary does) instead of hardcoding 'any'. Otherwise a pasted
-    // facade's interface (dtype 'any') differs from the original's (e.g.
-    // 'float'), tripping the weight-shared boundary check until the next
-    // structural action re-derives the boundary.
-    const childPortDtype = (childNodeId, childPort, dir) => {
-      const child = editor.getNode(childNodeId)
-      if (!child) return 'any'
-      const live =
-        dir === 'in' ? child.inputs?.[childPort] : child.outputs?.[childPort]
-      if (live?.portSpec?.dtype) return live.portSpec.dtype
-      const decl = (dir === 'in' ? child.entry?.inputs : child.entry?.outputs)?.find(
-        (p) => p.name === childPort
-      )
-      return decl?.dtype ?? 'any'
-    }
+    // Derive each proxied port's dtype + optional from the freshly-cloned child
+    // (as computeBoundary does) instead of hardcoding 'any'/required. Otherwise
+    // a pasted facade's interface differs from the original's, and optional
+    // child ports (e.g. an attention mask) become mandatory forward() args.
     const boundary = {
       inputs: (portMap.inputs || []).map((m) => {
         const childNodeId = idMap.get(m.childNodeId) ?? m.childNodeId
+        const iface = childPortInterface(childNodeId, m.childPort, 'in')
         return {
           childNodeId,
           childPort: m.childPort,
           shape: m.shape,
-          dtype: childPortDtype(childNodeId, m.childPort, 'in'),
+          dtype: iface.dtype,
+          optional: iface.optional,
         }
       }),
       outputs: (portMap.outputs || []).map((m) => {
@@ -638,7 +628,7 @@ async function pasteClipboard() {
           childNodeId,
           childPort: m.childPort,
           shape: m.shape,
-          dtype: childPortDtype(childNodeId, m.childPort, 'out'),
+          dtype: childPortInterface(childNodeId, m.childPort, 'out').dtype,
         }
       }),
       params: (portMap.params || []).map((m) => ({
@@ -1134,23 +1124,30 @@ async function importGraph(data) {
   // Phase C: facade nodes, rebuilt from saved portMap with remapped child ids.
   for (const spec of facadeSpecs) {
     const portMap = spec?.portMap || { inputs: [], outputs: [] }
-    const remap = (m) => ({
-      ...m,
-      childNodeId: idMap.get(m.childNodeId) ?? m.childNodeId,
-    })
+    // Derive dtype + optional from the real child port; the saved portMap only
+    // carries shape, so a bare rebuild would force every input required and
+    // dtype 'any' (e.g. an optional attention mask becoming a required arg).
     const boundary = {
-      inputs: (portMap.inputs || []).map((m) => ({
-        childNodeId: idMap.get(m.childNodeId) ?? m.childNodeId,
-        childPort: m.childPort,
-        shape: m.shape,
-        dtype: 'any',
-      })),
-      outputs: (portMap.outputs || []).map((m) => ({
-        childNodeId: idMap.get(m.childNodeId) ?? m.childNodeId,
-        childPort: m.childPort,
-        shape: m.shape,
-        dtype: 'any',
-      })),
+      inputs: (portMap.inputs || []).map((m) => {
+        const childNodeId = idMap.get(m.childNodeId) ?? m.childNodeId
+        const iface = childPortInterface(childNodeId, m.childPort, 'in')
+        return {
+          childNodeId,
+          childPort: m.childPort,
+          shape: m.shape,
+          dtype: iface.dtype,
+          optional: iface.optional,
+        }
+      }),
+      outputs: (portMap.outputs || []).map((m) => {
+        const childNodeId = idMap.get(m.childNodeId) ?? m.childNodeId
+        return {
+          childNodeId,
+          childPort: m.childPort,
+          shape: m.shape,
+          dtype: childPortInterface(childNodeId, m.childPort, 'out').dtype,
+        }
+      }),
       params: (portMap.params || []).map((m) => ({
         childNodeId: idMap.get(m.childNodeId) ?? m.childNodeId,
         childPort: m.childPort,
@@ -1940,6 +1937,27 @@ function classifyEdges(childIds) {
  * Exposing dangling ports means the group's interface always covers every
  * receiver/outlet a child needs/produces, even before the user wires it.
  */
+/**
+ * Read a child port's interface (dtype + optional) the same way computeBoundary
+ * does, for rebuilding a facade boundary from a saved portMap. The portMap only
+ * stores shape, so without this a rebuilt facade would default every input to
+ * required/dtype 'any' — turning optional child ports (e.g. an attention mask)
+ * into mandatory forward() args.
+ */
+function childPortInterface(childNodeId, childPort, dir) {
+  const child = editor.getNode(childNodeId)
+  const live = dir === 'in' ? child?.inputs?.[childPort] : child?.outputs?.[childPort]
+  const spec =
+    live?.portSpec ??
+    (dir === 'in' ? child?.entry?.inputs : child?.entry?.outputs)?.find(
+      (p) => p.name === childPort
+    )
+  return {
+    dtype: spec?.dtype ?? 'any',
+    optional: dir === 'in' ? Boolean(spec?.optional) : false,
+  }
+}
+
 function computeBoundary(childIds, sub) {
   const { inputBoundary, outputBoundary, internal } = classifyEdges(childIds)
   const inputs = []

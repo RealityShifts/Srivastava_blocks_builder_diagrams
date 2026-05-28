@@ -704,7 +704,18 @@ function emitClassBody(lines, nodes, connections, framework, className, classNam
         usedDtypes,
       })
 
-  const annotatedArgs = inputArgs.map((name, i) => `${name}: ${argAnnotations[i]}`)
+  // Optional facade inputs get a `= None` default so callers may omit them.
+  // Python requires defaulted params to be a suffix, so only the trailing run
+  // of optional inputs is defaulted; an optional input that precedes a required
+  // one stays positional (rare, but keeps the signature syntactically valid).
+  const canDefault = inputNodes.map(() => false)
+  for (let i = inputNodes.length - 1; i >= 0; i--) {
+    if (!inputNodes[i]?.values?.optional) break
+    canDefault[i] = true
+  }
+  const annotatedArgs = inputArgs.map(
+    (name, i) => `${name}: ${argAnnotations[i]}${canDefault[i] ? ' = None' : ''}`
+  )
   const fwdName = framework === 'pytorch' ? 'forward' : '__call__'
   const sigHead = `    def ${fwdName}(self${annotatedArgs.length ? ', ' + annotatedArgs.join(', ') : ''})`
   lines.push(returnAnno ? `${sigHead} -> ${returnAnno}:` : `${sigHead}:`)
@@ -1340,7 +1351,10 @@ function buildSubgraphView(facade, children, internalConnections) {
         ],
         bindings: {},
       },
-      { name: `in${i}`, shape: '', dtype: 'any' }
+      // Carry the facade port's optionality so the subclass forward() can give
+      // it a `= None` default (an optional child port, e.g. an attention mask,
+      // must not become a required positional arg of the generated class).
+      { name: `in${i}`, shape: '', dtype: 'any', optional: Boolean(facade.entry?.inputs?.[i]?.optional) }
     )
   )
   const virtualOutputs = outputs.map((m, i) =>
