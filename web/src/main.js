@@ -56,8 +56,8 @@ const state = {
   runtimeErrorNodeId: null,
   restoring: false, // true while restoreFromAutosave is mutating the editor
   clipboard: null, // in-memory copy of last copy/duplicate (mirrors localStorage)
-  // groupId -> { id, name, description, collapsed, facadeNodeId, portMap, savedPosition,
-  //              childOffsets }
+  // groupId -> { id, name, description, facadeTag, collapsed, facadeNodeId, portMap,
+  //              savedPosition, childOffsets }
   // See groupSelected/expandGroup/collapseGroup for the lifecycle. The portMap
   // is the source of truth used by validator and codegen to "see through" a
   // collapsed facade back to its underlying child ports. childOffsets is
@@ -213,6 +213,13 @@ function applyTagStyle(node) {
 
 function applyAllTagStyles() {
   for (const n of editor.getNodes()) applyTagStyle(n)
+}
+
+function restoreNodeTag(node, tag) {
+  if (typeof tag !== 'string' || !tag) return
+  applyNodeTag(node, tag)
+  area.update('node', node.id)
+  applyTagStyle(node)
 }
 
 function isParamInput(node, inputName) {
@@ -399,6 +406,7 @@ function copySelection() {
       id: g.id,
       name: g.name,
       description: g.description ?? '',
+      tag: g.facadeTag ?? editor.getNode(g.facadeNodeId)?.tag ?? '',
       collapsed: g.collapsed,
       facadeNodeId: g.facadeNodeId,
       savedPosition: g.savedPosition,
@@ -465,9 +473,7 @@ async function pasteClipboard() {
       node.exposeParam?.(p)
     }
     if (typeof spec.tag === 'string' && spec.tag) {
-      applyNodeTag(node, spec.tag)
-      area.update('node', node.id)
-      applyTagStyle(node)
+      restoreNodeTag(node, spec.tag)
     }
     if (spec.groupId && gidMap.has(spec.groupId)) {
       node.groupId = gidMap.get(spec.groupId)
@@ -512,9 +518,7 @@ async function pasteClipboard() {
     }
     markFacadeElement(facade.id)
     if (typeof spec.tag === 'string' && spec.tag) {
-      applyNodeTag(facade, spec.tag)
-      area.update('node', facade.id)
-      applyTagStyle(facade)
+      restoreNodeTag(facade, spec.tag)
     }
     idMap.set(spec.id, facade.id)
   }
@@ -529,6 +533,7 @@ async function pasteClipboard() {
       id: newGid,
       name: g.name || 'Group',
       description: g.description ?? '',
+      facadeTag: g.tag ?? facade?.tag ?? '',
       collapsed: Boolean(g.collapsed),
       facadeNodeId: newFacadeId ?? null,
       portMap: facade?.entry?.portMap ?? { inputs: [], outputs: [] },
@@ -917,9 +922,7 @@ async function importGraph(data) {
       node.exposeParam?.(p)
     }
     if (typeof spec?.tag === 'string' && spec.tag) {
-      applyNodeTag(node, spec.tag)
-      area.update('node', node.id)
-      applyTagStyle(node)
+      restoreNodeTag(node, spec.tag)
     }
     if (typeof spec?.groupId === 'string') {
       node.groupId = spec.groupId
@@ -965,6 +968,9 @@ async function importGraph(data) {
         : undefined
     if (pos) await area.translate(facade.id, pos)
     markFacadeElement(facade.id)
+    if (typeof spec?.tag === 'string' && spec.tag) {
+      restoreNodeTag(facade, spec.tag)
+    }
     idMap.set(spec.id, facade.id)
   }
 
@@ -978,6 +984,7 @@ async function importGraph(data) {
       id: g.id,
       name: g.name || 'Group',
       description: g.description ?? '',
+      facadeTag: g.tag ?? facade?.tag ?? '',
       collapsed: Boolean(g.collapsed),
       facadeNodeId: newFacadeId ?? null,
       portMap: facade?.entry?.portMap ?? { inputs: [], outputs: [] },
@@ -1016,6 +1023,7 @@ async function importGraph(data) {
 
   // Phase F: apply collapsed-state CSS so hidden children stay hidden.
   applyAllGroupStyles()
+  applyAllTagStyles()
 
   queueValidation()
   return {
@@ -1346,6 +1354,7 @@ async function groupSelected(explicitIds) {
     id: groupId,
     name,
     description: '',
+    facadeTag: '',
     collapsed: true,
     facadeNodeId: facade.id,
     portMap: facadeEntry.portMap,
@@ -1411,6 +1420,7 @@ async function expandGroup(groupId) {
 
   // Drop the facade node + its incident connections to it that didn't reroute.
   if (facade) {
+    group.facadeTag = String(facade.tag ?? group.facadeTag ?? '')
     for (const c of [...editor.getConnections()]) {
       if (c.source === facade.id || c.target === facade.id) {
         await editor.removeConnection(c.id)
@@ -1455,6 +1465,7 @@ async function collapseGroup(groupId) {
   await editor.addNode(facade)
   await area.translate(facade.id, center)
   markFacadeElement(facade.id)
+  if (group.facadeTag) restoreNodeTag(facade, group.facadeTag)
 
   group.facadeNodeId = facade.id
   group.portMap = facadeEntry.portMap
@@ -1648,6 +1659,10 @@ function refreshInspector(options = {}) {
     state.blockInfo,
     (n, newTag) => {
       applyNodeTag(n, newTag)
+      if (n.entry?.kind === 'group') {
+        const g = state.groups.get(n.entry.groupId)
+        if (g) g.facadeTag = String(newTag ?? '')
+      }
       area.update('node', n.id)
       applyTagStyle(n)
       state.runtimeShapes = null
@@ -1828,15 +1843,19 @@ function getGraphData() {
       target: c.target,
       targetInput: c.targetInput,
     })),
-    groups: [...state.groups.values()].map((g) => ({
-      id: g.id,
-      name: g.name,
-      description: g.description ?? '',
-      collapsed: g.collapsed,
-      facadeNodeId: g.facadeNodeId,
-      savedPosition: g.savedPosition,
-      childOffsets: g.childOffsets ?? {},
-    })),
+    groups: [...state.groups.values()].map((g) => {
+      const facade = g.facadeNodeId ? editor.getNode(g.facadeNodeId) : null
+      return {
+        id: g.id,
+        name: g.name,
+        description: g.description ?? '',
+        tag: facade?.tag ?? g.facadeTag ?? '',
+        collapsed: g.collapsed,
+        facadeNodeId: g.facadeNodeId,
+        savedPosition: g.savedPosition,
+        childOffsets: g.childOffsets ?? {},
+      }
+    }),
   }
 }
 
