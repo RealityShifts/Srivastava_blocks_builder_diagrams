@@ -117,6 +117,23 @@ try {
     return JSON.parse(raw).graph.nodes[1].values.out_ch
   })
   check('value edit re-saved via runValidation→autosave path', persisted === 64, persisted)
+
+  // Quick refresh: queue autosave but flush immediately (simulates pagehide)
+  // without waiting the 800ms debounce — graph must still survive reload.
+  await page.evaluate(async () => {
+    await window.__blocks.clearGraph()
+    const a = await window.__blocks.createNode('ConvBlock')
+    a.values.in_ch = 7
+    a.values.out_ch = 8
+    window.__blocks.queueAutosave()
+    window.__blocks.flushAutosave()
+  })
+  await page.reload({ waitUntil: 'networkidle0' })
+  await page.waitForFunction(() => window.__blocks.editor.getNodes().length === 1)
+  const quick = await page.evaluate(() => ({
+    in_ch: window.__blocks.editor.getNodes()[0].values.in_ch,
+  }))
+  check('flushAutosave survives immediate reload', quick.in_ch === 7, quick)
 } catch (e) {
   console.error('TEST FAILED:', e.stack)
   fail++
