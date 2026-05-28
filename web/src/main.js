@@ -243,9 +243,21 @@ function applyAllTagStyles() {
   for (const n of editor.getNodes()) applyTagStyle(n)
 }
 
+function persistGroupFacadeTag(group, tag) {
+  if (!group) return
+  group.facadeTag = String(tag ?? '').trim()
+}
+
+function applyNodeTagOnNode(node, tag) {
+  applyNodeTag(node, tag)
+  if (isGroupFacade(node)) {
+    persistGroupFacadeTag(state.groups.get(node.entry.groupId), tag)
+  }
+}
+
 function restoreNodeTag(node, tag) {
   if (typeof tag !== 'string' || !tag) return
-  applyNodeTag(node, tag)
+  applyNodeTagOnNode(node, tag)
   area.update('node', node.id)
   applyTagStyle(node)
 }
@@ -1088,6 +1100,18 @@ async function deleteSelected() {
   if (ids.size === 0 && state.selectedNodeId) ids.add(state.selectedNodeId)
   if (ids.size === 0) return
 
+  const peerChildRemovals = new Map()
+  for (const id of ids) {
+    const n = editor.getNode(id)
+    if (!n?.groupId || isGroupFacade(n)) continue
+    const childKey = nodeTagKey(n.tag)
+    if (!childKey) continue
+    const g = state.groups.get(n.groupId)
+    if (!g || !groupTag(g)) continue
+    if (!peerChildRemovals.has(n.groupId)) peerChildRemovals.set(n.groupId, new Set())
+    peerChildRemovals.get(n.groupId).add(childKey)
+  }
+
   // Facades: cascade-delete. Removing a group drops everything it contains
   // along with it (matches the "folder" mental model). To keep children
   // alive after dropping the group, use Ungroup instead.
@@ -1113,6 +1137,13 @@ async function deleteSelected() {
     }
     selector?.remove({ label: 'node', id })
     await editor.removeNode(id)
+  }
+  for (const [sourceGid, tagKeys] of peerChildRemovals) {
+    await removePeerChildrenByTags(sourceGid, tagKeys)
+  }
+  for (const sourceGid of peerChildRemovals.keys()) {
+    const tag = groupTag(state.groups.get(sourceGid))
+    if (tag) await syncAllTaggedGroupInstances(tag)
   }
   if (ids.has(state.selectedNodeId)) state.selectedNodeId = null
   state.runtimeShapes = null
@@ -1155,7 +1186,9 @@ function getFacadeNode(groupId) {
 function groupTag(g) {
   if (!g) return ''
   const facade = g.facadeNodeId ? editor.getNode(g.facadeNodeId) : null
-  return String(g.facadeTag ?? facade?.tag ?? '').trim()
+  const tag = String(g.facadeTag ?? facade?.tag ?? '').trim()
+  if (tag && !g.facadeTag) persistGroupFacadeTag(g, tag)
+  return tag
 }
 
 /** Invoke fn(peerGid, peerGroup) for every other group sharing the same tag. */
@@ -1348,16 +1381,329 @@ async function syncPeerGroupBoundaries(sourceGid, signature) {
 }
 
 async function alignTaggedGroupToPeers(gid, tag) {
-  const existing = findPeerGroupWithTag(gid, tag)
-  if (existing) {
-    const sig = groupBoundarySignature(existing.g)
-    if (sig) await alignGroupBoundary(gid, sig)
-  } else {
-    const sig = groupBoundarySignature(state.groups.get(gid))
-    if (sig) await syncPeerGroupBoundaries(gid, sig)
-  }
+  await syncAllTaggedGroupInstances(tag)
   queueValidation()
   queueAutosave()
+}
+
+let syncingPeerGroups = false
+
+function taggedGroupHasPeers(groupId) {
+  const tag = groupTag(state.groups.get(groupId))
+  if (!tag) return false
+  const key = tag.toLowerCase()
+  for (const [gid, g] of state.groups) {
+    if (gid === groupId) continue
+    if (groupTag(g).toLowerCase() === key) return true
+  }
+  return false
+}
+
+function groupChildrenByTag(groupId) {
+  const map = new Map()
+  for (const n of getGroupChildren(groupId)) {
+    const key = nodeTagKey(n.tag)
+    if (key) map.set(key, n)
+  }
+  return map
+}
+
+/** Topological order of children using only intra-group edges. */
+function topoOrderedGroupChildren(groupId) {
+  const children = getGroupChildren(groupId)
+  if (children.length <= 1) return children
+  const ids = new Set(children.map((n) => n.id))
+  const conns = editor
+    .getConnections()
+    .filter((c) => ids.has(c.source) && ids.has(c.target))
+  const indeg = new Map(children.map((n) => [n.id, 0]))
+  const out = new Map(children.map((n) => [n.id, []]))
+  for (const c of conns) {
+    indeg.set(c.target, (indeg.get(c.target) ?? 0) + 1)
+    out.get(c.source)?.push(c.target)
+  }
+  const queue = [...indeg.entries()].filter(([, d]) => d === 0).map(([id]) => id)
+  const order = []
+  while (queue.length) {
+    const id = queue.shift()
+    order.push(id)
+    for (const tgt of out.get(id) ?? []) {
+      indeg.set(tgt, indeg.get(tgt) - 1)
+      if (indeg.get(tgt) === 0) queue.push(tgt)
+    }
+  }
+  if (order.length !== children.length) return children
+  const byId = new Map(children.map((n) => [n.id, n]))
+  return order.map((id) => byId.get(id)).filter(Boolean)
+}
+
+/**
+ * Map each source child to a peer child: first by matching tag, then by block
+ * name in topo order (covers separately-created groups whose random child tags
+ * differ but topology matches).
+ */
+function buildSourceToPeerChildMap(sourceGid, peerGid) {
+  const map = new Map()
+  const usedPeerIds = new Set()
+  const peerByTag = groupChildrenByTag(peerGid)
+
+  for (const src of getGroupChildren(sourceGid)) {
+    const key = nodeTagKey(src.tag)
+    if (!key) continue
+    const peer = peerByTag.get(key)
+    if (peer && !usedPeerIds.has(peer.id)) {
+      map.set(src.id, peer)
+      usedPeerIds.add(peer.id)
+    }
+  }
+
+  const peerLeftByName = new Map()
+  for (const peer of topoOrderedGroupChildren(peerGid)) {
+    if (usedPeerIds.has(peer.id)) continue
+    const name = peer.entry?.name ?? ''
+    if (!peerLeftByName.has(name)) peerLeftByName.set(name, [])
+    peerLeftByName.get(name).push(peer)
+  }
+
+  for (const src of topoOrderedGroupChildren(sourceGid)) {
+    if (map.has(src.id)) continue
+    const name = src.entry?.name ?? ''
+    const bucket = peerLeftByName.get(name)
+    const peer = bucket?.shift()
+    if (peer) {
+      map.set(src.id, peer)
+      usedPeerIds.add(peer.id)
+    }
+  }
+
+  const orphanPeerIds = getGroupChildren(peerGid)
+    .filter((p) => !usedPeerIds.has(p.id))
+    .map((p) => p.id)
+  return { map, orphanPeerIds }
+}
+
+function canonicalTaggedGroupId(tag) {
+  const key = String(tag ?? '').trim().toLowerCase()
+  if (!key) return null
+  let best = null
+  let bestCount = -1
+  for (const [gid, g] of state.groups) {
+    if (groupTag(g).toLowerCase() !== key) continue
+    const count = getGroupChildren(gid).length
+    if (count > bestCount) {
+      bestCount = count
+      best = gid
+    }
+  }
+  return best
+}
+
+function groupFacadeAnchor(group) {
+  if (!group) return null
+  if (group.collapsed && group.facadeNodeId) {
+    const facade = editor.getNode(group.facadeNodeId)
+    const p = facade && nodePosition(facade)
+    if (p) return p
+  }
+  return group.savedPosition ?? null
+}
+
+function signatureForGroup(groupId) {
+  const g = state.groups.get(groupId)
+  const fromFacade = g && groupBoundarySignature(g)
+  if (fromFacade) return fromFacade
+  const childIds = new Set(getGroupChildren(groupId).map((n) => n.id))
+  return boundarySignatureFromBoundary(computeBoundary(childIds))
+}
+
+function copyExposedParamsFromSource(source, target) {
+  for (const portName of Object.keys(source.inputs ?? {})) {
+    if (!portName.startsWith('__param__')) continue
+    target.exposeParam?.(portName.slice('__param__'.length))
+  }
+}
+
+async function replicateGroupChildToPeer(sourceChild, peerGid, peerGroup, sourceGroup) {
+  const entry = state.byName.get(sourceChild.entry?.name)
+  if (!entry || entry.kind === 'input' || entry.kind === 'output') return null
+
+  const node = makeNode(entry)
+  await editor.addNode(node)
+  if (sourceChild.values) Object.assign(node.values, { ...sourceChild.values })
+  copyNodeValues(sourceChild, node)
+
+  const childTag = String(sourceChild.tag ?? '').trim()
+  if (childTag) restoreNodeTag(node, childTag)
+  else applyNodeTag(node, randomChildTag())
+
+  copyExposedParamsFromSource(sourceChild, node)
+  node.groupId = peerGid
+  registerNodeMember(state.tagAtlas, node)
+
+  const offset = sourceGroup.childOffsets?.[sourceChild.id]
+  const anchor = groupFacadeAnchor(peerGroup) ?? groupFacadeAnchor(sourceGroup)
+  if (offset && anchor) {
+    await area.translate(node.id, { x: anchor.x + offset.dx, y: anchor.y + offset.dy })
+    peerGroup.childOffsets = peerGroup.childOffsets ?? {}
+    peerGroup.childOffsets[node.id] = { dx: offset.dx, dy: offset.dy }
+  } else {
+    const sp = nodePosition(sourceChild)
+    if (sp) await area.translate(node.id, { x: sp.x, y: sp.y })
+  }
+
+  if (peerGroup.collapsed) setNodeHidden(node.id, true)
+  applyTagStyle(node)
+  area.update('node', node.id)
+  return node
+}
+
+async function mirrorInternalEdgesToPeer(sourceGid, peerGid, sourceToPeer) {
+  const peerGroup = state.groups.get(peerGid)
+  for (const c of editor.getConnections()) {
+    const src = editor.getNode(c.source)
+    const tgt = editor.getNode(c.target)
+    if (src?.groupId !== sourceGid || tgt?.groupId !== sourceGid) continue
+
+    const peerSrc = sourceToPeer.get(src.id)
+    const peerTgt = sourceToPeer.get(tgt.id)
+    if (!peerSrc || !peerTgt) continue
+
+    const exists = editor.getConnections().some(
+      (ec) =>
+        ec.source === peerSrc.id &&
+        ec.sourceOutput === c.sourceOutput &&
+        ec.target === peerTgt.id &&
+        ec.targetInput === c.targetInput
+    )
+    if (exists) continue
+
+    const before = new Set(editor.getConnections().map((ec) => ec.id))
+    const ok = await safeAddConnection(peerSrc.id, c.sourceOutput, peerTgt.id, c.targetInput)
+    if (!ok) continue
+    if (!peerGroup?.collapsed) continue
+    const added = editor.getConnections().find((ec) => !before.has(ec.id))
+    if (added) setConnectionHidden(added.id, true)
+  }
+}
+
+async function alignPeerChildToSource(sourceChild, peerChild) {
+  const srcTag = String(sourceChild.tag ?? '').trim()
+  if (srcTag && nodeTagKey(peerChild.tag) !== nodeTagKey(srcTag)) {
+    applyNodeTagOnNode(peerChild, srcTag)
+    registerNodeMember(state.tagAtlas, peerChild)
+  }
+  copyNodeValues(sourceChild, peerChild)
+  copyExposedParamsFromSource(sourceChild, peerChild)
+  area.update('node', peerChild.id)
+  applyTagStyle(peerChild)
+}
+
+async function removePeerGroupChild(peerGid, childId) {
+  const peerGroup = state.groups.get(peerGid)
+  for (const c of [...editor.getConnections()]) {
+    if (c.source === childId || c.target === childId) {
+      await editor.removeConnection(c.id)
+    }
+  }
+  const child = editor.getNode(childId)
+  if (child) unregisterMember(state.tagAtlas, child.tag, childId)
+  await editor.removeNode(childId)
+  if (peerGroup?.childOffsets) delete peerGroup.childOffsets[childId]
+}
+
+/**
+ * Mirror children + internal wiring from one tagged group instance onto every
+ * other group that shares the facade tag (weight-shared subgraph copies).
+ */
+async function syncPeerGroupStructure(sourceGid) {
+  if (syncingPeerGroups || state.restoring) return
+  const sourceGroup = state.groups.get(sourceGid)
+  if (!sourceGroup) return
+  const tag = groupTag(sourceGroup)
+  if (!tag || !taggedGroupHasPeers(sourceGid)) return
+
+  syncingPeerGroups = true
+  try {
+    const sig = signatureForGroup(sourceGid)
+    const sourceChildren = getGroupChildren(sourceGid)
+
+    for (const [peerGid, peerGroup] of state.groups) {
+      if (peerGid === sourceGid) continue
+      if (groupTag(peerGroup).toLowerCase() !== tag.toLowerCase()) continue
+
+      const { map: sourceToPeer, orphanPeerIds } = buildSourceToPeerChildMap(sourceGid, peerGid)
+
+      for (const sourceChild of sourceChildren) {
+        let peerChild = sourceToPeer.get(sourceChild.id)
+        if (!peerChild) {
+          peerChild = await replicateGroupChildToPeer(
+            sourceChild,
+            peerGid,
+            peerGroup,
+            sourceGroup
+          )
+          if (peerChild) sourceToPeer.set(sourceChild.id, peerChild)
+        } else {
+          await alignPeerChildToSource(sourceChild, peerChild)
+        }
+      }
+
+      for (const orphanId of orphanPeerIds) {
+        await removePeerGroupChild(peerGid, orphanId)
+      }
+
+      await mirrorInternalEdgesToPeer(sourceGid, peerGid, sourceToPeer)
+    }
+
+    if (sig) await syncPeerGroupBoundaries(sourceGid, sig)
+  } finally {
+    syncingPeerGroups = false
+    applyAllGroupStyles()
+    applyAllConnectionStyles()
+  }
+}
+
+/** Push the fullest tagged group's structure to every instance with that tag. */
+async function syncAllTaggedGroupInstances(tag) {
+  const canonical = canonicalTaggedGroupId(tag)
+  if (!canonical) return
+  await syncPeerGroupStructure(canonical)
+}
+
+async function removePeerChildrenByTags(sourceGid, tagKeys) {
+  if (syncingPeerGroups || state.restoring || tagKeys.size === 0) return
+  const sourceGroup = state.groups.get(sourceGid)
+  const tag = groupTag(sourceGroup)
+  if (!tag) return
+
+  syncingPeerGroups = true
+  try {
+    for (const [peerGid, peerGroup] of state.groups) {
+      if (peerGid === sourceGid) continue
+      if (groupTag(peerGroup).toLowerCase() !== tag.toLowerCase()) continue
+
+      const peerByTag = groupChildrenByTag(peerGid)
+      for (const key of tagKeys) {
+        const child = peerByTag.get(key)
+        if (!child) continue
+        for (const c of [...editor.getConnections()]) {
+          if (c.source === child.id || c.target === child.id) {
+            await editor.removeConnection(c.id)
+          }
+        }
+        unregisterMember(state.tagAtlas, child.tag, child.id)
+        await editor.removeNode(child.id)
+        if (peerGroup.childOffsets) delete peerGroup.childOffsets[child.id]
+      }
+
+      const sig = signatureForGroup(sourceGid)
+      if (sig) await syncPeerGroupBoundaries(sourceGid, sig)
+    }
+  } finally {
+    syncingPeerGroups = false
+    applyAllGroupStyles()
+    applyAllConnectionStyles()
+  }
 }
 
 /** Inspect every connection and classify it w.r.t. the given child set. */
@@ -1762,6 +2108,7 @@ async function addNodesToGroup(groupId, explicitIds) {
     }
   }
 
+  const anchor = groupFacadeAnchor(group) ?? centroid(getGroupChildren(groupId))
   for (const n of candidates) {
     n.groupId = groupId
     if (!String(n.tag ?? '').trim()) {
@@ -1771,6 +2118,11 @@ async function addNodesToGroup(groupId, explicitIds) {
     registerNodeMember(state.tagAtlas, n)
     setNodeHidden(n.id, false)
     applyTagStyle(n)
+    const p = nodePosition(n)
+    if (p && anchor) {
+      group.childOffsets = group.childOffsets ?? {}
+      group.childOffsets[n.id] = { dx: p.x - anchor.x, dy: p.y - anchor.y }
+    }
   }
 
   for (const c of editor.getConnections()) {
@@ -1778,6 +2130,8 @@ async function addNodesToGroup(groupId, explicitIds) {
     const t = editor.getNode(c.target)
     if (s?.groupId === groupId && t?.groupId === groupId) setConnectionHidden(c.id, false)
   }
+
+  await syncPeerGroupStructure(groupId)
 
   refreshInspector()
   queueValidation()
@@ -1891,7 +2245,7 @@ async function collapseGroup(groupId) {
   state.selectedNodeId = facade.id
   if (tag) {
     const sig = boundarySignatureFromBoundary(boundary)
-    await syncPeerGroupBoundaries(groupId, sig)
+    await syncAllTaggedGroupInstances(tag)
     registerGroupMember(state.tagAtlas, group, facade)
     recordGroupMeta(state.tagAtlas, group, { boundarySignature: sig })
   }
@@ -2070,13 +2424,13 @@ function refreshInspector(options = {}) {
     state.blockInfo,
     async (n, newTag) => {
       const oldTag = String(n.tag ?? '').trim()
-      applyNodeTag(n, newTag)
+      applyNodeTagOnNode(n, newTag)
       if (n.entry?.kind === 'group') {
         const gid = n.entry.groupId
         const g = state.groups.get(gid)
         unregisterMember(state.tagAtlas, oldTag, gid)
         if (g) {
-          g.facadeTag = String(newTag ?? '')
+          persistGroupFacadeTag(g, newTag)
           if (nodeTagKey(newTag)) registerGroupMember(state.tagAtlas, g, n)
         }
         forEachPeerGroup(gid, oldTag, (_peerGid, peer) => applyGroupTag(peer, newTag))
@@ -2352,7 +2706,9 @@ if (typeof window !== 'undefined') {
     copySelection,
     pasteClipboard,
     duplicateSelection,
-    applyNodeTag,
+    applyNodeTag: applyNodeTagOnNode,
+    syncPeerGroupStructure,
+    syncAllTaggedGroupInstances,
     refreshTagAtlas,
     get tagAtlasSummary() {
       return atlasSummary(state.tagAtlas)

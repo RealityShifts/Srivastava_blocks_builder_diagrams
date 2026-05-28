@@ -656,6 +656,92 @@ try {
     dangling.facadeOutputs
   )
 
+  // --- Tagged group instances: adding a child to one mirrors to peers.
+  const peerStructure = await page.evaluate(async () => {
+    const blocks = window.__blocks
+    const ed = blocks.editor
+    await blocks.clearGraph()
+    const a = await blocks.createNode('ConvBlock')
+    a.values.in_ch = 3
+    a.values.out_ch = 16
+    const b = await blocks.createNode('ConvBlock')
+    b.values.in_ch = 16
+    b.values.out_ch = 32
+    await blocks.addConnection(a.id, 'out', b.id, 'x')
+    await blocks.groupNodes([a.id, b.id])
+    await new Promise((r) => setTimeout(r, 20))
+    const gid1 = [...blocks.state.groups.keys()][0]
+    const facade1 = ed.getNodes().find((n) => n.entry.kind === 'group')
+    blocks.applyNodeTag(facade1, 'encoder')
+    blocks.state.selectedNodeId = facade1.id
+    blocks.copySelection()
+    await blocks.pasteClipboard()
+    await new Promise((r) => setTimeout(r, 60))
+    const gids = [...blocks.state.groups.keys()]
+    const gid2 = gids.find((g) => g !== gid1)
+    for (const f of ed.getNodes().filter((n) => n.entry.kind === 'group')) {
+      blocks.applyNodeTag(f, 'encoder')
+    }
+    await blocks.expandGroup(gid1)
+    await new Promise((r) => setTimeout(r, 20))
+    const c = await blocks.createNode('ConvBlock')
+    c.values.in_ch = 32
+    c.values.out_ch = 64
+    const b1 = ed.getNodes().find((n) => n.groupId === gid1 && n.entry.name === 'ConvBlock' && n.values.out_ch === 32)
+    await blocks.addConnection(b1.id, 'out', c.id, 'x')
+    await blocks.addNodesToGroup(gid1, new Set([c.id]))
+    await new Promise((r) => setTimeout(r, 80))
+    return {
+      gid1,
+      gid2,
+      children1: ed.getNodes().filter((n) => n.groupId === gid1).length,
+      children2: ed.getNodes().filter((n) => n.groupId === gid2).length,
+      peerHasOut64: ed
+        .getNodes()
+        .some((n) => n.groupId === gid2 && n.entry.name === 'ConvBlock' && n.values.out_ch === 64),
+    }
+  })
+  check('tagged peer group gains a third child', peerStructure.children2 === 3, peerStructure)
+  check('source group has three children after add', peerStructure.children1 === 3, peerStructure)
+  check('mirrored child keeps ctor values', peerStructure.peerHasOut64, peerStructure)
+
+  // --- Same facade tag on separately-built groups: topo-match + full sync.
+  const separateGroups = await page.evaluate(async () => {
+    const blocks = window.__blocks
+    const ed = blocks.editor
+    await blocks.clearGraph()
+    const buildPair = async () => {
+      const a = await blocks.createNode('ConvBlock')
+      a.values.in_ch = 3
+      a.values.out_ch = 16
+      const b = await blocks.createNode('ConvBlock')
+      b.values.in_ch = 16
+      b.values.out_ch = 32
+      await blocks.addConnection(a.id, 'out', b.id, 'x')
+      await blocks.groupNodes([a.id, b.id])
+      await new Promise((r) => setTimeout(r, 20))
+      return [...blocks.state.groups.keys()][0]
+    }
+    const gid1 = await buildPair()
+    const gid2 = await buildPair()
+    const facades = ed.getNodes().filter((n) => n.entry.kind === 'group')
+    blocks.applyNodeTag(facades[0], 'encoder')
+    blocks.applyNodeTag(facades[1], 'encoder')
+    await blocks.syncAllTaggedGroupInstances('encoder')
+    await new Promise((r) => setTimeout(r, 80))
+    const tags1 = ed.getNodes().filter((n) => n.groupId === gid1).map((n) => n.tag).sort()
+    const tags2 = ed.getNodes().filter((n) => n.groupId === gid2).map((n) => n.tag).sort()
+    return {
+      children1: ed.getNodes().filter((n) => n.groupId === gid1).length,
+      children2: ed.getNodes().filter((n) => n.groupId === gid2).length,
+      tagsMatch: JSON.stringify(tags1) === JSON.stringify(tags2),
+      tags1,
+      tags2,
+    }
+  })
+  check('separate groups align child count after shared facade tag', separateGroups.children1 === 2 && separateGroups.children2 === 2, separateGroups)
+  check('separate groups adopt matching child tags', separateGroups.tagsMatch, separateGroups)
+
   // --- Atlas: edit one tagged node, peers update.
   const atlasSync = await page.evaluate(async () => {
     const blocks = window.__blocks
