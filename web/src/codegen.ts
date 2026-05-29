@@ -411,12 +411,32 @@ export function generate(
   // because the user duplicated a group), the second one reuses the first's
   // class definition rather than emitting a redefinition. Each facade still
   // gets its own `self.<attr> = ClassName()` instance in the main class.
-  const subClassSections: string[] = []
-  const emittedClassNames = new Set<string>()
-  for (const [gid, facade] of facadesByGid) {
+  //
+  // Nested groups mean a class can *contain* another group as a member, so the
+  // inner class must be defined ABOVE the outer one - `self.x = Inner()` runs at
+  // construction time, and `from __future__ import annotations` only defers type
+  // *annotations*, not runtime instantiation. We therefore emit in containment
+  // order (deepest first). The dependency graph is expressed in CLASS NAMES, not
+  // gids, so two same-name groups (weight-shared / duplicated) collapse to a
+  // single class node and a single emission.
+  const gidsForClass = new Map<string, string>() // class name -> one representative gid
+  const classDeps = new Map<string, Set<string>>() // class -> classes it instantiates
+  for (const [gid] of facadesByGid) {
     const cls = classNames.get(gid) as string
-    if (emittedClassNames.has(cls)) continue
-    emittedClassNames.add(cls)
+    if (!gidsForClass.has(cls)) gidsForClass.set(cls, gid)
+    if (!classDeps.has(cls)) classDeps.set(cls, new Set())
+    for (const child of childrenByGid.get(gid) || []) {
+      if (child.entry?.kind === 'group' && child.entry.groupId) {
+        const childCls = classNames.get(child.entry.groupId as string)
+        if (childCls && childCls !== cls) (classDeps.get(cls) as Set<string>).add(childCls)
+      }
+    }
+  }
+  const orderedClasses = topoSortClasses(classDeps)
+  const subClassSections: string[] = []
+  for (const cls of orderedClasses) {
+    const gid = gidsForClass.get(cls) as string
+    const facade = facadesByGid.get(gid) as NodeLike
     const children = childrenByGid.get(gid) || []
     const internals = internalByGid.get(gid) || []
     const view = buildSubgraphView(facade, children, internals)
@@ -1351,8 +1371,13 @@ function partitionByGroup(nodes: NodeLike[], connections: Connection[]): { facad
     internalByGid.set(gid, [])
   }
   const byId = new Map<string, NodeLike>(nodes.map((n) => [n.id, n]))
+  // Membership is recursive: a node belongs to the group named by `node.groupId`
+  // regardless of whether it is itself a facade. A *nested* group facade carries
+  // both `entry.groupId` (its own identity, registered above) and `node.groupId`
+  // (the outer group it is a member of) - so it lands here as a child of the
+  // outer group while still being the facade of its own. A top-level facade has
+  // `node.groupId == null` and is a member of nothing.
   for (const n of nodes) {
-    if (n.entry?.kind === 'group') continue
     if (n.groupId && childrenByGid.has(n.groupId)) {
       ;(childrenByGid.get(n.groupId) as NodeLike[]).push(n)
     }
@@ -1365,6 +1390,29 @@ function partitionByGroup(nodes: NodeLike[], connections: Connection[]): { facad
     }
   }
   return { facadesByGid, childrenByGid, internalByGid }
+}
+
+/**
+ * Order group classes so every class is emitted AFTER the classes it
+ * instantiates as members (deepest containment first). `deps` maps a class name
+ * to the set of class names it contains. Returns a flat list in emit order.
+ * Throws on a containment cycle (structurally impossible in the editor, but a
+ * corrupt file could produce one).
+ */
+function topoSortClasses(deps: Map<string, Set<string>>): string[] {
+  const order: string[] = []
+  const state = new Map<string, 'visiting' | 'done'>()
+  const visit = (cls: string) => {
+    const s = state.get(cls)
+    if (s === 'done') return
+    if (s === 'visiting') throw new Error('graph contains a group-containment cycle')
+    state.set(cls, 'visiting')
+    for (const dep of deps.get(cls) ?? []) visit(dep)
+    state.set(cls, 'done')
+    order.push(cls)
+  }
+  for (const cls of deps.keys()) visit(cls)
+  return order
 }
 
 function groupClassName(facadeName: any, _gid: any): string {

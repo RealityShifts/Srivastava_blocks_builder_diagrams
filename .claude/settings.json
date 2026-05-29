@@ -16,7 +16,10 @@
       "Bash(node test-group-dup-param.ts)",
       "Bash(grep -n \"paramRef.set\\\\|::\\\\${\" /Users/prakhar/Documents/GitHub/Srivastava_blocks_builder/web/src/codegen.ts)",
       "Bash(timeout 120 node test-logic.ts)",
-      "Bash(node test-logic.ts)"
+      "Bash(node test-logic.ts)",
+      "Bash(node test-nested-groups.ts)",
+      "Bash(node test-nested-groups-e2e.ts)",
+      "Bash(node test-groups.ts)"
     ],
     "additionalDirectories": [
       "/tmp"

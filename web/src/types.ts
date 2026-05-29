@@ -121,6 +121,14 @@ export interface Group {
   facadeTag: string
   /** Whether the group is currently collapsed (facade visible, children hidden). */
   collapsed: boolean
+  /**
+   * The outer group this group is nested inside, or `null`/`undefined` when the
+   * group is top-level. This is the durable source of truth for containment:
+   * the facade NODE also carries it as `node.groupId`, but the facade is
+   * destroyed and recreated across collapse/expand cycles, so membership is
+   * tracked here on the group descriptor and re-applied to each new facade.
+   */
+  memberOf?: string | null
   /** Id of the facade node representing this group on the canvas. */
   facadeNodeId: string
   /** Maps facade boundary ports to their inner child ports. */

@@ -1191,7 +1191,35 @@ async function importGraph(data: any) {
     if (typeof spec?.tag === 'string' && spec.tag) {
       restoreNodeTag(facade, spec.tag)
     }
+    // Membership: a nested facade belongs to the outer group named by memberOf.
+    // memberOf is a gid (group identity), which is NOT remapped on import, so it
+    // is restored verbatim. Top-level facades have no memberOf -> groupId null.
+    if (typeof spec?.memberOf === 'string') {
+      facade.groupId = spec.memberOf
+    }
     idMap.set(spec.id, facade.id)
+  }
+
+  // Phase C2: a facade whose portMap referenced ANOTHER facade as a child may
+  // have remapped against an incomplete idMap (facade order is arbitrary). Now
+  // that every facade id is allocated, re-resolve childNodeIds so an outer
+  // group's boundary correctly points at the inner facade's fresh id.
+  for (const spec of facadeSpecs) {
+    const facadeId = idMap.get(spec.id)
+    const facade = facadeId ? editor.getNode(facadeId) : null
+    const pm = (facade as any)?.entry?.portMap
+    const origPm = spec?.portMap
+    if (!pm || !origPm) continue
+    const fix = (arr: any[], orig: any[]) => {
+      for (let i = 0; i < (arr?.length ?? 0); i++) {
+        const oldChild = orig?.[i]?.childNodeId
+        const mapped = oldChild != null ? idMap.get(oldChild) : undefined
+        if (mapped) arr[i].childNodeId = mapped
+      }
+    }
+    fix(pm.inputs, origPm.inputs || [])
+    fix(pm.outputs, origPm.outputs || [])
+    fix(pm.params, origPm.params || [])
   }
 
   // Phase D: rebuild state.groups from the saved descriptors.
@@ -1206,6 +1234,10 @@ async function importGraph(data: any) {
       description: g.description ?? '',
       facadeTag: g.tag ?? facade?.tag ?? '',
       collapsed: Boolean(g.collapsed),
+      // memberOf is a gid (not remapped on import), restored verbatim. Falls
+      // back to the facade's node.groupId in case only the node-level marking
+      // was persisted (older snapshots / mixed sources).
+      memberOf: (typeof g.memberOf === 'string' ? g.memberOf : facade?.groupId) ?? null,
       facadeNodeId: newFacadeId ?? null,
       portMap: facade?.entry?.portMap ?? { inputs: [], outputs: [] },
       savedPosition: g.savedPosition ?? { x: 0, y: 0 },
@@ -2126,23 +2158,47 @@ function markFacadeElement(nodeId: any) {
   el.classList.add('group-facade')
 }
 
+/**
+ * A node is hidden iff ANY ancestor group in its containment chain is collapsed.
+ * Containment chains exist because a group facade may itself be a member of an
+ * outer group (`facade.groupId`). We walk `node.groupId -> that group's facade
+ * -> its groupId -> ...` until we reach a top-level node (no groupId) or hit a
+ * collapsed ancestor. A facade's OWN collapse state does not hide the facade -
+ * the facade IS the collapsed representation of its group; only an *ancestor*
+ * being collapsed hides it.
+ */
+function hasCollapsedAncestor(node: any): boolean {
+  const seen = new Set<string>()
+  let gid = node?.groupId
+  while (gid && !seen.has(gid)) {
+    seen.add(gid)
+    const g = state.groups.get(gid)
+    if (g?.collapsed) return true
+    // Climb to the outer group via the durable descriptor membership. This works
+    // even when the inner group is EXPANDED (its facade node is gone, so we
+    // can't read node.groupId off a facade), which is exactly the case where an
+    // expanded inner group sits inside a collapsed outer one.
+    gid = g?.memberOf ?? null
+  }
+  return false
+}
+
 function applyAllGroupStyles() {
   for (const n of editor.getNodes()) {
     const el = area?.nodeViews?.get(n.id)?.element
     if (!el) continue
     if (isGroupFacade(n)) el.classList.add('group-facade')
     if (n.groupId) {
-      const g = state.groups.get(n.groupId)
-      if (g?.collapsed) el.classList.add('group-hidden')
-      else el.classList.remove('group-hidden')
+      el.classList.toggle('group-hidden', hasCollapsedAncestor(n))
     }
   }
   for (const c of editor.getConnections()) {
     const s = editor.getNode(c.source)
     const t = editor.getNode(c.target)
+    // An internal edge (both endpoints in the same group) is hidden whenever
+    // either endpoint is hidden by a collapsed ancestor.
     if (s?.groupId && s.groupId === t?.groupId) {
-      const g = state.groups.get(s.groupId)
-      setConnectionHidden(c.id, Boolean(g?.collapsed))
+      setConnectionHidden(c.id, hasCollapsedAncestor(s) || hasCollapsedAncestor(t))
     }
   }
 }
@@ -2235,10 +2291,10 @@ async function groupSelected(explicitIds?: any) {
   }
   for (const id of ids) {
     const n = editor.getNode(id)
-    if (isGroupFacade(n)) {
-      flashDiagnostic('Cannot nest a group inside another group (yet)')
-      return
-    }
+    // A group facade CAN be nested into a new outer group: it becomes a member
+    // (node.groupId set) while keeping its own identity (entry.groupId). Only a
+    // facade that is ALREADY a member of another group is rejected, handled by
+    // the n.groupId check below (a top-level facade has groupId === null).
     if (n?.groupId) {
       flashDiagnostic('Some selected nodes are already in a group')
       return
@@ -2253,6 +2309,13 @@ async function groupSelected(explicitIds?: any) {
   const childNodes = [...ids].map((id: any) => editor.getNode(id)).filter(Boolean)
   for (const n of childNodes) {
     n.groupId = groupId
+    // A child that is itself a group facade becomes NESTED: record the
+    // containment on its group descriptor so it survives collapse/expand cycles
+    // (the facade node is recreated each cycle and would otherwise lose it).
+    if (isGroupFacade(n)) {
+      const inner = state.groups.get(n.entry.groupId)
+      if (inner) inner.memberOf = groupId
+    }
     if (!String(n.tag ?? '').trim()) {
       applyNodeTag(n, randomChildTag())
       area.update('node', n.id)
@@ -2442,14 +2505,11 @@ async function expandGroup(groupId: any) {
   group.collapsed = false
 
   // Translate children FIRST, then reveal them - this avoids a one-frame flash
-  // at the stale coordinates.
+  // at the stale coordinates. Visibility is computed by ancestor-walk so a
+  // nested child only reappears if every ancestor group is expanded; an inner
+  // group that is still collapsed shows just its facade, not its descendants.
   await applyChildOffsets(group, facadePos)
-  for (const n of getGroupChildren(groupId)) setNodeHidden(n.id, false)
-  for (const c of editor.getConnections()) {
-    const s = editor.getNode(c.source)
-    const t = editor.getNode(c.target)
-    if (s?.groupId === groupId && t?.groupId === groupId) setConnectionHidden(c.id, false)
-  }
+  applyAllGroupStyles()
 
   refreshInspector()
   queueValidation()
@@ -2485,6 +2545,10 @@ async function collapseGroup(groupId: any) {
   group.facadeNodeId = facade.id
   group.portMap = facadeEntry.portMap
   group.collapsed = true
+  // Re-apply nesting membership to the new facade node (the previous facade,
+  // which carried node.groupId, was destroyed on expand). Codegen and the
+  // visibility ancestor-walk both read node.groupId, so this must be restored.
+  if (group.memberOf) facade.groupId = group.memberOf
   // Refresh offsets - children may have been dragged while the group was
   // expanded, so the previously-captured offsets are stale. captureChildOffsets
   // also writes back group.savedPosition using the facade's *actual* placed
@@ -2493,12 +2557,10 @@ async function collapseGroup(groupId: any) {
 
   await rerouteBoundaryEdges(group, 'to-facade')
 
-  for (const n of children) setNodeHidden(n.id, true)
-  for (const c of editor.getConnections()) {
-    const s = editor.getNode(c.source)
-    const t = editor.getNode(c.target)
-    if (s?.groupId === groupId && t?.groupId === groupId) setConnectionHidden(c.id, true)
-  }
+  // Hide everything under this (now collapsed) group via ancestor-walk; this
+  // also keeps any deeper nested descendants hidden regardless of their own
+  // collapse state.
+  applyAllGroupStyles()
   applyTagStyle(facade)
   for (const child of children) applyTagStyle(child)
   state.selectedNodeId = facade.id
@@ -2894,6 +2956,9 @@ function getGraphData() {
       // Two flavours of "groupId" in the spec, distinguished by `kind`:
       //   - kind === 'group'  -> this is a facade; groupId is its identity
       //   - everything else   -> groupId is "I am a member of group X"
+      // A *nested* facade is both at once: it IS its group (entry.groupId) and
+      // BELONGS TO an outer group (node.groupId). Identity rides on `groupId`
+      // (import feeds it to makeGroupEntry), membership rides on `memberOf`.
       const base: any = {
         id: n.id,
         name: n.entry.name,
@@ -2909,6 +2974,7 @@ function getGraphData() {
       if (n.entry.kind === 'group') {
         base.groupId = n.entry.groupId
         base.portMap = n.entry.portMap
+        if (n.groupId) base.memberOf = n.groupId // nested inside an outer group
       } else if (n.groupId) {
         base.groupId = n.groupId
       }
@@ -2928,6 +2994,7 @@ function getGraphData() {
         description: g.description ?? '',
         tag: facade?.tag ?? g.facadeTag ?? '',
         collapsed: g.collapsed,
+        memberOf: g.memberOf ?? null, // outer group for nested groups
         facadeNodeId: g.facadeNodeId,
         savedPosition: g.savedPosition,
         childOffsets: g.childOffsets ?? {},
