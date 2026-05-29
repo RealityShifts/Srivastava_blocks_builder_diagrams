@@ -16,6 +16,7 @@
     "test:autosave": "node test-autosave.ts",
     "test:tags-clipboard": "node test-tags-clipboard.ts",
     "test:groups": "node test-groups.ts",
+    "test:group-dup-param": "node test-group-dup-param.ts",
     "test:group-copy-cycle": "node test-group-copy-cycle.ts",
     "test:history-paste-select": "node test-history-paste-select.ts",
     "test:group-name-sync": "node test-group-name-sync.ts",

@@ -325,7 +325,7 @@
       {
         "name": "base",
         "type": "float",
-        "default": 10000,
+        "default": 10000.0,
         "required": false
       }
     ],
@@ -1385,7 +1385,7 @@
       {
         "name": "epsilon",
         "type": "float",
-        "default": 0.00001,
+        "default": 1e-05,
         "required": false
       }
     ],
@@ -2477,7 +2477,7 @@
       {
         "name": "gain",
         "type": "float",
-        "default": 1,
+        "default": 1.0,
         "required": false
       }
     ],
@@ -2541,13 +2541,13 @@
       {
         "name": "gain",
         "type": "float",
-        "default": 1,
+        "default": 1.0,
         "required": false
       },
       {
         "name": "lr_mul",
         "type": "float",
-        "default": 1,
+        "default": 1.0,
         "required": false
       }
     ],
@@ -3726,7 +3726,7 @@
       {
         "name": "mlp_ratio",
         "type": "float",
-        "default": 4,
+        "default": 4.0,
         "required": false
       }
     ],
@@ -4625,8 +4625,8 @@
         "name": "grid_range",
         "type": "list",
         "default": [
-          -1,
-          1
+          -1.0,
+          1.0
         ],
         "required": false
       }
@@ -4681,13 +4681,13 @@
       {
         "name": "t0",
         "type": "float",
-        "default": 0,
+        "default": 0.0,
         "required": false
       },
       {
         "name": "t1",
         "type": "float",
-        "default": 1,
+        "default": 1.0,
         "required": false
       }
     ],
@@ -4750,7 +4750,7 @@
       {
         "name": "eps",
         "type": "float",
-        "default": 1e-8,
+        "default": 1e-08,
         "required": false
       }
     ],
@@ -5143,7 +5143,7 @@
       {
         "name": "mlp_ratio",
         "type": "float",
-        "default": 4,
+        "default": 4.0,
         "required": false
       },
       {
@@ -5224,7 +5224,7 @@
       {
         "name": "mlp_ratio",
         "type": "float",
-        "default": 4,
+        "default": 4.0,
         "required": false
       }
     ],
@@ -5479,7 +5479,7 @@
       {
         "name": "scale",
         "type": "float",
-        "default": 1,
+        "default": 1.0,
         "required": false
       }
     ],
@@ -5556,7 +5556,7 @@
       {
         "name": "alpha",
         "type": "float",
-        "default": 8,
+        "default": 8.0,
         "required": false
       }
     ],
@@ -5611,7 +5611,7 @@
       {
         "name": "alpha",
         "type": "float",
-        "default": 16,
+        "default": 16.0,
         "required": false
       }
     ],

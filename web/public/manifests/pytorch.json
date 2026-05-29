@@ -1,5 +1,113 @@
 [
   {
+    "name": "SampleLinearBlock",
+    "module": "custom.sample_block",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_features",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_features",
+        "type": "int",
+        "default": null,
+        "required": true
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "D_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "D_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D_in": "in_features",
+      "D_out": "out_features"
+    }
+  },
+  {
+    "name": "SampleMLPBlock",
+    "module": "custom.sample_block",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_features",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_features",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "hidden_features",
+        "type": "int",
+        "default": 128,
+        "required": false
+      },
+      {
+        "name": "use_residual",
+        "type": "bool",
+        "default": false,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "D_in"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "D_out"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "D_in": "in_features",
+      "D_out": "out_features"
+    }
+  },
+  {
     "name": "AttentionPooling",
     "module": "pytorch_blocks.attention_blocks",
     "framework": "pytorch",
@@ -74,7 +182,7 @@
       {
         "name": "dropout",
         "type": "float",
-        "default": 0,
+        "default": 0.0,
         "required": false
       }
     ],
@@ -198,7 +306,7 @@
       {
         "name": "dropout",
         "type": "float",
-        "default": 0,
+        "default": 0.0,
         "required": false
       },
       {
@@ -337,7 +445,7 @@
       {
         "name": "base",
         "type": "float",
-        "default": 10000,
+        "default": 10000.0,
         "required": false
       }
     ],
@@ -393,7 +501,7 @@
       {
         "name": "dropout",
         "type": "float",
-        "default": 0,
+        "default": 0.0,
         "required": false
       }
     ],
@@ -1342,7 +1450,7 @@
       {
         "name": "eps",
         "type": "float",
-        "default": 0.000001,
+        "default": 1e-06,
         "required": false
       }
     ],
@@ -2356,7 +2464,7 @@
       {
         "name": "gain",
         "type": "float",
-        "default": 1,
+        "default": 1.0,
         "required": false
       }
     ],
@@ -2420,13 +2528,13 @@
       {
         "name": "gain",
         "type": "float",
-        "default": 1,
+        "default": 1.0,
         "required": false
       },
       {
         "name": "lr_mul",
         "type": "float",
-        "default": 1,
+        "default": 1.0,
         "required": false
       }
     ],
@@ -3193,7 +3301,7 @@
       {
         "name": "dropout",
         "type": "float",
-        "default": 0,
+        "default": 0.0,
         "required": false
       },
       {
@@ -3515,7 +3623,7 @@
       {
         "name": "mlp_ratio",
         "type": "float",
-        "default": 4,
+        "default": 4.0,
         "required": false
       }
     ],
@@ -4428,8 +4536,8 @@
         "name": "grid_range",
         "type": "list",
         "default": [
-          -1,
-          1
+          -1.0,
+          1.0
         ],
         "required": false
       }
@@ -4484,13 +4592,13 @@
       {
         "name": "t0",
         "type": "float",
-        "default": 0,
+        "default": 0.0,
         "required": false
       },
       {
         "name": "t1",
         "type": "float",
-        "default": 1,
+        "default": 1.0,
         "required": false
       }
     ],
@@ -4553,7 +4661,7 @@
       {
         "name": "eps",
         "type": "float",
-        "default": 1e-8,
+        "default": 1e-08,
         "required": false
       }
     ],
@@ -4738,7 +4846,7 @@
       {
         "name": "dropout",
         "type": "float",
-        "default": 0,
+        "default": 0.0,
         "required": false
       },
       {
@@ -4797,7 +4905,7 @@
       {
         "name": "dropout",
         "type": "float",
-        "default": 0,
+        "default": 0.0,
         "required": false
       }
     ],
@@ -4911,7 +5019,7 @@
       {
         "name": "dropout",
         "type": "float",
-        "default": 0,
+        "default": 0.0,
         "required": false
       }
     ],
@@ -4964,7 +5072,7 @@
       {
         "name": "mlp_ratio",
         "type": "float",
-        "default": 4,
+        "default": 4.0,
         "required": false
       },
       {
@@ -4976,7 +5084,7 @@
       {
         "name": "dropout",
         "type": "float",
-        "default": 0,
+        "default": 0.0,
         "required": false
       }
     ],
@@ -5051,13 +5159,13 @@
       {
         "name": "mlp_ratio",
         "type": "float",
-        "default": 4,
+        "default": 4.0,
         "required": false
       },
       {
         "name": "dropout",
         "type": "float",
-        "default": 0,
+        "default": 0.0,
         "required": false
       }
     ],
@@ -5312,7 +5420,7 @@
       {
         "name": "scale",
         "type": "float",
-        "default": 1,
+        "default": 1.0,
         "required": false
       }
     ],
@@ -5389,7 +5497,7 @@
       {
         "name": "alpha",
         "type": "float",
-        "default": 8,
+        "default": 8.0,
         "required": false
       }
     ],
@@ -5444,13 +5552,13 @@
       {
         "name": "alpha",
         "type": "float",
-        "default": 16,
+        "default": 16.0,
         "required": false
       },
       {
         "name": "dropout",
         "type": "float",
-        "default": 0,
+        "default": 0.0,
         "required": false
       }
     ],
@@ -5736,7 +5844,7 @@
       {
         "name": "dropout",
         "type": "float",
-        "default": 0,
+        "default": 0.0,
         "required": false
       }
     ],
@@ -6020,7 +6128,7 @@
       {
         "name": "dropout",
         "type": "float",
-        "default": 0,
+        "default": 0.0,
         "required": false
       }
     ],
@@ -6081,7 +6189,7 @@
       {
         "name": "dropout",
         "type": "float",
-        "default": 0,
+        "default": 0.0,
         "required": false
       }
     ],

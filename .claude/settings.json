@@ -10,7 +10,16 @@
       "Bash(pkill -f \"vite.*5174\")",
       "Bash(pkill -f \"vite\")",
       "Bash(python3 -c \"import dis,marshal,importlib.util; f=open\\('models/customblocks/pytorch/__pycache__/smoke_double_linear.cpython-312.pyc','rb'\\); f.read\\(16\\); print\\('cached file exists'\\)\")",
-      "Bash(python3 -m py_compile models/customblocks/pytorch/sample_block.py)"
+      "Bash(python3 -m py_compile models/customblocks/pytorch/sample_block.py)",
+      "Bash(grep -E '\\\\.\\(ts|tsx|py|js\\)$')",
+      "Bash(cp \"/Users/prakhar/Documents/GitHub/Srivastava_blocks_builder/graph-pytorch \\(5\\).json\" /tmp/g.json 2>/dev/null; ls -la \"/Users/prakhar/Documents/GitHub/Srivastava_blocks_builder/\" | grep -i graph)",
+      "Bash(node test-group-dup-param.ts)",
+      "Bash(grep -n \"paramRef.set\\\\|::\\\\${\" /Users/prakhar/Documents/GitHub/Srivastava_blocks_builder/web/src/codegen.ts)",
+      "Bash(timeout 120 node test-logic.ts)",
+      "Bash(node test-logic.ts)"
+    ],
+    "additionalDirectories": [
+      "/tmp"
     ]
   }
 }

@@ -1095,12 +1095,20 @@ function pyTypeForParamDef(paramDef: any, fallbackType: any): string {
   return 'int'
 }
 
-/** Pass wired constants through to a group facade's __init__. */
+/** Pass wired constants through to a group facade's __init__. A facade's
+ *  portMap may list the same paramName more than once (one entry per child
+ *  that shares an exposed param), so dedupe by paramName to avoid emitting a
+ *  repeated keyword argument. */
 function groupCtorArgs(facadeNode: NodeLike, paramRef: Map<string, string>): string[] {
   const out: string[] = []
+  const seen = new Set<string>()
   for (const m of (facadeNode.entry as any)?.portMap?.params ?? []) {
+    if (seen.has(m.paramName)) continue
     const wired = paramRef.get(`${facadeNode.id}::${m.paramName}`)
-    if (wired) out.push(`${m.paramName}=${wired}`)
+    if (wired) {
+      out.push(`${m.paramName}=${wired}`)
+      seen.add(m.paramName)
+    }
   }
   return out
 }
