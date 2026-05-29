@@ -1000,6 +1000,17 @@ function buildCallExpr(node: NodeLike, callArgs: string[], attrName: Map<string,
       padding > 0 ? `((${padding}, ${padding}), (${padding}, ${padding}))` : "'VALID'"
     return `jnp.transpose(${poolFn}(jnp.transpose(${xVar}, (0, 2, 3, 1)), window_shape=(${kernel}, ${kernel}), strides=(${stride}, ${stride}), padding=${pad}), (0, 3, 1, 2))`
   }
+  if (node.entry.kind === 'eltwise') {
+    // Fold the variadic operands with an infix operator. `+`/`*` broadcast
+    // identically in PyTorch and JAX, so the expression is framework-agnostic.
+    const tensors = variadicList(callArgs, 'xs') // e.g. "[a, b, c]"
+    const items = tensors.replace(/^\[|\]$/g, '').trim()
+    const parts = items ? items.split(',').map((s) => s.trim()).filter(Boolean) : []
+    const op = String(node.values?.op ?? 'add') === 'multiply' ? '*' : '+'
+    if (parts.length === 0) return framework === 'pytorch' ? 'None' : 'None'
+    if (parts.length === 1) return parts[0]
+    return `(${parts.join(` ${op} `)})`
+  }
   if (node.entry.kind === 'upsample') {
     const xVar = positionalSource(callArgs, 'x')
     const scale = parseScaleFactor(node.values?.scale_factor, 2)

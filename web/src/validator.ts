@@ -228,9 +228,9 @@ export function validate(editor: GraphEditor): ValidationResult {
     }
   }
 
-  // Concat / Stack need at least two wires on their variadic port.
+  // Concat / Stack / Elementwise need at least two wires on their variadic port.
   for (const n of nodes) {
-    if (n.entry.kind !== 'concat' && n.entry.kind !== 'stack') continue
+    if (n.entry.kind !== 'concat' && n.entry.kind !== 'stack' && n.entry.kind !== 'eltwise') continue
     for (const port of n.entry.inputs) {
       if (!port.variadic) continue
       const count = connections.filter(

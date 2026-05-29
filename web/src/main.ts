@@ -49,6 +49,7 @@ import {
   STACK_ENTRY,
   POOL_ENTRY,
   UPSAMPLE_ENTRY,
+  ELEMENTWISE_ENTRY,
   applyNodeTag,
   applyNodeName,
   computeNodeLabel,
@@ -1038,6 +1039,7 @@ async function loadManifest() {
     STACK_ENTRY,
     POOL_ENTRY,
     UPSAMPLE_ENTRY,
+    ELEMENTWISE_ENTRY,
   ]
   // Built-in / utility names always win. The manifest is auto-generated and
   // historically picked up stale module-kind aliases (e.g. Pool2d, Upsample)

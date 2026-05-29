@@ -589,6 +589,34 @@ export const UPSAMPLE_ENTRY: ManifestEntry = {
 }
 
 /**
+ * Elementwise combine of two or more tensors via `+` (add) or `*` (multiply).
+ * Variadic like Concat/Stack: wire each operand into `xs[*]`. Relies on
+ * PyTorch/JAX broadcasting, so operands need only be broadcast-compatible.
+ */
+export const ELEMENTWISE_ENTRY: ManifestEntry = {
+  name: 'Elementwise',
+  module: '__utility__',
+  framework: 'any',
+  kind: 'eltwise',
+  ctor: [
+    {
+      name: 'op',
+      type: 'str',
+      default: 'add',
+      required: false,
+      choices: ['add', 'multiply'],
+    },
+  ],
+  inputs: [
+    { name: 'xs', shape: ['...'], dtype: 'float', optional: false, variadic: true },
+  ],
+  outputs: [
+    { name: 'out', shape: ['...'], dtype: 'float', optional: false, variadic: false },
+  ],
+  bindings: {},
+}
+
+/**
  * Split one side of an einops pattern into top-level groups. Each output item
  * is either a bare identifier ("b"), the rest token "...", a literal int
  * ("1"), or a normalized parenthesized group ("(h w)"). Throws on unbalanced

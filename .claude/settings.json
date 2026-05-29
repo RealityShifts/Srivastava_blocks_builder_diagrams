@@ -34,7 +34,8 @@
       "Bash(timeout 120 python3 tools/build_manifest.py)",
       "Bash(python3 tools/build_manifest.py)",
       "Bash(node test-bubble-params.ts)",
-      "Bash(node test-tags-clipboard.ts)"
+      "Bash(node test-tags-clipboard.ts)",
+      "Bash(node test-elementwise.ts)"
     ],
     "additionalDirectories": [
       "/tmp",
