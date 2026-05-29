@@ -1,12 +1,13 @@
 /**
- * Tag atlas: a single source of truth for every tagged thing on the canvas.
+ * Tag atlas: a single source of truth for every synced thing on the canvas.
  *
- * A "member" can be either a regular BlockNode (keyed by node.id) or a group
- * (keyed by groupId). Members joined under the same tag-key share the
- * canonical state stored in the atlas entry:
+ * A "member" can be either a regular BlockNode or a group:
  *
- *   - Modules: ctor values + which params are exposed as __param__ ports.
- *   - Groups:  facade name, description, boundary signature.
+ *   - Regular nodes are keyed by their *name* (the editable per-instance name,
+ *     falling back to the block type). Members sharing a name-key share the
+ *     canonical ctor values + which params are exposed as __param__ ports.
+ *   - Groups are keyed by their *tag* (facadeTag). Members sharing a tag-key
+ *     share the facade name, description, and boundary signature.
  *
  * The flow is always:
  *   1. Member mutates its own copy via the inspector.
@@ -16,7 +17,7 @@
  * No DOM / Rete references live here so the module stays test-friendly.
  */
 
-import { nodeTagKey, copyNodeValues } from './tagSync.js'
+import { nodeTagKey, nodeNameKey, copyNodeValues } from './tagSync.js'
 
 /** Family used to decide if two members can be merged under one tag. */
 function memberFamily(node) {
@@ -60,6 +61,13 @@ export function getAtlasEntry(atlas, tag) {
   return atlas.get(key) ?? null
 }
 
+/** Look up the entry a regular node belongs to (keyed by its name). */
+export function getNodeAtlasEntry(atlas, node) {
+  const key = nodeNameKey(node)
+  if (!key) return null
+  return atlas.get(key) ?? null
+}
+
 /**
  * Register a tagged BlockNode against the atlas. Returns the entry the node
  * now belongs to. When the entry was newly created the node's own values
@@ -67,12 +75,12 @@ export function getAtlasEntry(atlas, tag) {
  * expected to apply the canonical values back onto the node.
  */
 export function registerNodeMember(atlas, node) {
-  const key = nodeTagKey(node?.tag)
+  const key = nodeNameKey(node)
   if (!key) return null
   const family = memberFamily(node)
   let entry = atlas.get(key)
   if (!entry || entry.family !== family) {
-    entry = blankEntry(String(node.tag ?? ''), family)
+    entry = blankEntry(key, family)
     entry.blockName = node.entry?.name ?? ''
     entry.values = { ...(node.values ?? {}) }
     entry.exposedParams = exposedParamSet(node)
@@ -117,7 +125,7 @@ export function unregisterMember(atlas, tag, memberId) {
  * params that actually changed (so the caller can decide what to refresh).
  */
 export function adoptValuesFromAtlas(atlas, node) {
-  const entry = getAtlasEntry(atlas, node?.tag)
+  const entry = getNodeAtlasEntry(atlas, node)
   if (!entry) return []
   const changed = []
   if (!node.values) node.values = {}
@@ -132,7 +140,7 @@ export function adoptValuesFromAtlas(atlas, node) {
 
 /** Should the exposed-param set on a freshly-joined node be synced too? */
 export function adoptExposedParamsFromAtlas(atlas, node) {
-  const entry = getAtlasEntry(atlas, node?.tag)
+  const entry = getNodeAtlasEntry(atlas, node)
   if (!entry) return { toExpose: [], toHide: [] }
   const current = exposedParamSet(node)
   const target = entry.exposedParams
@@ -148,7 +156,7 @@ export function adoptExposedParamsFromAtlas(atlas, node) {
  * updated. The new value becomes canonical for the tag key.
  */
 export function recordValueChange(atlas, sourceNode, paramName) {
-  const entry = getAtlasEntry(atlas, sourceNode?.tag)
+  const entry = getNodeAtlasEntry(atlas, sourceNode)
   if (!entry) return []
   entry.values[paramName] = sourceNode.values?.[paramName]
   return [...entry.members].filter((id) => id !== sourceNode.id)
@@ -156,7 +164,7 @@ export function recordValueChange(atlas, sourceNode, paramName) {
 
 /** Bulk-record all ctor values from a node (used when seeding from a peer). */
 export function recordAllValues(atlas, sourceNode) {
-  const entry = getAtlasEntry(atlas, sourceNode?.tag)
+  const entry = getNodeAtlasEntry(atlas, sourceNode)
   if (!entry || !sourceNode?.values) return []
   for (const key of Object.keys(sourceNode.values)) {
     entry.values[key] = sourceNode.values[key]
@@ -169,7 +177,7 @@ export function recordAllValues(atlas, sourceNode) {
  * structural change.
  */
 export function recordExposedParamChange(atlas, sourceNode, paramName, isExposed) {
-  const entry = getAtlasEntry(atlas, sourceNode?.tag)
+  const entry = getNodeAtlasEntry(atlas, sourceNode)
   if (!entry) return []
   if (isExposed) entry.exposedParams.add(paramName)
   else entry.exposedParams.delete(paramName)
@@ -191,7 +199,7 @@ export function rebuildAtlas({ editor, groups, getNode }) {
   const atlas = makeTagAtlas()
   for (const node of editor.getNodes()) {
     if (node?.entry?.kind === 'group') continue // groups go via the groups map
-    if (!nodeTagKey(node.tag)) continue
+    if (!nodeNameKey(node)) continue
     registerNodeMember(atlas, node)
   }
   if (groups) {
@@ -226,4 +234,4 @@ export function atlasSummary(atlas) {
 }
 
 // Re-export for callers that previously imported from tagSync.
-export { nodeTagKey, copyNodeValues }
+export { nodeTagKey, nodeNameKey, copyNodeValues }

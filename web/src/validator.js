@@ -92,10 +92,26 @@ export function validate(editor) {
     if (!tagGroups.has(t)) tagGroups.set(t, [])
     tagGroups.get(t).push(n)
   }
+  // Explicit per-instance name (blank names don't participate in the check -
+  // they neither sync params nor force a shared name).
+  const explicitName = (n) => String(n.name ?? '').trim()
   for (const [tag, group] of tagGroups) {
     if (group.length < 2) continue
     const head = group[0]
     for (const other of group.slice(1)) {
+      // Name implies tag: weight-shared instances that carry explicit names must
+      // share them, since the name both syncs their params and names the single
+      // self.<attr>. (If either name is blank, fall through to the type/ctor
+      // checks below.)
+      const headName = explicitName(head)
+      const otherName = explicitName(other)
+      if (headName && otherName && headName.toLowerCase() !== otherName.toLowerCase()) {
+        errors.push({
+          kind: 'tag-conflict',
+          message: `Tag "${tag}" shared by nodes with different names ("${headName}" vs "${otherName}"). Weight-shared instances must share a name.`,
+        })
+        continue
+      }
       if (other.entry.name !== head.entry.name) {
         errors.push({
           kind: 'tag-conflict',

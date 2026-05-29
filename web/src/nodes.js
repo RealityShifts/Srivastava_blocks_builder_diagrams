@@ -20,9 +20,14 @@ export class BlockNode extends ClassicPreset.Node {
   constructor(entry) {
     super(entry.name)
     this.entry = entry
-    // Free-form user annotation. Doubles as a *weight-sharing identity* for
-    // module-kind nodes: two ConvBlocks tagged "down1" emit one self.down1 in
-    // codegen and call it from each forward-pass site.
+    // Editable per-instance name. Blank means "use the block type" (entry.name).
+    // Drives ctor-param synchronization (same name + same block type keeps params
+    // in lockstep) and the generated Python attribute name (self.<name>).
+    this.name = ''
+    // Free-form user annotation. Acts as the *weight-sharing identity* for
+    // module-kind nodes: two ConvBlocks tagged "down1" emit one self.<name> in
+    // codegen and call it from each forward-pass site. Weight-shared instances
+    // must also share a name (validated), so params line up.
     this.tag = ''
     // null for top-level nodes; set to a groupId for nodes belonging to a
     // subgraph. Group facades themselves carry their own group id under
@@ -126,9 +131,15 @@ function labelFor(port) {
   return `${port.name}${tag}`
 }
 
-/** Display title for a node: "<BlockName>" or "<BlockName> · <tag>". */
+/** Effective node name: the editable name, falling back to the block type. */
+export function nodeName(node) {
+  const n = String(node?.name ?? '').trim()
+  return n || node?.entry?.name || ''
+}
+
+/** Display title for a node: "<name>" or "<name> · <tag>". */
 export function computeNodeLabel(node) {
-  const base = node.entry.name
+  const base = nodeName(node)
   const t = String(node.tag ?? '').trim()
   return t ? `${base} · ${t}` : base
 }
@@ -140,6 +151,15 @@ export function computeNodeLabel(node) {
  */
 export function applyNodeTag(node, newTag) {
   node.tag = String(newTag ?? '')
+  node.label = computeNodeLabel(node)
+}
+
+/**
+ * Update `node.name` and refresh its displayed label in place. Like
+ * `applyNodeTag`, the caller re-renders the rete area afterwards.
+ */
+export function applyNodeName(node, newName) {
+  node.name = String(newName ?? '')
   node.label = computeNodeLabel(node)
 }
 

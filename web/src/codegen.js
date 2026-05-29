@@ -213,10 +213,22 @@ export function planGraph(nodes, connections) {
     }
   }
 
-  // Module- and group-kind nodes sharing a (sanitized, non-empty) tag get the
-  // *same* attribute - that's how weight tying works: one `self.<attr> = ...`
-  // in __init__, multiple call sites in forward. Non-module kinds (input,
-  // learnable, rearrange, reshape) never share.
+  // Attribute naming: the editable per-node name drives `self.<name>`. When no
+  // name is set we fall back to the weight-sharing tag (so a tagged-but-unnamed
+  // node still reads self.<tag>, and group facades - which have no per-instance
+  // name - name their slot after the group tag), and finally to the snake-cased
+  // block type. Module- and group-kind nodes sharing a (sanitized, non-empty)
+  // tag get the *same* attribute - that's how weight tying works: one
+  // `self.<attr> = ...` in __init__, multiple call sites in forward. Weight-
+  // shared instances are validated to share a name, so the first member names
+  // the shared slot. Non-module kinds (input, learnable, ...) never share.
+  const attrBaseFor = (n, i) => {
+    const explicit = String(n.name ?? '').trim()
+    if (explicit) return sanitizePyIdent(explicit, snake(n.entry.name, i))
+    const tag = sanitizePyIdent(n.tag ?? '', '')
+    if (tag) return tag
+    return snake(n.entry.name, i)
+  }
   const attrName = new Map()
   const sharedKeyToAttr = new Map() // tag -> attr name
   ordered.forEach((n, i) => {
@@ -231,12 +243,12 @@ export function planGraph(nodes, connections) {
         : ''
     if (tag) {
       if (!sharedKeyToAttr.has(tag)) {
-        sharedKeyToAttr.set(tag, allocAttr(tag))
+        sharedKeyToAttr.set(tag, allocAttr(attrBaseFor(n, i)))
       }
       attrName.set(n.id, sharedKeyToAttr.get(tag))
       return
     }
-    attrName.set(n.id, allocAttr(snake(n.entry.name, i)))
+    attrName.set(n.id, allocAttr(attrBaseFor(n, i)))
   })
 
   // Local variable per call site - always unique within the forward scope.

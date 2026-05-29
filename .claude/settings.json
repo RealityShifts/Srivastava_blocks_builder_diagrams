@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:5174/)",
+      "Bash(break)",
+      "Bash(node test-input-node.mjs)",
+      "Bash(cp /tmp/smoke-name.mjs ./smoke-name.mjs)",
+      "Bash(node smoke-name.mjs)",
+      "Bash(pkill -f \"vite.*5174\")"
+    ]
+  }
+}

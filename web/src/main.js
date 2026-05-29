@@ -16,7 +16,12 @@ import {
   boundarySignaturesMatch,
   applySignatureToBoundary,
 } from './groupBoundary.js'
-import { copyNodeValues, nodeTagKey, nodesInSameTagFamily } from './tagSync.js'
+import {
+  copyNodeValues,
+  nodeTagKey,
+  nodeNameKey,
+  nodesInSameNameFamily,
+} from './tagSync.js'
 import {
   makeTagAtlas,
   registerNodeMember,
@@ -24,13 +29,12 @@ import {
   unregisterMember,
   adoptValuesFromAtlas,
   adoptExposedParamsFromAtlas,
-  recordValueChange,
   recordAllValues,
   recordExposedParamChange,
   recordGroupMeta,
   rebuildAtlas,
   atlasSummary,
-  getAtlasEntry,
+  getNodeAtlasEntry,
 } from './tagAtlas.js'
 import {
   makeNode,
@@ -46,6 +50,7 @@ import {
   POOL_ENTRY,
   UPSAMPLE_ENTRY,
   applyNodeTag,
+  applyNodeName,
   computeNodeLabel,
   colorForTag,
   parseShapeString,
@@ -341,6 +346,16 @@ function restoreNodeTag(node, tag) {
   applyTagStyle(node)
 }
 
+function applyNodeNameOnNode(node, name) {
+  applyNodeName(node, name)
+}
+
+function restoreNodeName(node, name) {
+  if (typeof name !== 'string' || !name) return
+  applyNodeNameOnNode(node, name)
+  area.update('node', node.id)
+}
+
 function isParamInput(node, inputName) {
   return node?.inputs?.[inputName]?.portSpec?.kind === 'param'
 }
@@ -485,6 +500,7 @@ function copySelection() {
       id: n.id,
       name: n.entry.name,
       kind: n.entry.kind,
+      instanceName: n.name ?? '',
       tag: n.tag ?? '',
       values: { ...n.values },
       position: nodePosition(n),
@@ -590,6 +606,9 @@ async function pasteClipboard() {
     if (spec.values) Object.assign(node.values, spec.values)
     for (const p of spec.exposedParams || []) {
       node.exposeParam?.(p)
+    }
+    if (typeof spec.instanceName === 'string' && spec.instanceName) {
+      restoreNodeName(node, spec.instanceName)
     }
     if (typeof spec.tag === 'string' && spec.tag) {
       restoreNodeTag(node, spec.tag)
@@ -1112,6 +1131,9 @@ async function importGraph(data) {
     for (const p of spec?.exposedParams || []) {
       node.exposeParam?.(p)
     }
+    if (typeof spec?.instanceName === 'string' && spec.instanceName) {
+      restoreNodeName(node, spec.instanceName)
+    }
     if (typeof spec?.tag === 'string' && spec.tag) {
       restoreNodeTag(node, spec.tag)
     }
@@ -1278,7 +1300,7 @@ async function deleteSelected() {
     const n = editor.getNode(id)
     if (n) {
       if (isGroupFacade(n)) unregisterMember(state.tagAtlas, n.tag, n.entry.groupId)
-      else unregisterMember(state.tagAtlas, n.tag, id)
+      else unregisterMember(state.tagAtlas, nodeNameKey(n), id)
     }
     selector?.remove({ label: 'node', id })
     await editor.removeNode(id)
@@ -1432,13 +1454,13 @@ function atlasNodeMember(id) {
  * Mutator: a node's ctor values changed via the inspector. Push the new
  * canonical values into the atlas and mirror them to every peer member.
  */
-function syncTaggedNodePeers(sourceNode) {
-  if (!nodeTagKey(sourceNode?.tag)) return
+function syncNamedNodePeers(sourceNode) {
+  if (!nodeNameKey(sourceNode)) return
   const peers = recordAllValues(state.tagAtlas, sourceNode)
   for (const peerId of peers) {
     const peer = atlasNodeMember(peerId)
     if (!peer) continue
-    if (!nodesInSameTagFamily(sourceNode, peer)) continue
+    if (!nodesInSameNameFamily(sourceNode, peer)) continue
     if (copyNodeValues(sourceNode, peer)) {
       area.update('node', peer.id)
       applyTagStyle(peer)
@@ -1447,11 +1469,11 @@ function syncTaggedNodePeers(sourceNode) {
 }
 
 /**
- * Mutator: a node just got a new tag. Pull canonical values + exposed-param
+ * Mutator: a node just got a new name. Pull canonical values + exposed-param
  * structure from the atlas onto the node so it lines up with its new peers.
  */
-async function adoptTaggedPeerValues(node) {
-  const entry = getAtlasEntry(state.tagAtlas, node?.tag)
+async function adoptNamedPeerValues(node) {
+  const entry = getNodeAtlasEntry(state.tagAtlas, node)
   if (!entry) return false
   if (entry.family && entry.family.split(':')[1] !== node.entry?.name) return false
   let changed = false
@@ -1474,13 +1496,13 @@ async function adoptTaggedPeerValues(node) {
   return true
 }
 
-async function syncTaggedPeerParamPort(sourceNode, param, shouldExpose) {
+async function syncNamedPeerParamPort(sourceNode, param, shouldExpose) {
   const key = `__param__${param.name}`
   const peers = recordExposedParamChange(state.tagAtlas, sourceNode, param.name, shouldExpose)
   for (const peerId of peers) {
     const peer = atlasNodeMember(peerId)
     if (!peer) continue
-    if (!nodesInSameTagFamily(sourceNode, peer)) continue
+    if (!nodesInSameNameFamily(sourceNode, peer)) continue
     if (shouldExpose) {
       peer.exposeParam?.(param.name)
     } else {
@@ -1740,6 +1762,11 @@ async function replicateGroupChildToPeer(sourceChild, peerGid, peerGroup, source
   if (childTag) restoreNodeTag(node, childTag)
   else applyNodeTag(node, randomChildTag())
 
+  // Carry the source's editable name so name-based param sync ties the
+  // replicated child to its source across group instances.
+  const childName = String(sourceChild.name ?? '').trim()
+  if (childName) applyNodeNameOnNode(node, childName)
+
   copyExposedParamsFromSource(sourceChild, node)
   node.groupId = peerGid
   registerNodeMember(state.tagAtlas, node)
@@ -1796,6 +1823,11 @@ async function alignPeerChildToSource(sourceChild, peerChild) {
     applyNodeTagOnNode(peerChild, srcTag)
     registerNodeMember(state.tagAtlas, peerChild)
   }
+  const srcName = String(sourceChild.name ?? '').trim()
+  if (srcName && nodeNameKey(peerChild) !== nodeNameKey(sourceChild)) {
+    applyNodeNameOnNode(peerChild, srcName)
+    registerNodeMember(state.tagAtlas, peerChild)
+  }
   copyNodeValues(sourceChild, peerChild)
   copyExposedParamsFromSource(sourceChild, peerChild)
   area.update('node', peerChild.id)
@@ -1810,7 +1842,7 @@ async function removePeerGroupChild(peerGid, childId) {
     }
   }
   const child = editor.getNode(childId)
-  if (child) unregisterMember(state.tagAtlas, child.tag, childId)
+  if (child) unregisterMember(state.tagAtlas, nodeNameKey(child), childId)
   await editor.removeNode(childId)
   if (peerGroup?.childOffsets) delete peerGroup.childOffsets[childId]
 }
@@ -1897,7 +1929,7 @@ async function removePeerChildrenByTags(sourceGid, tagKeys) {
             await editor.removeConnection(c.id)
           }
         }
-        unregisterMember(state.tagAtlas, child.tag, child.id)
+        unregisterMember(state.tagAtlas, nodeNameKey(child), child.id)
         await editor.removeNode(child.id)
         if (peerGroup.childOffsets) delete peerGroup.childOffsets[child.id]
       }
@@ -2645,7 +2677,7 @@ function refreshInspector(options = {}) {
     state.lastResult?.sub ?? new Map(),
     () => {
       const n = state.selectedNodeId ? editor.getNode(state.selectedNodeId) : null
-      if (n) syncTaggedNodePeers(n)
+      if (n) syncNamedNodePeers(n)
       state.runtimeShapes = null
       state.runtimeNumParams = null
       state.runtimeError = null
@@ -2670,23 +2702,10 @@ function refreshInspector(options = {}) {
         const newKey = String(newTag ?? '').trim()
         if (newKey) void alignTaggedGroupToPeers(gid, newKey)
         applyAllTagStyles()
-      } else {
-        unregisterMember(state.tagAtlas, oldTag, n.id)
-        const newKey = String(newTag ?? '').trim()
-        if (newKey) {
-          // Register first so we can either seed the atlas (first member) or
-          // adopt the canonical values from an existing peer.
-          const entry = registerNodeMember(state.tagAtlas, n)
-          const isFirstMember = entry?.members.size === 1
-          if (isFirstMember) {
-            // Push this node's values out as canonical to anything that
-            // already shares the tag (paste / re-tag race).
-            syncTaggedNodePeers(n)
-          } else {
-            await adoptTaggedPeerValues(n)
-          }
-        }
       }
+      // Regular nodes: the tag is purely a weight-sharing/annotation key now.
+      // Param synchronization is driven by the node *name* (see onNameChange),
+      // so changing the tag only restyles + revalidates below.
       area.update('node', n.id)
       applyTagStyle(n)
       state.runtimeShapes = null
@@ -2711,7 +2730,7 @@ function refreshInspector(options = {}) {
         }
         targetNode.hideParam?.(param.name)
       }
-      await syncTaggedPeerParamPort(targetNode, param, shouldExpose)
+      await syncNamedPeerParamPort(targetNode, param, shouldExpose)
       await area.update('node', targetNode.id)
       queueValidation()
       queueAutosave()
@@ -2753,7 +2772,29 @@ function refreshInspector(options = {}) {
       ungroup: (gid) => ungroup(gid),
       addSelection: (gid) => void addNodesToGroup(gid),
     },
-    options
+    options,
+    async (n, newName) => {
+      const oldName = nodeNameKey(n)
+      applyNodeNameOnNode(n, newName)
+      if (oldName) unregisterMember(state.tagAtlas, oldName, n.id)
+      const newKey = nodeNameKey(n)
+      if (newKey) {
+        // Register first so we can either seed the atlas (first member) or
+        // adopt the canonical values from an existing peer.
+        const entry = registerNodeMember(state.tagAtlas, n)
+        const isFirstMember = entry?.members.size === 1
+        if (isFirstMember) syncNamedNodePeers(n)
+        else await adoptNamedPeerValues(n)
+      }
+      area.update('node', n.id)
+      applyTagStyle(n)
+      state.runtimeShapes = null
+      state.runtimeNumParams = null
+      state.runtimeError = null
+      state.runtimeErrorNodeId = null
+      queueValidation()
+      queueAutosave()
+    }
   )
 }
 
@@ -2857,6 +2898,7 @@ function getGraphData() {
         id: n.id,
         name: n.entry.name,
         kind: n.entry.kind,
+        instanceName: n.name ?? '',
         tag: n.tag ?? '',
         values: n.values,
         exposedParams: Object.keys(n.inputs || {})
@@ -2950,6 +2992,7 @@ if (typeof window !== 'undefined') {
     selectNodeIds,
     isNodeSelected: (id) => Boolean(selector?.isSelected({ label: 'node', id })),
     applyNodeTag: applyNodeTagOnNode,
+    applyNodeName: applyNodeNameOnNode,
     syncPeerGroupStructure,
     syncStructuralGroupPeers,
     syncAllTaggedGroupInstances,

@@ -25,7 +25,7 @@ import {
   boundarySignaturesMatch,
   applySignatureToBoundary,
 } from './src/groupBoundary.js'
-import { copyNodeValues, nodesInSameTagFamily } from './src/tagSync.js'
+import { copyNodeValues, nodesInSameNameFamily } from './src/tagSync.js'
 import {
   makeTagAtlas,
   registerNodeMember,
@@ -435,15 +435,19 @@ console.log('codegen tag weight-sharing')
     outputs: [{ name: 'out', shape: ['B', 'C_out', 'H', 'W'], dtype: 'float' }],
     bindings: { C_in: 'in_ch', C_out: 'out_ch' },
   }
-  const make = (id, entry, values = {}, tag = '') => ({
+  // The editable `name` drives the generated attribute (self.<name>); `tag`
+  // groups instances into one shared slot. Weight-shared nodes share a name.
+  const make = (id, entry, values = {}, tag = '', name = '') => ({
     id,
     entry,
     tag,
+    name,
     values: { ...Object.fromEntries(entry.ctor.map((p) => [p.name, p.default])), ...values },
   })
-  // Two ConvBlocks sharing tag "shared" with the SAME ctor values -> one __init__ slot.
-  const a = make('a', conv, { in_ch: 3, out_ch: 16 }, 'shared')
-  const b = make('b', conv, { in_ch: 3, out_ch: 16 }, 'shared')
+  // Two ConvBlocks named "shared" sharing tag "shared" with the SAME ctor values
+  // -> one __init__ slot named self.shared.
+  const a = make('a', conv, { in_ch: 3, out_ch: 16 }, 'shared', 'shared')
+  const b = make('b', conv, { in_ch: 3, out_ch: 16 }, 'shared', 'shared')
   const code = generate([a, b], [], 'pytorch')
 
   const initInstances = (code.match(/self\.shared = ConvBlock\(/g) || []).length
@@ -460,7 +464,7 @@ console.log('codegen tag weight-sharing')
   )
 
   // Three-way share also collapses to one slot.
-  const c = make('c', conv, { in_ch: 3, out_ch: 16 }, 'shared')
+  const c = make('c', conv, { in_ch: 3, out_ch: 16 }, 'shared', 'shared')
   const code3 = generate([a, b, c], [], 'pytorch')
   const slots3 = (code3.match(/self\.shared = ConvBlock\(/g) || []).length
   check('3-way shared tag still emits ONE slot', slots3 === 1, slots3)
@@ -476,8 +480,8 @@ console.log('codegen tag weight-sharing')
 
   // Different ctor values produce one slot with the FIRST node's ctor; the
   // validator surfaces a hard error separately.
-  const aWide = make('aw', conv, { in_ch: 3, out_ch: 16 }, 'wide')
-  const bWide = make('bw', conv, { in_ch: 3, out_ch: 32 }, 'wide')
+  const aWide = make('aw', conv, { in_ch: 3, out_ch: 16 }, 'wide', 'wide')
+  const bWide = make('bw', conv, { in_ch: 3, out_ch: 32 }, 'wide', 'wide')
   const codeDisagree = generate([aWide, bWide], [], 'pytorch')
   const wideSlots = (codeDisagree.match(/self\.wide = ConvBlock\(/g) || []).length
   check('ctor-disagreement still collapses to one slot (validator rejects)', wideSlots === 1, wideSlots)
@@ -593,15 +597,17 @@ console.log('tag sync')
       { name: 'out_ch', type: 'int' },
     ],
   }
-  const a = { id: 'a', entry: conv, tag: 'stem', values: { in_ch: 3, out_ch: 16 } }
-  const b = { id: 'b', entry: conv, tag: 'stem', values: { in_ch: 3, out_ch: 32 } }
-  check('nodesInSameTagFamily matches same block + tag', nodesInSameTagFamily(a, b))
+  const a = { id: 'a', entry: conv, name: 'stem', tag: '', values: { in_ch: 3, out_ch: 16 } }
+  const b = { id: 'b', entry: conv, name: 'stem', tag: '', values: { in_ch: 3, out_ch: 32 } }
+  check('nodesInSameNameFamily matches same block + name', nodesInSameNameFamily(a, b))
+  const bTag = { id: 'b2', entry: conv, name: '', tag: 'stem', values: {} }
+  check('nodesInSameNameFamily ignores tag (blank names do not sync)', !nodesInSameNameFamily(a, bTag))
   check(
     'copyNodeValues mirrors ctor fields onto peer',
     copyNodeValues(a, b) && b.values.out_ch === 16,
     b.values
   )
-  const c = { id: 'c', entry: { ...conv, name: 'Linear' }, tag: 'stem', values: {} }
+  const c = { id: 'c', entry: { ...conv, name: 'Linear' }, name: 'stem', tag: '', values: {} }
   check('copyNodeValues skips different block types', !copyNodeValues(a, c))
 }
 
@@ -616,10 +622,12 @@ console.log('tag atlas')
       { name: 'out_ch', type: 'int' },
     ],
   }
-  const mkNode = (id, tag, values = {}, inputs = {}) => ({
+  // Regular nodes are keyed by their editable name (param-sync identity).
+  const mkNode = (id, name, values = {}, inputs = {}) => ({
     id,
     entry: conv,
-    tag,
+    name,
+    tag: '',
     values: { ...values },
     inputs,
   })
@@ -655,9 +663,9 @@ console.log('tag atlas')
   const diff = adoptExposedParamsFromAtlas(atlas, d)
   check('new peer is told to expose missing param ports', diff.toExpose.includes('kernel_size'))
 
-  // Untagged nodes never touch the atlas.
-  const untagged = mkNode('u', '', { in_ch: 0, out_ch: 0 })
-  check('untagged registration is a no-op', registerNodeMember(atlas, untagged) === null)
+  // Unnamed nodes never touch the atlas.
+  const unnamed = mkNode('u', '', { in_ch: 0, out_ch: 0 })
+  check('unnamed registration is a no-op', registerNodeMember(atlas, unnamed) === null)
 
   // Unregister: last member removes entry.
   unregisterMember(atlas, 'down1', 'a')

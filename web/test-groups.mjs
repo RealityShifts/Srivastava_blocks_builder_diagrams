@@ -750,13 +750,13 @@ try {
     const a = await blocks.createNode('ConvBlock')
     a.values.in_ch = 3
     a.values.out_ch = 16
-    blocks.applyNodeTag(a, 'down1')
+    blocks.applyNodeName(a, 'down1')
     const b = await blocks.createNode('ConvBlock')
     b.values.in_ch = 9
     b.values.out_ch = 9
-    blocks.applyNodeTag(b, 'down1')
+    blocks.applyNodeName(b, 'down1')
     blocks.refreshTagAtlas()
-    // Adopt canonical values onto b (simulates the re-tag adopt path).
+    // Adopt canonical values onto b (simulates the re-name adopt path).
     const { adoptValuesFromAtlas } = await import('/src/tagAtlas.js')
     adoptValuesFromAtlas(blocks.state.tagAtlas, b)
     return {
@@ -764,7 +764,7 @@ try {
       bOutCh: ed.getNode(b.id)?.values?.out_ch,
     }
   })
-  check('atlas has the tagged family', !!atlasSync.atlas['down1'], atlasSync)
+  check('atlas has the named family', !!atlasSync.atlas['down1'], atlasSync)
   check('adopt copies canonical out_ch onto peer', atlasSync.bOutCh === 16, atlasSync)
 
   if (consoleErrors.length > 0) {

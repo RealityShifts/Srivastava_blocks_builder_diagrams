@@ -473,7 +473,8 @@ export function renderInspector(
   onAddConst,
   onToggleParamPort,
   groupActions,
-  options = {}
+  options = {},
+  onNameChange
 ) {
   if (!node) {
     _currentNodeId = null
@@ -530,7 +531,32 @@ export function renderInspector(
     rootEl.appendChild(buildGroupPanel(node, groupActions))
   }
 
-  // Tag row. For module-kind nodes the tag also acts as a weight-sharing key:
+  // Name row. The editable per-instance name drives ctor-param sync (same name
+  // = synced params) and the generated Python attribute (self.<name>). Group
+  // facades have their own name field in the group panel, so skip it for them.
+  if (node.entry.kind !== 'group') {
+    const nameRow = document.createElement('div')
+    nameRow.className = 'row name-row'
+    const nameLabel = document.createElement('label')
+    const nameId = `ctrl-${node.id}-__name`
+    nameLabel.htmlFor = nameId
+    nameLabel.textContent = 'Name'
+    nameLabel.title = 'name · same name = synced params + Python attribute name'
+    nameRow.appendChild(nameLabel)
+    const nameInput = document.createElement('input')
+    nameInput.id = nameId
+    nameInput.type = 'text'
+    nameInput.spellcheck = false
+    nameInput.placeholder = node.entry.name
+    nameInput.value = String(node.name ?? '')
+    nameInput.addEventListener('input', () => {
+      if (typeof onNameChange === 'function') onNameChange(node, nameInput.value)
+    })
+    nameRow.appendChild(nameInput)
+    rootEl.appendChild(nameRow)
+  }
+
+  // Tag row. For module-kind nodes the tag is the weight-sharing key:
   // two ConvBlocks tagged "down1" share one Python attribute.
   const tagRow = document.createElement('div')
   tagRow.className = 'row tag-row'
@@ -540,8 +566,8 @@ export function renderInspector(
   tagLabel.textContent = 'Tag'
   const tagHelp =
     node.entry.kind === 'module' || node.entry.kind === 'group'
-      ? 'label · same tag = shared weights + synced params'
-      : 'label · same tag = synced params'
+      ? 'label · same tag = shared weights (instances must share a name)'
+      : 'label · annotation only'
   tagLabel.title = tagHelp
   tagRow.appendChild(tagLabel)
   const tagInput = document.createElement('input')
