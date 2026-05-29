@@ -32,7 +32,8 @@
     "test:tree-signature": "node test-tree-signature.ts",
     "test:tree-expand": "node test-tree-expand.ts",
     "test:tree-adapter": "node test-tree-adapter.ts",
-    "test:tree": "node test-tree-signature.ts && node test-tree-expand.ts && node test-tree-adapter.ts"
+    "test:tree": "node test-tree-signature.ts && node test-tree-expand.ts && node test-tree-adapter.ts",
+    "test:forest-codegen-parity": "node test-forest-codegen-parity.ts"
   },
   "dependencies": {
     "@retejs/lit-plugin": "^2.0.5",

@@ -60,7 +60,7 @@ import { validate, dryRunEdge } from './validator.ts'
 import { generate as generateCode } from './codegen.ts'
 import {
   graphDataToForest,
-  forestToFlatCodegen,
+  forestToGenerateInput,
 } from './tree/adapter.ts'
 import { isFullyConcrete, runShapeCheck, resolveInputSpecs } from './runtime.ts'
 import { resolve } from './shape.ts'
@@ -2996,31 +2996,24 @@ function applyRuntimeErrorHighlight() {
 }
 
 /**
- * Step 6 verification hook: rebuild the forest from the live graph, run the
- * flat-case tree codegen, and compare against the legacy `expected` output.
- *
- * Strictly non-fatal and side-effect-free on the emitted code: it only logs a
- * warning on divergence so the new model is continuously validated against
- * every real (untraced, non-test, group-free) generation. Skips silently for
- * cases the tree emitter doesn't yet cover.
+ * Generate Python from the FOREST, which is now the single source of truth.
+ * We rebuild the forest from the serialized graph, reconstruct the full flat
+ * codegen input (facades + portMaps + group membership) via
+ * `forestToGenerateInput`, then run the proven emission core. Groups, nesting,
+ * residual skips, exposed params - all handled by the unchanged emitter.
  */
-function verifyForestCodegen(options: any, expected: string): void {
-  // Only the plain flat case is proven byte-identical; skip the rest.
-  if (options?.trace || options?.withTest) return
-  try {
-    const { forest } = graphDataToForest(getGraphData() as any)
-    const { nodes, connections, hasGroups } = forestToFlatCodegen(forest, byNameCatalogue())
-    if (hasGroups) return // grouped emitter not built yet
-    const viaForest = generateCode(nodes as any, connections as any, state.framework)
-    if (viaForest !== expected) {
-      console.warn('[tree] forest codegen diverged from legacy output', {
-        forestLen: viaForest.length,
-        legacyLen: expected.length,
-      })
-    }
-  } catch (err) {
-    console.warn('[tree] forest codegen verification threw (non-fatal):', err)
-  }
+function codegenFromForest(options: any = {}): string {
+  const { forest, exposedByNode, facadeMeta } = graphDataToForest(getGraphData() as any)
+  const { nodes, connections } = forestToGenerateInput(
+    forest,
+    byNameCatalogue(),
+    exposedByNode,
+    facadeMeta
+  )
+  return generateCode(nodes as any, connections as any, state.framework, {
+    trace: !!options.trace,
+    testCase: options.testCase,
+  })
 }
 
 /** The manifest catalogue as a plain name->entry record for the tree adapter. */
@@ -3106,16 +3099,27 @@ function runCodegen(options: any = {}) {
       return
     }
   }
-  const code = generateCode(editor.getNodes(), editor.getConnections(), state.framework, {
+  // The FOREST is the single source of truth for codegen. We build it from the
+  // serialized graph, reconstruct the full codegen input, and emit. The legacy
+  // editor path is kept only as a safety fallback if the forest path throws -
+  // and we log any divergence so regressions surface immediately.
+  const legacy = generateCode(editor.getNodes(), editor.getConnections(), state.framework, {
     trace: !!options.trace,
     testCase,
   })
-  // Step 6 integration: drive the same flat-graph codegen through the new tree
-  // model and verify it matches the legacy path. Non-fatal: we always emit the
-  // legacy `code`; a mismatch only logs, so the model is exercised on every
-  // real generation without risking output. Grouped graphs and traced/test
-  // generations fall through to the dedicated emitter (not yet built).
-  verifyForestCodegen(options, code)
+  let code = legacy
+  try {
+    const fromForest = codegenFromForest({ trace: !!options.trace, testCase })
+    if (fromForest !== legacy) {
+      console.warn('[tree] forest codegen diverged from legacy; using forest output', {
+        forestLen: fromForest.length,
+        legacyLen: legacy.length,
+      })
+    }
+    code = fromForest
+  } catch (err) {
+    console.warn('[tree] forest codegen threw; falling back to legacy:', err)
+  }
   showCode(code)
 }
 
@@ -3230,6 +3234,7 @@ if (typeof window !== 'undefined') {
     addToGroupFocused,
     runCodegen: () =>
       generateCode(editor.getNodes(), editor.getConnections(), state.framework),
+    runCodegenFromForest: () => codegenFromForest(),
     addConnection: async (source: any, sourceOutput: any, target: any, targetInput: any) => {
       const srcNode = editor.getNode(source)
       const tgtNode = editor.getNode(target)

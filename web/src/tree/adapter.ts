@@ -26,6 +26,7 @@ import type { ManifestEntry, NodeKind, NodeLike, Connection as FlatConnection } 
 import type { Forest, Tree, TreeNode, NodeId } from './model.ts'
 import { emptyForest, makeConnection, boundaryRef } from './model.ts'
 import type { BlockResolver, ResolvedBlock } from './signature.ts'
+import { getInputOutputParamsSignature } from './signature.ts'
 
 /** The manifest catalogue keyed by block name (as loaded from the JSON). */
 export type ManifestCatalogue = Record<string, ManifestEntry>
@@ -62,6 +63,16 @@ export interface GraphGroupSpec {
   tag?: string
   collapsed?: boolean
   facadeNodeId?: string | null
+  /** The enclosing group's id when nested, else null/undefined (top-level). */
+  memberOf?: string | null
+}
+
+/** Facade reconstruction metadata captured during import, keyed by facade node id. */
+export interface FacadeMeta {
+  inPorts: any[]
+  outPorts: any[]
+  params: any[]
+  groupId: string
 }
 
 /** The legacy serialized graph payload. */
@@ -144,9 +155,11 @@ function ensureTree(forest: Forest, name: string): Tree {
 export function graphDataToForest(data: GraphData): {
   forest: Forest
   exposedByNode: Map<NodeId, Set<string>>
+  facadeMeta: Map<NodeId, FacadeMeta>
 } {
   const forest = emptyForest('main')
   const exposedByNode = new Map<NodeId, Set<string>>()
+  const facadeMeta = new Map<NodeId, FacadeMeta>()
 
   // 1. Register a Tree for every group (named by its class name).
   const groupById = new Map<string, GraphGroupSpec>()
@@ -188,24 +201,41 @@ export function graphDataToForest(data: GraphData): {
 
     const asFacadeGroup = facadeNodeToGroup.get(spec.id)
     if (asFacadeGroup) {
-      // Facade: references the group's Tree; lives in its parent tree.
+      // Facade node: references the group's Tree, and lives in its PARENT tree.
+      // The parent is the group's `memberOf` (the enclosing group when nested),
+      // NOT the facade's own `groupId` - a top-level facade carries its own gid
+      // there, so trusting it would place the group inside itself.
       node.name = treeNameForGroup.get(asFacadeGroup)!
-      const parentGroup = spec.groupId ? treeNameForGroup.get(spec.groupId) : null
-      const parentTree = ensureTree(forest, parentGroup ?? 'main')
+      const memberOf = groupById.get(asFacadeGroup)?.memberOf
+      const parentName = memberOf ? treeNameForGroup.get(memberOf) ?? 'main' : 'main'
+      const parentTree = ensureTree(forest, parentName)
       forest.nodes[node.id] = node
       parentTree.list_of_nodes.push(node.id)
 
-      // Derive the group Tree's boundary refs from the facade portMap.
+      // Capture the group Tree's boundary, preserving the FACADE port names
+      // (in0/out0/...) the boundary edges use - those names must survive so the
+      // reconstructed facade ports line up with the parent's connections.
       const groupTree = ensureTree(forest, treeNameForGroup.get(asFacadeGroup)!)
-      groupTree.inputs = (spec.portMap?.inputs ?? [])
+      const pmIn = spec.portMap?.inputs ?? []
+      const pmOut = spec.portMap?.outputs ?? []
+      groupTree.inputs = pmIn
         .filter((m: any) => m?.childNodeId && m?.childPort)
         .map((m: any) => boundaryRef(m.childNodeId, m.childPort))
-      groupTree.outputs = (spec.portMap?.outputs ?? [])
+      groupTree.outputs = pmOut
         .filter((m: any) => m?.childNodeId && m?.childPort)
         .map((m: any) => boundaryRef(m.childNodeId, m.childPort))
+      // Stash the facade's declared port specs + portMap so forestToGenerateInput
+      // can rebuild the facade verbatim (names, shapes, optionality, routing).
+      facadeMeta.set(spec.id, {
+        inPorts: spec.portMap?.inputs ?? [],
+        outPorts: spec.portMap?.outputs ?? [],
+        params: spec.portMap?.params ?? [],
+        groupId: asFacadeGroup,
+      })
       continue
     }
 
+    // A non-facade node's owner is the group it's a member of, or main.
     const ownerTreeName = spec.groupId ? treeNameForGroup.get(spec.groupId) ?? 'main' : 'main'
     const ownerTree = ensureTree(forest, ownerTreeName)
     forest.nodes[node.id] = node
@@ -231,7 +261,7 @@ export function graphDataToForest(data: GraphData): {
     forest.trees[owner]?.list_of_connections.push(conn)
   }
 
-  return { forest, exposedByNode }
+  return { forest, exposedByNode, facadeMeta }
 }
 
 // ---------------------------------------------------------------------------
@@ -294,6 +324,126 @@ export function forestToFlatCodegen(
     }))
 
   return { nodes, connections, hasGroups }
+}
+
+// ---------------------------------------------------------------------------
+// Forest -> full codegen input (flat NodeLike[] + Connection[], groups included)
+// ---------------------------------------------------------------------------
+
+/**
+ * Reconstruct the COMPLETE flat `NodeLike[]` / `Connection[]` that the existing
+ * `generate()` consumes - including group facades with synthetic group entries
+ * and portMaps - from a forest. This makes the FOREST the single source of
+ * truth for codegen while reusing the proven emission core (no discrepancy).
+ *
+ * Per tree:
+ *   - a leaf-block child -> a flat NodeLike carrying its owning group's id;
+ *   - a group tree -> one facade NodeLike in its PARENT, with a synthetic
+ *     `kind:'group'` entry whose portMap is derived from the group tree's
+ *     boundary refs (`childId@port`) and whose boundary port names come from
+ *     `getInputOutputParamsSignature` (so facade-edge port names line up).
+ *
+ * Boundary edges (parent edge wired to a facade port) and internal group edges
+ * are emitted verbatim from the forest connections; `partitionByGroup` /
+ * `buildSubgraphView` in codegen then reconstruct each group class exactly as
+ * for a live editor graph.
+ */
+export function forestToGenerateInput(
+  forest: Forest,
+  catalogue: ManifestCatalogue,
+  exposedByNode: Map<NodeId, Set<string>> = new Map(),
+  facadeMeta: Map<NodeId, FacadeMeta> = new Map()
+): { nodes: NodeLike[]; connections: FlatConnection[] } {
+  const isGroupTree = (name: string) => !catalogue[name] && Boolean(forest.trees[name])
+  const nodes: NodeLike[] = []
+  const connections: FlatConnection[] = []
+
+  // The original group id (gid) for each group tree, recovered from the facade
+  // metadata. `entry.groupId` and child membership use this gid, exactly as the
+  // live editor does - so two same-name groups still collapse to one class and
+  // facade boundary edges (wired on in0/out0...) match verbatim.
+  const gidForTree = new Map<string, string>()
+  for (const [facadeId, fm] of facadeMeta) {
+    const facadeNode = forest.nodes[facadeId]
+    if (facadeNode) gidForTree.set(facadeNode.name, fm.groupId)
+  }
+
+  // Node id -> owning gid (for child `groupId` membership). A child of a group
+  // tree is a member of that tree's gid; main's direct children belong to none.
+  const memberGidOf = new Map<NodeId, string | null>()
+  for (const name of Object.keys(forest.trees)) {
+    const gid = isGroupTree(name) ? gidForTree.get(name) ?? name : null
+    for (const id of forest.trees[name]!.list_of_nodes) memberGidOf.set(id, gid)
+  }
+
+  for (const name of Object.keys(forest.trees)) {
+    const tree = forest.trees[name]!
+    for (const id of tree.list_of_nodes) {
+      const node = forest.nodes[id]
+      if (!node) continue
+
+      if (isGroupTree(node.name)) {
+        // Facade node: rebuild VERBATIM from the captured facade metadata so
+        // port names/shapes/routing and the gid match the live editor exactly.
+        const fm = facadeMeta.get(node.id)
+        const gid = fm?.groupId ?? node.name
+        const pmIn = fm?.inPorts ?? []
+        const pmOut = fm?.outPorts ?? []
+        const entry: ManifestEntry = {
+          name: node.name, // group name -> drives groupClassName -> class name
+          module: '__group__',
+          kind: 'group',
+          ctor: [],
+          inputs: pmIn.map((m: any) => ({
+            name: m.facadePort,
+            shape: m.shape ?? ['...'],
+            dtype: m.dtype ?? 'any',
+            optional: Boolean(m.optional),
+          })),
+          outputs: pmOut.map((m: any) => ({
+            name: m.facadePort,
+            shape: m.shape ?? ['...'],
+            dtype: m.dtype ?? 'any',
+          })),
+          groupId: gid,
+          portMap: { inputs: pmIn, outputs: pmOut, params: fm?.params ?? [] },
+        } as ManifestEntry
+        nodes.push({
+          id: node.id,
+          entry,
+          name: '',
+          tag: node.tag ?? '',
+          groupId: memberGidOf.get(node.id) ?? null,
+          values: { ...(node.values ?? {}) },
+        })
+        continue
+      }
+
+      // Leaf block.
+      const entry = catalogue[node.name]
+      if (!entry) continue
+      nodes.push({
+        id: node.id,
+        entry,
+        name: '',
+        tag: node.tag ?? '',
+        groupId: memberGidOf.get(node.id) ?? null,
+        values: { ...(node.values ?? {}) },
+      })
+    }
+
+    for (const c of tree.list_of_connections) {
+      connections.push({
+        id: c.id,
+        source: c.from,
+        sourceOutput: c.fromOutput,
+        target: c.to,
+        targetInput: c.toInput,
+      })
+    }
+  }
+
+  return { nodes, connections }
 }
 
 // ---------------------------------------------------------------------------

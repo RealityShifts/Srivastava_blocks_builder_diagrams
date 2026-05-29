@@ -12,6 +12,7 @@ import type { NodeLike, Connection as FlatConn, ManifestEntry } from './src/type
 import {
   graphDataToForest,
   forestToFlatCodegen,
+  forestToGenerateInput,
   forestToGraphData,
   makeManifestResolver,
 } from './src/tree/adapter.ts'
