@@ -177,5 +177,99 @@ function check(name: string, cond: boolean, code?: string) {
   check('no repeated kwargs', !hasRepeatedKwarg(code), code)
 }
 
+// ---------------------------------------------------------------------------
+// Case E - a ctor param exposed THROUGH a nested group keeps its real default.
+// Regression for "weight of size [0, 128, 3, 3]": an inner group `Style` owns a
+// ConvBlock whose `out_ch` is exposed and set to 256; that param is re-exposed
+// on the outer `DecoderWithStyle`. The outer __init__ default must resolve
+// recursively to 256, NOT fall back to 0 (which yields a zero-sized weight).
+{
+  const convEntry = () => ({ kind: 'module', name: 'ConvBlock', module: 'm',
+    ctor: [{ name: 'in_ch', type: 'int', default: 0 }, { name: 'out_ch', type: 'int', default: 0 }],
+    inputs: [tensorPort('x')], outputs: [tensorPort('out')], bindings: {} })
+  const withParam = (node: any, p: string) => {
+    node.inputs[`__param__${p}`] = { portSpec: { kind: 'param', paramName: p, paramType: 'int' } }
+    return node
+  }
+  const constEntry = { kind: 'const', name: 'Constant', module: 'm', ctor: [], inputs: [], outputs: [tensorPort('out')], bindings: {} }
+
+  const c = mkNode('c256', constEntry, { value_type: 'int', value: '256' }, 'g_style')
+  const sconv = withParam(mkNode('sconv', convEntry(), { in_ch: 128, out_ch: 256 }, 'g_style'), 'out_ch')
+  const styleFac = withParam(mkNode('styleFac', facadeEntry('g_style', 'Style'), {}, 'g_outer'), 'out_ch')
+  ;(styleFac.entry as any).portMap = {
+    inputs: [{ facadePort: 'in0', childNodeId: 'sconv', childPort: 'x', shape: ['...'] }],
+    outputs: [{ facadePort: 'out0', childNodeId: 'sconv', childPort: 'out', shape: ['...'] }],
+    params: [{ facadePort: '__param__out_ch', childNodeId: 'sconv', childPort: '__param__out_ch', paramName: 'out_ch', paramType: 'int' }],
+  }
+  const outerFac = withParam(mkNode('outerFac', facadeEntry('g_outer', 'DecoderWithStyle'), {}, null), 'out_ch')
+  ;(outerFac.entry as any).portMap = {
+    inputs: [{ facadePort: 'in0', childNodeId: 'styleFac', childPort: 'in0', shape: ['...'] }],
+    outputs: [{ facadePort: 'out0', childNodeId: 'styleFac', childPort: 'out0', shape: ['...'] }],
+    params: [{ facadePort: '__param__out_ch', childNodeId: 'styleFac', childPort: '__param__out_ch', paramName: 'out_ch', paramType: 'int' }],
+  }
+  const inp = mkNode('inp', { kind: 'input', name: 'Input', module: '__builtin__', ctor: [], inputs: [], outputs: [tensorPort('out')], bindings: {} },
+    { name: 'x', shape: '1 128 8 8', dtype: 'float' }, null)
+  const code = generate(
+    [inp, outerFac, styleFac, sconv, c] as any,
+    [
+      { source: 'inp', sourceOutput: 'out', target: 'outerFac', targetInput: 'in0' },
+      { source: 'c256', sourceOutput: 'out', target: 'sconv', targetInput: '__param__out_ch' },
+    ] as any,
+    'pytorch'
+  )
+  console.log('Case E - param exposed through a nested group keeps its default')
+  check('Style defaults out_ch to 256', /class Style[\s\S]*def __init__\(self, out_ch: int = 256\)/.test(code), code)
+  check('DecoderWithStyle defaults out_ch to 256 (not 0)', /class DecoderWithStyle[\s\S]*def __init__\(self, out_ch: int = 256\)/.test(code), code)
+  check('no out_ch=0 anywhere', !/out_ch\s*=\s*0\b/.test(code), code)
+  check('no repeated kwargs', !hasRepeatedKwarg(code), code)
+}
+
+// ---------------------------------------------------------------------------
+// Case F - outer re-exposes the SAME param from two distinct nested children
+// (mirrors `DecoderWithStyle` wrapping two `Style` instances). The recursive
+// default must resolve for each, and the outer instantiation must emit the
+// kwarg once (dedup), with no out_ch=0 leaking to either inner conv.
+{
+  const convEntry = () => ({ kind: 'module', name: 'ConvBlock', module: 'm',
+    ctor: [{ name: 'in_ch', type: 'int', default: 0 }, { name: 'out_ch', type: 'int', default: 0 }],
+    inputs: [tensorPort('x')], outputs: [tensorPort('out')], bindings: {} })
+  const withParam = (node: any, p: string) => {
+    node.inputs[`__param__${p}`] = { portSpec: { kind: 'param', paramName: p, paramType: 'int' } }
+    return node
+  }
+  const mkStyle = (sfx: string) => {
+    const sconv = withParam(mkNode(`sconv_${sfx}`, convEntry(), { in_ch: 128, out_ch: 256 }, `g_style_${sfx}`), 'out_ch')
+    const styleFac = withParam(mkNode(`styleFac_${sfx}`, facadeEntry(`g_style_${sfx}`, 'Style'), {}, 'g_outer'), 'out_ch')
+    ;(styleFac.entry as any).portMap = {
+      inputs: [{ facadePort: 'in0', childNodeId: `sconv_${sfx}`, childPort: 'x', shape: ['...'] }],
+      outputs: [{ facadePort: 'out0', childNodeId: `sconv_${sfx}`, childPort: 'out', shape: ['...'] }],
+      params: [{ facadePort: '__param__out_ch', childNodeId: `sconv_${sfx}`, childPort: '__param__out_ch', paramName: 'out_ch', paramType: 'int' }],
+    }
+    return { sconv, styleFac }
+  }
+  const a = mkStyle('a'), b = mkStyle('b')
+  const outerFac = withParam(mkNode('outerFac', facadeEntry('g_outer', 'DecoderWithStyle'), {}, null), 'out_ch')
+  ;(outerFac.entry as any).portMap = {
+    inputs: [{ facadePort: 'in0', childNodeId: 'styleFac_a', childPort: 'in0', shape: ['...'] }],
+    outputs: [{ facadePort: 'out0', childNodeId: 'styleFac_b', childPort: 'out0', shape: ['...'] }],
+    params: [
+      { facadePort: '__param__out_ch', childNodeId: 'styleFac_a', childPort: '__param__out_ch', paramName: 'out_ch', paramType: 'int' },
+      { facadePort: '__param__out_ch', childNodeId: 'styleFac_b', childPort: '__param__out_ch', paramName: 'out_ch', paramType: 'int' },
+    ],
+  }
+  const inp = mkNode('inp', { kind: 'input', name: 'Input', module: '__builtin__', ctor: [], inputs: [], outputs: [tensorPort('out')], bindings: {} },
+    { name: 'x', shape: '1 128 8 8', dtype: 'float' }, null)
+  const code = generate(
+    [inp, outerFac, a.styleFac, a.sconv, b.styleFac, b.sconv] as any,
+    [{ source: 'inp', sourceOutput: 'out', target: 'outerFac', targetInput: 'in0' }] as any,
+    'pytorch'
+  )
+  console.log('Case F - same param re-exposed from two nested children')
+  check('DecoderWithStyle defaults out_ch to 256', /class DecoderWithStyle[\s\S]*def __init__\(self, out_ch: int = 256\)/.test(code), code)
+  check('outer instantiation emits out_ch once', (code.match(/= Style\(out_ch=out_ch\)/g) || []).length === 2, code)
+  check('no out_ch=0 anywhere', !/out_ch\s*=\s*0\b/.test(code), code)
+  check('no repeated kwargs', !hasRepeatedKwarg(code), code)
+}
+
 if (failures > 0) { console.error(`\n${failures} assertion(s) failed`); process.exit(1) }
 console.log('\nall nested-group codegen assertions passed')

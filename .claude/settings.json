@@ -19,7 +19,8 @@
       "Bash(node test-logic.ts)",
       "Bash(node test-nested-groups.ts)",
       "Bash(node test-nested-groups-e2e.ts)",
-      "Bash(node test-groups.ts)"
+      "Bash(node test-groups.ts)",
+      "Bash(node _repro_nested_param.ts)"
     ],
     "additionalDirectories": [
       "/tmp"

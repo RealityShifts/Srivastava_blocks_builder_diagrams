@@ -98,6 +98,32 @@ behind a *facade* node; their **tag** drives weight-sharing and their **name**
 drives the generated Python class. **Codegen** topologically sorts the graph and
 emits a `nn.Module` (`codegen.js`).
 
+### Unified nodes: a group *is* a node, recursively
+
+There is **one** node type. A leaf block (e.g. `ConvBlock`) is a group of
+**depth 0** — a node with an empty body. A group is just a node whose body is a
+subgraph, and a group facade can itself be a member of another group, so nesting
+is the same construct applied recursively until you reach leaves. The whole tree
+is described by **two ids with distinct meaning** carried on each node:
+
+| Read | Means | Lives on |
+|------|-------|----------|
+| **identity** — `isGroupFacade(n) ? n.entry.groupId : null` | "I *am* group X" → the Python class I compile to | `entry.groupId` (facades only) |
+| **membership** — `n.groupId` | "I *belong to* group Y" → who instantiates me | `node.groupId` (any node) |
+
+- A **leaf** has membership only when grouped (`node.groupId`), and never an
+  identity (it isn't a group).
+- A **top-level group** has identity (`entry.groupId`) and no membership
+  (`node.groupId === null`).
+- A **nested group** has *both*: it is its own group **and** a child of an outer
+  one. This dual marking is what makes arbitrary-depth nesting work end to end.
+
+Because membership is just `node.groupId`, the same partition → subgraph-view →
+emit recursion bottoms out naturally at leaves with no special-casing per depth.
+Containment (which group is nested in which) is tracked durably on the **group
+descriptor** as `g.memberOf`, because the facade *node* — which also carries it
+as `node.groupId` — is destroyed and recreated on every collapse/expand cycle.
+
 ---
 
 ## 4. The `web/src/` modules
@@ -247,9 +273,16 @@ identity**):
 ```js
 // nodes.js — BlockNode
 this.tag = ''         // two ConvBlocks tagged "down1" -> one self.down1 in codegen
-this.groupId = null   // set when this node belongs to a collapsed subgraph
+this.groupId = null   // MEMBERSHIP: the group this node belongs to (null = top-level)
 this.values = Object.fromEntries(entry.ctor.map((p) => [p.name, p.default]))
 ```
+
+`groupId` here is **membership** ("I belong to group Y"), never identity. A
+**group facade** is a `GroupNode` (also a `BlockNode`) whose *identity* lives on
+`entry.groupId` instead. A **nested** facade carries both: `node.groupId` (outer
+group it belongs to) **and** `entry.groupId` (its own group) — see §3. Always
+disambiguate: `n.groupId` for membership, `isGroupFacade(n) ? n.entry.groupId :
+null` for identity. Conflating the two is what blocked nesting historically.
 
 Constructor params can be *exposed as input ports* (`exposeParam`) so a
 `Constant` node can drive them — that's the `__param__<name>` machinery.
@@ -347,6 +380,54 @@ tag bucket, in topological order** — important because a group can legitimatel
 hold several children with the same tag, and a naive one-per-tag map produced
 spurious cyclic edges on copy.
 
+### 7.4 Nested groups — arbitrary depth (`main.js`)
+
+A group facade can be grouped *into* another group, to any depth (see §3 for the
+dual-marking model). The lifecycle keeps membership consistent even though the
+facade node is recreated each collapse:
+
+- **`groupSelected`** allows a facade in the selection (the old "Cannot nest"
+  block is gone). For each selected child that is a facade, it records the
+  nesting on the *inner* group's descriptor:
+
+  ```js
+  // main.js — groupSelected: a facade child becomes nested
+  if (isGroupFacade(n)) {
+    const inner = state.groups.get(n.entry.groupId)
+    if (inner) inner.memberOf = groupId        // durable containment
+  }
+  n.groupId = groupId                          // membership on the node
+  ```
+
+- **`collapseGroup`** re-applies membership to each freshly built facade, since
+  the previous facade (which held `node.groupId`) was destroyed on expand:
+
+  ```js
+  // main.js — collapseGroup: restore nesting on the new facade
+  if (group.memberOf) facade.groupId = group.memberOf
+  ```
+
+- **Visibility** is a single ancestor-walk: a node is hidden iff **any** ancestor
+  group is collapsed. The walk climbs via the durable descriptor (`g.memberOf`),
+  so it works even when an inner group is *expanded* (its facade is gone) inside
+  a *collapsed* outer one:
+
+  ```js
+  // main.js — hasCollapsedAncestor: climb the containment chain
+  let gid = node?.groupId
+  while (gid) {
+    const g = state.groups.get(gid)
+    if (g?.collapsed) return true
+    gid = g?.memberOf ?? null                  // outer group, durable
+  }
+  ```
+
+- **Serialization** persists membership twice: per node as `memberOf` (so codegen,
+  which reads `node.groupId`, sees it after import) and per group descriptor as
+  `g.memberOf`. On import, facade ids are pre-allocated in a first pass so an
+  outer facade's `portMap` can be re-resolved against the inner facade's fresh id
+  in a second pass, regardless of node order in the file.
+
 ---
 
 ## 8. Codegen — `codegen.js`
@@ -354,25 +435,45 @@ spurious cyclic edges on copy.
 Graph → runnable Python. The pipeline:
 
 1. **`partitionByGroup`** splits nodes into per-group buckets + top-level nodes.
+   Membership is by `node.groupId` for *any* node — a **nested facade lands in
+   its outer group's bucket** while still being registered as its own group's
+   facade. (It used to `continue` past every `kind === 'group'` node, which made
+   nesting invisible; that line is gone.)
 2. **`groupClassName`** assigns a Python class name from the group **name**
    (`Encoder`, not `Encoder_ab12`); duplicates dedupe.
 3. For each unique class, **`buildSubgraphView`** fabricates a standalone graph
    (synthetic `Input`/`Output` nodes for each boundary port) and **`emitClassBody`**
-   emits it.
-4. **`emitClassBody`** for the main graph instantiates the subclasses.
+   emits it. A nested facade flows through `buildSubgraphView` as an ordinary
+   child node, so `emitClassBody` instantiates it as `self.<attr> = Inner()` and
+   calls it in `forward` — no extra branch needed.
+4. **`emitClassBody`** for the main graph instantiates the top-level subclasses.
+
+Classes are emitted in **containment-topological order** — inner before outer —
+because `self.x = Inner()` runs at construction time and `from __future__ import
+annotations` only defers *annotations*, not instantiation. The dependency graph
+is keyed by **class name** (not gid) so two same-name groups still collapse to a
+single emitted class:
 
 ```js
-// codegen.js — one class per group NAME; same-name groups reuse the body
-const classNames = new Map()
-for (const [gid, facade] of facadesByGid) classNames.set(gid, groupClassName(facade.entry.name, gid))
-...
-for (const [gid, facade] of facadesByGid) {
+// codegen.js — build class-name containment deps, emit deepest-first
+for (const [gid] of facadesByGid) {
   const cls = classNames.get(gid)
-  if (emittedClassNames.has(cls)) continue   // duplicate group -> reuse first class
-  emittedClassNames.add(cls)
+  for (const child of childrenByGid.get(gid) || []) {
+    if (child.entry?.kind === 'group') {        // a nested group is a dependency
+      const childCls = classNames.get(child.entry.groupId)
+      if (childCls && childCls !== cls) classDeps.get(cls).add(childCls)
+    }
+  }
+}
+for (const cls of topoSortClasses(classDeps)) { // inner classes first; throws on a cycle
   emitClassBody(subLines, view.nodes, view.connections, framework, cls, classNames, options, { facade, usedDtypes })
 }
 ```
+
+For example, `Outer { Inner { Conv } }` emits `class Inner` (with
+`self.conv = Conv(...)`), then `class Outer` (with `self.inner = Inner()`), then
+`GeneratedModel` (with `self.outer = Outer()`) — each defined above its first
+use.
 
 `planGraph` allocates two namespaces — `self.<attr>` instances vs `forward()`
 locals — and is where **tags collapse to one attribute**:
@@ -516,6 +617,9 @@ against `npm run dev` on port 5173):
 | `test:autosave` | localStorage save/restore |
 | `test:tags-clipboard` | tags + copy/paste/duplicate + shared-tag codegen |
 | `test:groups` | grouping/collapse/expand + facade ports |
+| `test:nested-groups` | pure-JS codegen for nested groups (2/3-level, group-only-group, same-name dedup) |
+| `test:nested-groups-e2e` | nesting in the editor: dual marking, serialization round-trip, multi-level visibility |
+| `test:group-dup-param` | a group exposing one ctor param from several children emits it once |
 | `test:group-copy-cycle` | duplicate-tag group copy must not create cyclic edges |
 | `test:group-name-sync` | same-name (different-tag) groups sync structurally |
 | `test:group-optional-ports` | optional child ports stay optional through import |
@@ -545,9 +649,12 @@ python tools/shape_runner.py   # then click "Run shape check" in the UI
 ## 15. Reading order for newcomers
 
 1. `web/README.md` — the user-facing intent and the three correctness layers.
-2. `shape.js` then `unify.js` — the type system in ~220 lines.
-3. `validator.js` — how edges + ctor bindings become errors.
-4. `nodes.js` (`BlockNode`, `makeGroupEntry`) — the in-memory node model.
-5. `codegen.js` (`generate`, `planGraph`, `emitClassBody`) — graph → Python.
-6. `main.js` `bootstrap()` and the groups/clipboard/history sections — how it's
-   all driven.
+2. §3 *Unified nodes* above — identity vs membership, why a group is a node and a
+   leaf is a depth-0 group.
+3. `shape.js` then `unify.js` — the type system in ~220 lines.
+4. `validator.js` — how edges + ctor bindings become errors.
+5. `nodes.js` (`BlockNode`, `makeGroupEntry`) — the in-memory node model.
+6. `codegen.js` (`generate`, `partitionByGroup`, `topoSortClasses`, `planGraph`,
+   `emitClassBody`) — graph → Python, including nested-group recursion.
+7. `main.js` `bootstrap()` and the groups/clipboard/history sections (incl. the
+   §7.4 nesting lifecycle) — how it's all driven.

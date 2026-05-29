@@ -449,7 +449,7 @@ export function generate(
       cls,
       classNames,
       options,
-      { facade, usedDtypes }
+      { facade, usedDtypes, allById: byIdAll }
     )
     subClassSections.push(subLines.join('\n'))
   }
@@ -699,7 +699,7 @@ function emitClassBody(
   lines.push(`class ${className}(${baseClass}):`)
 
   const { initParams, paramRef } = analyzeConstWiring(nodes, connections, attrName)
-  if (facade) mergeGroupFacadeInitParams(facade, ordered, initParams, paramRef)
+  if (facade) mergeGroupFacadeInitParams(facade, ordered, initParams, paramRef, typing.allById)
 
   const initSigParts: string[] = []
   if (framework === 'flax') initSigParts.push('*, rngs: nnx.Rngs')
@@ -1083,16 +1083,65 @@ function analyzeConstWiring(nodes: NodeLike[], connections: Connection[], attrNa
   return { initParams: [...constInitByNodeId.values()], paramRef }
 }
 
+/**
+ * Resolve the *effective default value* of a ctor param exposed on a facade
+ * port. When the facade child is a real block, that's its `values[param]` (or
+ * the manifest default). When the child is itself a **nested group facade**, the
+ * param has no manifest default (groups carry `ctor: []`), so we recurse through
+ * the inner group's portMap to the underlying block that actually owns the
+ * param - whose value (or internal Constant) is the real default. Without this,
+ * a param re-exposed through one or more nested groups defaults to 0, which then
+ * flows down as e.g. `out_ch=0` and produces a zero-sized weight at runtime.
+ */
+function resolveExposedParamDefault(
+  childNodeId: string,
+  paramName: string,
+  allById: Map<string, NodeLike> | undefined,
+  seen: Set<string> = new Set()
+): { raw: any; paramDef: any } {
+  const child = allById?.get(childNodeId)
+  if (!child) return { raw: undefined, paramDef: undefined }
+  const key = `${childNodeId}::${paramName}`
+  if (seen.has(key)) return { raw: undefined, paramDef: undefined }
+  seen.add(key)
+
+  // Real block: the value lives directly on the node (or its manifest ctor).
+  const paramDef = child.entry?.ctor?.find((p: any) => p.name === paramName)
+  if (paramDef) {
+    return { raw: (child.values as any)?.[paramName] ?? paramDef.default, paramDef }
+  }
+
+  // Nested group facade: descend through its portMap param of the same name.
+  if (child.entry?.kind === 'group') {
+    const inner = (child.entry as any).portMap?.params?.find((p: any) => p.paramName === paramName)
+    if (inner) return resolveExposedParamDefault(inner.childNodeId, paramName, allById, seen)
+  }
+  return { raw: undefined, paramDef: undefined }
+}
+
 /** Subclass __init__ params for facade param ports (external constants wire here). */
-function mergeGroupFacadeInitParams(facade: any, nodes: NodeLike[], initParams: any[], paramRef: Map<string, string>): void {
+function mergeGroupFacadeInitParams(
+  facade: any,
+  nodes: NodeLike[],
+  initParams: any[],
+  paramRef: Map<string, string>,
+  allById?: Map<string, NodeLike>
+): void {
   const byId = new Map<string, NodeLike>(nodes.map((n) => [n.id, n]))
   const used = new Set(initParams.map((p) => p.initName))
   for (const m of facade.entry?.portMap?.params ?? []) {
     const child = byId.get(m.childNodeId)
-    const paramDef = child?.entry?.ctor?.find((p) => p.name === m.paramName)
     const initName = sanitizePyIdent(m.paramName, 'param')
     if (!used.has(initName)) {
-      const raw = child?.values?.[m.paramName] ?? paramDef?.default
+      // Prefer the locally-visible child, but fall back to a global recursive
+      // resolve so a param exposed THROUGH a nested group still gets the real
+      // default rather than 0.
+      const local = child?.entry?.ctor?.find((p) => p.name === m.paramName)
+      const resolved = local
+        ? { raw: (child?.values as any)?.[m.paramName] ?? local.default, paramDef: local }
+        : resolveExposedParamDefault(m.childNodeId, m.paramName, allById)
+      const paramDef = resolved.paramDef
+      const raw = resolved.raw
       initParams.push({
         initName,
         pyType: pyTypeForParamDef(paramDef, m.paramType),
