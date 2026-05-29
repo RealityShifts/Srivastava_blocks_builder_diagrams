@@ -8,7 +8,9 @@
       "Bash(cp /tmp/smoke-name.mjs ./smoke-name.mjs)",
       "Bash(node smoke-name.mjs)",
       "Bash(pkill -f \"vite.*5174\")",
-      "Bash(pkill -f \"vite\")"
+      "Bash(pkill -f \"vite\")",
+      "Bash(python3 -c \"import dis,marshal,importlib.util; f=open\\('models/customblocks/pytorch/__pycache__/smoke_double_linear.cpython-312.pyc','rb'\\); f.read\\(16\\); print\\('cached file exists'\\)\")",
+      "Bash(python3 -m py_compile models/customblocks/pytorch/sample_block.py)"
     ]
   }
 }
