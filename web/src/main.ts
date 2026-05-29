@@ -7,7 +7,7 @@
 import { NodeEditor, ClassicPreset } from 'rete'
 import { AreaPlugin, AreaExtensions } from 'rete-area-plugin'
 import { ConnectionPlugin, Presets as ConnectionPresets } from 'rete-connection-plugin'
-import { setupNodeSelection } from './selection.js'
+import { setupNodeSelection } from './selection.ts'
 import { LitPlugin, Presets as LitPresets } from '@retejs/lit-plugin'
 
 import {
@@ -15,13 +15,13 @@ import {
   boundarySignatureFromEntry,
   boundarySignaturesMatch,
   applySignatureToBoundary,
-} from './groupBoundary.js'
+} from './groupBoundary.ts'
 import {
   copyNodeValues,
   nodeTagKey,
   nodeNameKey,
   nodesInSameNameFamily,
-} from './tagSync.js'
+} from './tagSync.ts'
 import {
   makeTagAtlas,
   registerNodeMember,
@@ -35,7 +35,7 @@ import {
   rebuildAtlas,
   atlasSummary,
   getNodeAtlasEntry,
-} from './tagAtlas.js'
+} from './tagAtlas.ts'
 import {
   makeNode,
   makeGroupEntry,
@@ -54,11 +54,11 @@ import {
   computeNodeLabel,
   colorForTag,
   parseShapeString,
-} from './nodes.js'
-import { validate, dryRunEdge } from './validator.js'
-import { generate as generateCode } from './codegen.js'
-import { isFullyConcrete, runShapeCheck, resolveInputSpecs } from './runtime.js'
-import { resolve } from './shape.js'
+} from './nodes.ts'
+import { validate, dryRunEdge } from './validator.ts'
+import { generate as generateCode } from './codegen.ts'
+import { isFullyConcrete, runShapeCheck, resolveInputSpecs } from './runtime.ts'
+import { resolve } from './shape.ts'
 import {
   renderPalette,
   filterPalette,
@@ -67,10 +67,10 @@ import {
   showCode,
   wireCodeDialog,
   updateRuntimePanel,
-} from './ui.js'
+} from './ui.ts'
 
 // --- state ---
-const state = {
+const state: any = {
   framework: 'pytorch',
   entries: [],
   byName: new Map(),
@@ -119,7 +119,7 @@ const AUTOSAVE_KEY = 'blocks-builder:autosave:v1'
 const AUTOSAVE_VERSION = 1
 const AUTOSAVE_DEBOUNCE_MS = 800
 
-let autosaveTimer = null
+let autosaveTimer: any = null
 function queueAutosave() {
   if (state.restoring) return
   queueHistory()
@@ -135,7 +135,7 @@ function queueAutosave() {
 // snapshot is the one reliable way to undo a group/tag operation too.
 const HISTORY_LIMIT = 100
 const HISTORY_DEBOUNCE_MS = 350
-let historyTimer = null
+let historyTimer: any = null
 
 function snapshotGraph() {
   return JSON.stringify(getGraphData())
@@ -163,7 +163,7 @@ function recordHistory() {
   h.index = h.stack.length - 1
 }
 
-async function applyHistorySnapshot(snap) {
+async function applyHistorySnapshot(snap: any) {
   const h = state.history
   h.applying = true
   state.restoring = true // suppress autosave + peer-sync during the rebuild
@@ -236,7 +236,7 @@ const CLIPBOARD_KEY = 'blocks-builder:clipboard:v1'
 const PASTE_OFFSET_PX = 24
 
 function selectedNodeIds() {
-  const ids = new Set()
+  const ids = new Set<any>()
   for (const n of editor.getNodes()) {
     if (selector?.isSelected({ label: 'node', id: n.id })) ids.add(n.id)
   }
@@ -244,7 +244,7 @@ function selectedNodeIds() {
   return ids
 }
 
-function nodePosition(n) {
+function nodePosition(n: any) {
   const view = area?.nodeViews?.get(n.id)
   const p = view?.position
   if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return undefined
@@ -258,13 +258,13 @@ function nodePosition(n) {
  *  We read the facade's real position from area (rather than trusting the
  *  passed-in center) because Rete snaps positions to a grid, so the post-
  *  translate coords can differ from the requested ones by a few pixels. */
-function captureChildOffsets(group, children) {
+function captureChildOffsets(group: any, children: any) {
   if (!group) return
   const facade = group.facadeNodeId ? editor.getNode(group.facadeNodeId) : null
   const facadePos = (facade && nodePosition(facade)) ?? group.savedPosition
   if (!facadePos) return
   group.savedPosition = facadePos
-  const out = {}
+  const out: any = {}
   for (const child of children) {
     const p = nodePosition(child)
     if (!p) continue
@@ -275,7 +275,7 @@ function captureChildOffsets(group, children) {
 
 /** Translate group children to `facadePos + offset`. No-op for children
  *  without a recorded offset (leaves them where they are). */
-async function applyChildOffsets(group, facadePos) {
+async function applyChildOffsets(group: any, facadePos: any) {
   const offsets = group?.childOffsets
   if (!offsets || !facadePos) return
   for (const child of getGroupChildren(group.id)) {
@@ -286,10 +286,10 @@ async function applyChildOffsets(group, facadePos) {
 }
 
 /** Rebuild a {oldId: offset} map using a fresh idMap (paste / import). */
-function remapChildOffsets(raw, idMap) {
-  const out = {}
+function remapChildOffsets(raw: any, idMap: any) {
+  const out: any = {}
   if (!raw || typeof raw !== 'object') return out
-  for (const [oldId, off] of Object.entries(raw)) {
+  for (const [oldId, off] of Object.entries(raw) as [string, any][]) {
     if (!off || !Number.isFinite(off.dx) || !Number.isFinite(off.dy)) continue
     const newId = idMap?.get(oldId) ?? oldId
     out[newId] = { dx: off.dx, dy: off.dy }
@@ -297,7 +297,7 @@ function remapChildOffsets(raw, idMap) {
   return out
 }
 
-function applyTagStyle(node) {
+function applyTagStyle(node: any) {
   const el = area?.nodeViews?.get(node.id)?.element
   if (!el) return
   // Group membership wins over the user-set tag for visual color so a group
@@ -327,53 +327,53 @@ function applyAllTagStyles() {
   for (const n of editor.getNodes()) applyTagStyle(n)
 }
 
-function persistGroupFacadeTag(group, tag) {
+function persistGroupFacadeTag(group: any, tag: any) {
   if (!group) return
   group.facadeTag = String(tag ?? '').trim()
 }
 
-function applyNodeTagOnNode(node, tag) {
+function applyNodeTagOnNode(node: any, tag: any) {
   applyNodeTag(node, tag)
   if (isGroupFacade(node)) {
     persistGroupFacadeTag(state.groups.get(node.entry.groupId), tag)
   }
 }
 
-function restoreNodeTag(node, tag) {
+function restoreNodeTag(node: any, tag: any) {
   if (typeof tag !== 'string' || !tag) return
   applyNodeTagOnNode(node, tag)
   area.update('node', node.id)
   applyTagStyle(node)
 }
 
-function applyNodeNameOnNode(node, name) {
+function applyNodeNameOnNode(node: any, name: any) {
   applyNodeName(node, name)
 }
 
-function restoreNodeName(node, name) {
+function restoreNodeName(node: any, name: any) {
   if (typeof name !== 'string' || !name) return
   applyNodeNameOnNode(node, name)
   area.update('node', node.id)
 }
 
-function isParamInput(node, inputName) {
+function isParamInput(node: any, inputName: any) {
   return node?.inputs?.[inputName]?.portSpec?.kind === 'param'
 }
 
-function reverseBindings(entry) {
+function reverseBindings(entry: any) {
   const out = new Map()
   for (const [axis, param] of Object.entries(entry.bindings || {})) out.set(param, axis)
   return out
 }
 
-function guessDimFromTokens(tokens, axisHint) {
+function guessDimFromTokens(tokens: any, axisHint: any) {
   if (!tokens?.length) return null
-  const asNum = (v) => {
+  const asNum = (v: any) => {
     const n = Number(v)
     return Number.isFinite(n) ? Math.trunc(n) : null
   }
   const axis = String(axisHint || '').toUpperCase()
-  const byIdx = { B: 0, C: 1, H: 2, W: 3, T: 1, D: 1, N: 1 }
+  const byIdx: Record<string, number> = { B: 0, C: 1, H: 2, W: 3, T: 1, D: 1, N: 1 }
   if (axis && byIdx[axis[0]] != null) {
     const n = asNum(tokens[byIdx[axis[0]]])
     if (n != null) return n
@@ -385,7 +385,7 @@ function guessDimFromTokens(tokens, axisHint) {
   return null
 }
 
-function parseConstValue(sourceNode, targetParamType = 'int') {
+function parseConstValue(sourceNode: any, targetParamType = 'int') {
   if (sourceNode?.entry?.kind !== 'const') return null
   const raw = sourceNode.values?.value
   const declared = sourceNode.values?.value_type || targetParamType
@@ -406,7 +406,7 @@ function parseConstValue(sourceNode, targetParamType = 'int') {
  * - Constant -> 🔴param: direct value
  * - Input    -> 🔴param: best-effort pick from input shape tokens using binding hint
  */
-function applyCtorValuesFromParamEdges(result) {
+function applyCtorValuesFromParamEdges(result: any) {
   let changed = false
   for (const c of editor.getConnections()) {
     const target = editor.getNode(c.target)
@@ -415,7 +415,7 @@ function applyCtorValuesFromParamEdges(result) {
     const spec = target.inputs?.[c.targetInput]?.portSpec
     if (spec?.kind !== 'param') continue
     const paramName = spec.paramName
-    const paramDef = (target.entry.ctor || []).find((p) => p.name === paramName)
+    const paramDef = (target.entry.ctor || []).find((p: any) => p.name === paramName)
     if (!paramDef) continue
 
     let next = parseConstValue(source, paramDef.type)
@@ -428,7 +428,7 @@ function applyCtorValuesFromParamEdges(result) {
       const axisHint = reverseBindings(target.entry).get(paramName)
       const outShape = source.freshenedShape?.(c.sourceOutput, 'out')
       if (outShape) {
-        const resolved = outShape.map((t) => resolve(t, result.sub))
+        const resolved = outShape.map((t: any) => resolve(t, result.sub))
         next = guessDimFromTokens(resolved, axisHint)
       }
     }
@@ -441,7 +441,7 @@ function applyCtorValuesFromParamEdges(result) {
   return changed
 }
 
-function styleConnectionPath(connectionId, isParam) {
+function styleConnectionPath(connectionId: any, isParam: any) {
   const view = area?.connectionViews?.get(connectionId)
   const path = view?.element
     ?.querySelector('rete-connection-wrapper')
@@ -476,7 +476,7 @@ function copySelection() {
   // whole subgraph, never half of it. Plain child-only selections are left
   // alone (they'll paste as standalone nodes without the group association).
   const ids = new Set(initial)
-  const fullGroups = new Set()
+  const fullGroups = new Set<any>()
   for (const id of initial) {
     const n = editor.getNode(id)
     if (n?.entry?.kind === 'group') fullGroups.add(n.entry.groupId)
@@ -487,7 +487,7 @@ function copySelection() {
     for (const child of getGroupChildren(gid)) ids.add(child.id)
   }
 
-  const payload = {
+  const payload: any = {
     version: 1,
     framework: state.framework,
     nodes: [],
@@ -496,7 +496,7 @@ function copySelection() {
   }
   for (const n of editor.getNodes()) {
     if (!ids.has(n.id)) continue
-    const spec = {
+    const spec: any = {
       id: n.id,
       name: n.entry.name,
       kind: n.entry.kind,
@@ -514,8 +514,8 @@ function copySelection() {
       // pasted group would re-route const -> child.__param__X onto a child
       // that no longer has that port and the edge would be silently dropped.
       spec.exposedParams = Object.keys(n.inputs || {})
-        .filter((k) => k.startsWith('__param__'))
-        .map((k) => k.replace(/^__param__/, ''))
+        .filter((k: any) => k.startsWith('__param__'))
+        .map((k: any) => k.replace(/^__param__/, ''))
       if (n.groupId && fullGroups.has(n.groupId)) {
         // Only persist group membership when the *whole* group was copied;
         // otherwise the child is meant to land as a standalone.
@@ -630,7 +630,7 @@ async function pasteClipboard() {
     // a pasted facade's interface differs from the original's, and optional
     // child ports (e.g. an attention mask) become mandatory forward() args.
     const boundary = {
-      inputs: (portMap.inputs || []).map((m) => {
+      inputs: (portMap.inputs || []).map((m: any) => {
         const childNodeId = idMap.get(m.childNodeId) ?? m.childNodeId
         const iface = childPortInterface(childNodeId, m.childPort, 'in')
         return {
@@ -641,7 +641,7 @@ async function pasteClipboard() {
           optional: iface.optional,
         }
       }),
-      outputs: (portMap.outputs || []).map((m) => {
+      outputs: (portMap.outputs || []).map((m: any) => {
         const childNodeId = idMap.get(m.childNodeId) ?? m.childNodeId
         return {
           childNodeId,
@@ -650,7 +650,7 @@ async function pasteClipboard() {
           dtype: childPortInterface(childNodeId, m.childPort, 'out').dtype,
         }
       }),
-      params: (portMap.params || []).map((m) => ({
+      params: (portMap.params || []).map((m: any) => ({
         childNodeId: idMap.get(m.childNodeId) ?? m.childNodeId,
         childPort: m.childPort,
         paramName: m.paramName,
@@ -728,7 +728,7 @@ async function pasteClipboard() {
 
   // Keep the freshly pasted nodes selected (skip children hidden inside a
   // collapsed group; their facade represents them and stays selected).
-  const pastedVisible = [...idMap.values()].filter((id) => {
+  const pastedVisible = [...idMap.values()].filter((id: any) => {
     const n = editor.getNode(id)
     if (!n) return false
     if (n.entry?.kind === 'group') return true
@@ -743,7 +743,7 @@ async function pasteClipboard() {
 }
 
 /** Replace the current selection with exactly `ids`. */
-function selectNodeIds(ids) {
+function selectNodeIds(ids: any) {
   const sn = nodeSelection?.selectableNodes
   if (!sn) return
   // Clear the current selection through the same API that drives picking, so
@@ -782,16 +782,16 @@ async function restoreFromAutosave() {
         : `Restored ${stats.nodes} node(s) from autosave`
     flashDiagnostic(note)
   } catch (err) {
-    flashDiagnostic(`Autosave restore failed: ${err.message || String(err)}`)
+    flashDiagnostic(`Autosave restore failed: ${(err as any).message || String(err)}`)
   } finally {
     state.restoring = false
   }
 }
 
-let editor, area, connection, render, selector, nodeSelection
+let editor: any, area: any, connection: any, render: any, selector: any, nodeSelection: any
 
 async function bootstrap() {
-  const container = document.getElementById('editor')
+  const container = document.getElementById('editor')!
 
   editor = new NodeEditor()
   area = new AreaPlugin(container)
@@ -816,7 +816,7 @@ async function bootstrap() {
   area.use(render)
 
   // Validate every connection attempt with a dry-run unification.
-  editor.addPipe((context) => {
+  editor.addPipe((context: any) => {
     if (context.type === 'connectioncreate') {
       const { source, sourceOutput, target, targetInput } = context.data
       if (source === target) {
@@ -841,7 +841,7 @@ async function bootstrap() {
     'nodecreated',
     'noderemoved',
   ])
-  editor.addPipe((context) => {
+  editor.addPipe((context: any) => {
     if (structuralSignals.has(context.type)) {
       queueValidation()
       queueAutosave()
@@ -856,7 +856,7 @@ async function bootstrap() {
   })
 
   // Track selection for the inspector; also save after a node drag finishes.
-  area.addPipe((context) => {
+  area.addPipe((context: any) => {
     if (context.type === 'nodepicked') {
       state.selectedNodeId = context.data.id
       refreshInspector()
@@ -871,7 +871,7 @@ async function bootstrap() {
 
   // Drop-from-palette support.
   container.addEventListener('dragover', (e) => e.preventDefault())
-  container.addEventListener('drop', async (e) => {
+  container.addEventListener('drop', async (e: any) => {
     e.preventDefault()
     const name = e.dataTransfer.getData('application/x-block-name')
     if (!name) return
@@ -884,7 +884,7 @@ async function bootstrap() {
 
   // Toolbar
   wireCodeDialog()
-  document.getElementById('framework-select').addEventListener('change', async (e) => {
+  document.getElementById('framework-select')!.addEventListener('change', async (e: any) => {
     state.framework = e.target.value
     state.runtimeShapes = null
     state.runtimeNumParams = null
@@ -893,14 +893,14 @@ async function bootstrap() {
     await loadManifest()
     await clearGraph()
   })
-  document.getElementById('search').addEventListener('input', (e) => {
-    filterPalette(document.getElementById('palette'), e.target.value)
+  document.getElementById('search')!.addEventListener('input', (e: any) => {
+    filterPalette(document.getElementById('palette')!, e.target.value)
   })
-  document.getElementById('clear-btn').addEventListener('click', () => clearGraph())
-  document.getElementById('import-btn').addEventListener('click', () => {
-    document.getElementById('import-file-input').click()
+  document.getElementById('clear-btn')!.addEventListener('click', () => clearGraph())
+  document.getElementById('import-btn')!.addEventListener('click', () => {
+    document.getElementById('import-file-input')!.click()
   })
-  document.getElementById('import-file-input').addEventListener('change', async (e) => {
+  document.getElementById('import-file-input')!.addEventListener('change', async (e: any) => {
     const file = e.target.files?.[0]
     if (!file) return
     try {
@@ -913,29 +913,29 @@ async function bootstrap() {
         }`
       )
     } catch (err) {
-      flashDiagnostic(`Import failed: ${err.message || String(err)}`)
+      flashDiagnostic(`Import failed: ${(err as any).message || String(err)}`)
     } finally {
       e.target.value = ''
     }
   })
-  document.getElementById('export-btn').addEventListener('click', exportGraph)
-  document.getElementById('codegen-btn').addEventListener('click', () => runCodegen())
-  document.getElementById('codegen-test-btn').addEventListener('click', () =>
+  document.getElementById('export-btn')!.addEventListener('click', exportGraph)
+  document.getElementById('codegen-btn')!.addEventListener('click', () => runCodegen())
+  document.getElementById('codegen-test-btn')!.addEventListener('click', () =>
     runCodegen({ withTest: true })
   )
-  document.getElementById('codegen-trace-btn').addEventListener('click', () =>
+  document.getElementById('codegen-trace-btn')!.addEventListener('click', () =>
     runCodegen({ trace: true, withTest: true })
   )
-  document.getElementById('focus-input-btn').addEventListener('click', () => focusInputNode())
-  document.getElementById('duplicate-btn').addEventListener('click', () => duplicateSelection())
-  document.getElementById('delete-btn').addEventListener('click', () => deleteSelected())
-  document.getElementById('group-btn').addEventListener('click', () => groupSelected())
-  document.getElementById('ungroup-btn').addEventListener('click', () => ungroupFocused())
-  document.getElementById('add-to-group-btn').addEventListener('click', () => addToGroupFocused())
-  document.getElementById('collapse-all-btn').addEventListener('click', () => collapseAllGroups())
-  document.getElementById('expand-all-btn').addEventListener('click', () => expandAllGroups())
-  document.getElementById('run-shapes-btn').addEventListener('click', () => runRuntimeShapeCheck())
-  document.getElementById('batch-size').addEventListener('input', (e) => {
+  document.getElementById('focus-input-btn')!.addEventListener('click', () => focusInputNode())
+  document.getElementById('duplicate-btn')!.addEventListener('click', () => duplicateSelection())
+  document.getElementById('delete-btn')!.addEventListener('click', () => deleteSelected())
+  document.getElementById('group-btn')!.addEventListener('click', () => groupSelected())
+  document.getElementById('ungroup-btn')!.addEventListener('click', () => ungroupFocused())
+  document.getElementById('add-to-group-btn')!.addEventListener('click', () => addToGroupFocused())
+  document.getElementById('collapse-all-btn')!.addEventListener('click', () => collapseAllGroups())
+  document.getElementById('expand-all-btn')!.addEventListener('click', () => expandAllGroups())
+  document.getElementById('run-shapes-btn')!.addEventListener('click', () => runRuntimeShapeCheck())
+  document.getElementById('batch-size')!.addEventListener('input', (e: any) => {
     state.batchSize = Math.max(1, Math.trunc(Number(e.target.value) || 2))
     state.runtimeShapes = null
     state.runtimeNumParams = null
@@ -949,7 +949,7 @@ async function bootstrap() {
     const key = e.key.toLowerCase()
     if (mod && key === 'k') {
       e.preventDefault()
-      document.getElementById('search').focus()
+      document.getElementById('search')!.focus()
       return
     }
     // Skip clipboard/delete handlers while the user is typing in any control
@@ -1032,15 +1032,15 @@ async function loadManifest() {
   // Built-in / utility names always win. The manifest is auto-generated and
   // historically picked up stale module-kind aliases (e.g. Pool2d, Upsample)
   // that would emit broken imports if a palette click resolved to them.
-  const builtinNames = new Set(builtins.map((e) => e.name))
-  state.entries = [...builtins, ...fetched.filter((e) => !builtinNames.has(e.name))]
-  state.byName = new Map(state.entries.map((e) => [e.name, e]))
-  renderPalette(document.getElementById('palette'), state.entries, (entry) =>
+  const builtinNames = new Set(builtins.map((e: any) => e.name))
+  state.entries = [...builtins, ...fetched.filter((e: any) => !builtinNames.has(e.name))]
+  state.byName = new Map(state.entries.map((e: any) => [e.name, e]))
+  renderPalette(document.getElementById('palette')!, state.entries, (entry: any) =>
     createNode(entry.name)
   )
 }
 
-async function createNode(name, pos) {
+async function createNode(name: any, pos?: any) {
   const entry = state.byName.get(name)
   if (!entry) return null
   const node = makeNode(entry)
@@ -1074,7 +1074,7 @@ function refreshTagAtlas() {
   })
 }
 
-async function importGraph(data) {
+async function importGraph(data: any) {
   if (!data || typeof data !== 'object') {
     throw new Error('Invalid graph JSON: expected object')
   }
@@ -1088,7 +1088,7 @@ async function importGraph(data) {
       throw new Error(`Unsupported framework in file: ${frameworkIn}`)
     }
     state.framework = frameworkIn
-    document.getElementById('framework-select').value = frameworkIn
+    ;(document.getElementById('framework-select') as HTMLInputElement).value = frameworkIn
     await loadManifest()
   }
 
@@ -1150,7 +1150,7 @@ async function importGraph(data) {
     // carries shape, so a bare rebuild would force every input required and
     // dtype 'any' (e.g. an optional attention mask becoming a required arg).
     const boundary = {
-      inputs: (portMap.inputs || []).map((m) => {
+      inputs: (portMap.inputs || []).map((m: any) => {
         const childNodeId = idMap.get(m.childNodeId) ?? m.childNodeId
         const iface = childPortInterface(childNodeId, m.childPort, 'in')
         return {
@@ -1161,7 +1161,7 @@ async function importGraph(data) {
           optional: iface.optional,
         }
       }),
-      outputs: (portMap.outputs || []).map((m) => {
+      outputs: (portMap.outputs || []).map((m: any) => {
         const childNodeId = idMap.get(m.childNodeId) ?? m.childNodeId
         return {
           childNodeId,
@@ -1170,7 +1170,7 @@ async function importGraph(data) {
           dtype: childPortInterface(childNodeId, m.childPort, 'out').dtype,
         }
       }),
-      params: (portMap.params || []).map((m) => ({
+      params: (portMap.params || []).map((m: any) => ({
         childNodeId: idMap.get(m.childNodeId) ?? m.childNodeId,
         childPort: m.childPort,
         paramName: m.paramName,
@@ -1260,7 +1260,7 @@ async function importGraph(data) {
 async function deleteSelected() {
   // Collect ids from the selector; fall back to the last picked node so a
   // single click + Delete still works even without an explicit selection box.
-  const ids = new Set()
+  const ids = new Set<any>()
   for (const n of editor.getNodes()) {
     if (selector?.isSelected({ label: 'node', id: n.id })) ids.add(n.id)
   }
@@ -1275,7 +1275,7 @@ async function deleteSelected() {
     if (!childKey) continue
     const g = state.groups.get(n.groupId)
     if (!g || !groupTag(g)) continue
-    if (!peerChildRemovals.has(n.groupId)) peerChildRemovals.set(n.groupId, new Set())
+    if (!peerChildRemovals.has(n.groupId)) peerChildRemovals.set(n.groupId, new Set<any>())
     peerChildRemovals.get(n.groupId).add(childKey)
   }
 
@@ -1334,16 +1334,16 @@ async function deleteSelected() {
 // codegen to translate facade endpoints back to the underlying children.
 // ---------------------------------------------------------------------------
 
-function getGroupChildren(groupId) {
-  return editor.getNodes().filter((n) => n.groupId === groupId)
+function getGroupChildren(groupId: any) {
+  return editor.getNodes().filter((n: any) => n.groupId === groupId)
 }
 
-function isGroupFacade(n) {
+function isGroupFacade(n: any) {
   return n?.entry?.kind === 'group'
 }
 
 /** Find the facade node carrying a given groupId, if any. */
-function getFacadeNode(groupId) {
+function getFacadeNode(groupId: any) {
   for (const n of editor.getNodes()) {
     if (isGroupFacade(n) && n.entry.groupId === groupId) return n
   }
@@ -1351,7 +1351,7 @@ function getFacadeNode(groupId) {
 }
 
 /** Non-empty tag on a group (facade node or persisted facadeTag). */
-function groupTag(g) {
+function groupTag(g: any) {
   if (!g) return ''
   const facade = g.facadeNodeId ? editor.getNode(g.facadeNodeId) : null
   const tag = String(g.facadeTag ?? facade?.tag ?? '').trim()
@@ -1360,7 +1360,7 @@ function groupTag(g) {
 }
 
 /** Invoke fn(peerGid, peerGroup) for every other group sharing the same tag. */
-function forEachPeerGroup(sourceGid, tag, fn) {
+function forEachPeerGroup(sourceGid: any, tag: any, fn: any) {
   const key = String(tag ?? '').trim().toLowerCase()
   if (!key) return
   for (const [gid, g] of state.groups) {
@@ -1370,7 +1370,7 @@ function forEachPeerGroup(sourceGid, tag, fn) {
   }
 }
 
-function groupName(g) {
+function groupName(g: any) {
   return String(g?.name ?? '').trim()
 }
 
@@ -1382,7 +1382,7 @@ function groupName(g) {
  * class body is wrong for the other instances. Tag stays the weight-sharing
  * key; name additionally drives structural sync.
  */
-function groupsAreStructuralPeers(a, b) {
+function groupsAreStructuralPeers(a: any, b: any) {
   if (!a || !b) return false
   const an = groupName(a).toLowerCase()
   const bn = groupName(b).toLowerCase()
@@ -1392,7 +1392,7 @@ function groupsAreStructuralPeers(a, b) {
   return Boolean(at && at === bt)
 }
 
-function groupHasStructuralPeers(groupId) {
+function groupHasStructuralPeers(groupId: any) {
   const src = state.groups.get(groupId)
   if (!src) return false
   for (const [gid, g] of state.groups) {
@@ -1403,7 +1403,7 @@ function groupHasStructuralPeers(groupId) {
 }
 
 /** Fullest group among `groupId` + its structural peers (the sync source). */
-function canonicalStructuralGroupId(groupId) {
+function canonicalStructuralGroupId(groupId: any) {
   const src = state.groups.get(groupId)
   if (!src) return null
   let best = groupId
@@ -1421,12 +1421,12 @@ function canonicalStructuralGroupId(groupId) {
 }
 
 /** Push the fullest structural-peer's layout onto every peer of `groupId`. */
-async function syncStructuralGroupPeers(groupId) {
+async function syncStructuralGroupPeers(groupId: any) {
   const canonical = canonicalStructuralGroupId(groupId)
   if (canonical) await syncPeerGroupStructure(canonical)
 }
 
-function applyGroupName(g, name) {
+function applyGroupName(g: any, name: any) {
   g.name = name
   const facade = g.facadeNodeId ? editor.getNode(g.facadeNodeId) : null
   if (facade) {
@@ -1438,14 +1438,14 @@ function applyGroupName(g, name) {
   for (const child of getGroupChildren(g.id)) applyTagStyle(child)
 }
 
-function applyGroupTag(g, tag) {
+function applyGroupTag(g: any, tag: any) {
   g.facadeTag = String(tag ?? '')
   const facade = g.facadeNodeId ? editor.getNode(g.facadeNodeId) : null
   if (facade) restoreNodeTag(facade, tag)
 }
 
 /** Resolve a tagged member id to a live BlockNode (skips group ids). */
-function atlasNodeMember(id) {
+function atlasNodeMember(id: any) {
   const n = editor.getNode(id)
   return n && !isGroupFacade(n) ? n : null
 }
@@ -1454,7 +1454,7 @@ function atlasNodeMember(id) {
  * Mutator: a node's ctor values changed via the inspector. Push the new
  * canonical values into the atlas and mirror them to every peer member.
  */
-function syncNamedNodePeers(sourceNode) {
+function syncNamedNodePeers(sourceNode: any) {
   if (!nodeNameKey(sourceNode)) return
   const peers = recordAllValues(state.tagAtlas, sourceNode)
   for (const peerId of peers) {
@@ -1472,7 +1472,7 @@ function syncNamedNodePeers(sourceNode) {
  * Mutator: a node just got a new name. Pull canonical values + exposed-param
  * structure from the atlas onto the node so it lines up with its new peers.
  */
-async function adoptNamedPeerValues(node) {
+async function adoptNamedPeerValues(node: any) {
   const entry = getNodeAtlasEntry(state.tagAtlas, node)
   if (!entry) return false
   if (entry.family && entry.family.split(':')[1] !== node.entry?.name) return false
@@ -1496,7 +1496,7 @@ async function adoptNamedPeerValues(node) {
   return true
 }
 
-async function syncNamedPeerParamPort(sourceNode, param, shouldExpose) {
+async function syncNamedPeerParamPort(sourceNode: any, param: any, shouldExpose: any) {
   const key = `__param__${param.name}`
   const peers = recordExposedParamChange(state.tagAtlas, sourceNode, param.name, shouldExpose)
   for (const peerId of peers) {
@@ -1517,21 +1517,21 @@ async function syncNamedPeerParamPort(sourceNode, param, shouldExpose) {
   }
 }
 
-function groupBoundarySignature(g) {
+function groupBoundarySignature(g: any) {
   const facade = g.facadeNodeId ? editor.getNode(g.facadeNodeId) : null
   if (facade?.entry) return boundarySignatureFromEntry(facade.entry)
   const pm = g.portMap
   if (pm?.inputs?.length || pm?.outputs?.length || pm?.params?.length) {
     return boundarySignatureFromBoundary({
-      inputs: (pm.inputs ?? []).map((m) => ({ shape: m.shape })),
-      outputs: (pm.outputs ?? []).map((m) => ({ shape: m.shape })),
+      inputs: (pm.inputs ?? []).map((m: any) => ({ shape: m.shape })),
+      outputs: (pm.outputs ?? []).map((m: any) => ({ shape: m.shape })),
       params: pm.params ?? [],
     })
   }
   return null
 }
 
-function findPeerGroupWithTag(excludeGid, tag) {
+function findPeerGroupWithTag(excludeGid: any, tag: any) {
   const key = String(tag ?? '').trim().toLowerCase()
   if (!key) return null
   for (const [peerGid, peer] of state.groups) {
@@ -1542,12 +1542,12 @@ function findPeerGroupWithTag(excludeGid, tag) {
   return null
 }
 
-function getTagBoundaryTemplate(excludeGid, tag) {
+function getTagBoundaryTemplate(excludeGid: any, tag: any) {
   const peer = findPeerGroupWithTag(excludeGid, tag)
   return peer ? groupBoundarySignature(peer.g) : null
 }
 
-async function replaceCollapsedFacade(group, boundary) {
+async function replaceCollapsedFacade(group: any, boundary: any) {
   const facade = group.facadeNodeId ? editor.getNode(group.facadeNodeId) : null
   const pos = (facade && nodePosition(facade)) ?? group.savedPosition ?? { x: 0, y: 0 }
   const tag = String(facade?.tag ?? group.facadeTag ?? '')
@@ -1577,7 +1577,7 @@ async function replaceCollapsedFacade(group, boundary) {
   for (const child of getGroupChildren(group.id)) applyTagStyle(child)
 }
 
-async function alignGroupBoundary(groupId, signature) {
+async function alignGroupBoundary(groupId: any, signature: any) {
   const group = state.groups.get(groupId)
   if (!group || !signature) return
 
@@ -1589,12 +1589,12 @@ async function alignGroupBoundary(groupId, signature) {
   const currentSig = groupBoundarySignature(group)
   if (currentSig && boundarySignaturesMatch(currentSig, signature)) return
 
-  const childIds = new Set(getGroupChildren(groupId).map((n) => n.id))
+  const childIds = new Set(getGroupChildren(groupId).map((n: any) => n.id))
   const merged = applySignatureToBoundary(computeBoundary(childIds), signature, group.portMap)
   await replaceCollapsedFacade(group, merged)
 }
 
-async function syncPeerGroupBoundaries(sourceGid, signature) {
+async function syncPeerGroupBoundaries(sourceGid: any, signature: any) {
   const sourceGroup = state.groups.get(sourceGid)
   if (!sourceGroup || !signature) return
   for (const [peerGid, peer] of state.groups) {
@@ -1604,7 +1604,7 @@ async function syncPeerGroupBoundaries(sourceGid, signature) {
   }
 }
 
-async function alignTaggedGroupToPeers(gid, tag) {
+async function alignTaggedGroupToPeers(gid: any, tag: any) {
   await syncAllTaggedGroupInstances(tag)
   queueValidation()
   queueAutosave()
@@ -1612,7 +1612,7 @@ async function alignTaggedGroupToPeers(gid, tag) {
 
 let syncingPeerGroups = false
 
-function groupChildrenByTag(groupId) {
+function groupChildrenByTag(groupId: any) {
   const map = new Map()
   for (const n of getGroupChildren(groupId)) {
     const key = nodeTagKey(n.tag)
@@ -1622,32 +1622,32 @@ function groupChildrenByTag(groupId) {
 }
 
 /** Topological order of children using only intra-group edges. */
-function topoOrderedGroupChildren(groupId) {
+function topoOrderedGroupChildren(groupId: any) {
   const children = getGroupChildren(groupId)
   if (children.length <= 1) return children
-  const ids = new Set(children.map((n) => n.id))
+  const ids = new Set(children.map((n: any) => n.id))
   const conns = editor
     .getConnections()
-    .filter((c) => ids.has(c.source) && ids.has(c.target))
-  const indeg = new Map(children.map((n) => [n.id, 0]))
-  const out = new Map(children.map((n) => [n.id, []]))
+    .filter((c: any) => ids.has(c.source) && ids.has(c.target))
+  const indeg = new Map<any, number>(children.map((n: any) => [n.id, 0]))
+  const out = new Map<any, any[]>(children.map((n: any) => [n.id, []]))
   for (const c of conns) {
     indeg.set(c.target, (indeg.get(c.target) ?? 0) + 1)
     out.get(c.source)?.push(c.target)
   }
   const queue = [...indeg.entries()].filter(([, d]) => d === 0).map(([id]) => id)
-  const order = []
+  const order: any[] = []
   while (queue.length) {
     const id = queue.shift()
     order.push(id)
     for (const tgt of out.get(id) ?? []) {
-      indeg.set(tgt, indeg.get(tgt) - 1)
+      indeg.set(tgt, (indeg.get(tgt) ?? 0) - 1)
       if (indeg.get(tgt) === 0) queue.push(tgt)
     }
   }
   if (order.length !== children.length) return children
-  const byId = new Map(children.map((n) => [n.id, n]))
-  return order.map((id) => byId.get(id)).filter(Boolean)
+  const byId = new Map(children.map((n: any) => [n.id, n]))
+  return order.map((id: any) => byId.get(id)).filter(Boolean)
 }
 
 /**
@@ -1655,9 +1655,9 @@ function topoOrderedGroupChildren(groupId) {
  * name in topo order (covers separately-created groups whose random child tags
  * differ but topology matches).
  */
-function buildSourceToPeerChildMap(sourceGid, peerGid) {
+function buildSourceToPeerChildMap(sourceGid: any, peerGid: any) {
   const map = new Map()
-  const usedPeerIds = new Set()
+  const usedPeerIds = new Set<any>()
 
   // Bucket peer children by tag in topo order, then pair source children
   // (also in topo order) by shifting from the matching bucket. A group may
@@ -1703,12 +1703,12 @@ function buildSourceToPeerChildMap(sourceGid, peerGid) {
   }
 
   const orphanPeerIds = getGroupChildren(peerGid)
-    .filter((p) => !usedPeerIds.has(p.id))
-    .map((p) => p.id)
+    .filter((p: any) => !usedPeerIds.has(p.id))
+    .map((p: any) => p.id)
   return { map, orphanPeerIds }
 }
 
-function canonicalTaggedGroupId(tag) {
+function canonicalTaggedGroupId(tag: any) {
   const key = String(tag ?? '').trim().toLowerCase()
   if (!key) return null
   let best = null
@@ -1724,7 +1724,7 @@ function canonicalTaggedGroupId(tag) {
   return best
 }
 
-function groupFacadeAnchor(group) {
+function groupFacadeAnchor(group: any) {
   if (!group) return null
   if (group.collapsed && group.facadeNodeId) {
     const facade = editor.getNode(group.facadeNodeId)
@@ -1734,22 +1734,22 @@ function groupFacadeAnchor(group) {
   return group.savedPosition ?? null
 }
 
-function signatureForGroup(groupId) {
+function signatureForGroup(groupId: any) {
   const g = state.groups.get(groupId)
   const fromFacade = g && groupBoundarySignature(g)
   if (fromFacade) return fromFacade
-  const childIds = new Set(getGroupChildren(groupId).map((n) => n.id))
+  const childIds = new Set(getGroupChildren(groupId).map((n: any) => n.id))
   return boundarySignatureFromBoundary(computeBoundary(childIds))
 }
 
-function copyExposedParamsFromSource(source, target) {
+function copyExposedParamsFromSource(source: any, target: any) {
   for (const portName of Object.keys(source.inputs ?? {})) {
     if (!portName.startsWith('__param__')) continue
     target.exposeParam?.(portName.slice('__param__'.length))
   }
 }
 
-async function replicateGroupChildToPeer(sourceChild, peerGid, peerGroup, sourceGroup) {
+async function replicateGroupChildToPeer(sourceChild: any, peerGid: any, peerGroup: any, sourceGroup: any) {
   const entry = state.byName.get(sourceChild.entry?.name)
   if (!entry || entry.kind === 'input' || entry.kind === 'output') return null
 
@@ -1788,7 +1788,7 @@ async function replicateGroupChildToPeer(sourceChild, peerGid, peerGroup, source
   return node
 }
 
-async function mirrorInternalEdgesToPeer(sourceGid, peerGid, sourceToPeer) {
+async function mirrorInternalEdgesToPeer(sourceGid: any, peerGid: any, sourceToPeer: any) {
   const peerGroup = state.groups.get(peerGid)
   for (const c of editor.getConnections()) {
     const src = editor.getNode(c.source)
@@ -1800,7 +1800,7 @@ async function mirrorInternalEdgesToPeer(sourceGid, peerGid, sourceToPeer) {
     if (!peerSrc || !peerTgt) continue
 
     const exists = editor.getConnections().some(
-      (ec) =>
+      (ec: any) =>
         ec.source === peerSrc.id &&
         ec.sourceOutput === c.sourceOutput &&
         ec.target === peerTgt.id &&
@@ -1808,16 +1808,16 @@ async function mirrorInternalEdgesToPeer(sourceGid, peerGid, sourceToPeer) {
     )
     if (exists) continue
 
-    const before = new Set(editor.getConnections().map((ec) => ec.id))
+    const before = new Set(editor.getConnections().map((ec: any) => ec.id))
     const ok = await safeAddConnection(peerSrc.id, c.sourceOutput, peerTgt.id, c.targetInput)
     if (!ok) continue
     if (!peerGroup?.collapsed) continue
-    const added = editor.getConnections().find((ec) => !before.has(ec.id))
+    const added = editor.getConnections().find((ec: any) => !before.has(ec.id))
     if (added) setConnectionHidden(added.id, true)
   }
 }
 
-async function alignPeerChildToSource(sourceChild, peerChild) {
+async function alignPeerChildToSource(sourceChild: any, peerChild: any) {
   const srcTag = String(sourceChild.tag ?? '').trim()
   if (srcTag && nodeTagKey(peerChild.tag) !== nodeTagKey(srcTag)) {
     applyNodeTagOnNode(peerChild, srcTag)
@@ -1834,7 +1834,7 @@ async function alignPeerChildToSource(sourceChild, peerChild) {
   applyTagStyle(peerChild)
 }
 
-async function removePeerGroupChild(peerGid, childId) {
+async function removePeerGroupChild(peerGid: any, childId: any) {
   const peerGroup = state.groups.get(peerGid)
   for (const c of [...editor.getConnections()]) {
     if (c.source === childId || c.target === childId) {
@@ -1851,7 +1851,7 @@ async function removePeerGroupChild(peerGid, childId) {
  * Mirror children + internal wiring from one tagged group instance onto every
  * other group that shares the facade tag (weight-shared subgraph copies).
  */
-async function syncPeerGroupStructure(sourceGid) {
+async function syncPeerGroupStructure(sourceGid: any) {
   if (syncingPeerGroups || state.restoring) return
   const sourceGroup = state.groups.get(sourceGid)
   if (!sourceGroup) return
@@ -1903,13 +1903,13 @@ async function syncPeerGroupStructure(sourceGid) {
  * through the structural canonical so same-*name* peers (different tags) sync
  * too, not just same-tag instances.
  */
-async function syncAllTaggedGroupInstances(tag) {
+async function syncAllTaggedGroupInstances(tag: any) {
   const seed = canonicalTaggedGroupId(tag)
   if (!seed) return
   await syncStructuralGroupPeers(seed)
 }
 
-async function removePeerChildrenByTags(sourceGid, tagKeys) {
+async function removePeerChildrenByTags(sourceGid: any, tagKeys: any) {
   if (syncingPeerGroups || state.restoring || tagKeys.size === 0) return
   const sourceGroup = state.groups.get(sourceGid)
   if (!sourceGroup || !groupHasStructuralPeers(sourceGid)) return
@@ -1945,7 +1945,7 @@ async function removePeerChildrenByTags(sourceGid, tagKeys) {
 }
 
 /** Inspect every connection and classify it w.r.t. the given child set. */
-function classifyEdges(childIds) {
+function classifyEdges(childIds: any) {
   const internal = []
   const inputBoundary = [] // external -> child
   const outputBoundary = [] // child -> external
@@ -1976,13 +1976,13 @@ function classifyEdges(childIds) {
  * required/dtype 'any' — turning optional child ports (e.g. an attention mask)
  * into mandatory forward() args.
  */
-function childPortInterface(childNodeId, childPort, dir) {
+function childPortInterface(childNodeId: any, childPort: any, dir: any) {
   const child = editor.getNode(childNodeId)
   const live = dir === 'in' ? child?.inputs?.[childPort] : child?.outputs?.[childPort]
   const spec =
     live?.portSpec ??
     (dir === 'in' ? child?.entry?.inputs : child?.entry?.outputs)?.find(
-      (p) => p.name === childPort
+      (p: any) => p.name === childPort
     )
   return {
     dtype: spec?.dtype ?? 'any',
@@ -1990,16 +1990,16 @@ function childPortInterface(childNodeId, childPort, dir) {
   }
 }
 
-function computeBoundary(childIds, sub) {
+function computeBoundary(childIds: any, sub?: any) {
   const { inputBoundary, outputBoundary, internal } = classifyEdges(childIds)
-  const inputs = []
-  const outputs = []
-  const params = []
+  const inputs: any[] = []
+  const outputs: any[] = []
+  const params: any[] = []
   const seenIn = new Map() // `${childId}/${childInput}` -> facade index
   const seenOut = new Map()
   const seenParam = new Map()
 
-  const pushInputPort = (child, portName, portSpec) => {
+  const pushInputPort = (child: any, portName: any, portSpec: any) => {
     const key = `${child.id}/${portName}`
     if (seenIn.has(key) || seenParam.has(key)) return
     seenIn.set(key, inputs.length)
@@ -2013,7 +2013,7 @@ function computeBoundary(childIds, sub) {
     })
   }
 
-  const pushParamPort = (child, portName, portSpec) => {
+  const pushParamPort = (child: any, portName: any, portSpec: any) => {
     const key = `${child.id}/${portName}`
     if (seenParam.has(key) || seenIn.has(key)) return
     seenParam.set(key, params.length)
@@ -2025,7 +2025,7 @@ function computeBoundary(childIds, sub) {
     })
   }
 
-  const pushOutputPort = (child, portName, portSpec) => {
+  const pushOutputPort = (child: any, portName: any, portSpec: any) => {
     const key = `${child.id}/${portName}`
     if (seenOut.has(key)) return
     seenOut.set(key, outputs.length)
@@ -2056,8 +2056,8 @@ function computeBoundary(childIds, sub) {
 
   // 2. Track child ports already saturated by an internal edge so we don't
   //    surface them as dangling.
-  const internalIn = new Set()
-  const internalOut = new Set()
+  const internalIn = new Set<any>()
+  const internalOut = new Set<any>()
   for (const c of internal) {
     internalIn.add(`${c.target}/${c.targetInput}`)
     internalOut.add(`${c.source}/${c.sourceOutput}`)
@@ -2098,7 +2098,7 @@ function computeBoundary(childIds, sub) {
   return { inputs, outputs, params, internal, inputBoundary, outputBoundary, seenIn, seenOut, seenParam }
 }
 
-function centroid(nodes) {
+function centroid(nodes: any) {
   if (nodes.length === 0) return { x: 0, y: 0 }
   let sx = 0
   let sy = 0
@@ -2114,13 +2114,13 @@ function centroid(nodes) {
   return { x: sx / count, y: sy / count }
 }
 
-function setNodeHidden(nodeId, hidden) {
+function setNodeHidden(nodeId: any, hidden: any) {
   const el = area?.nodeViews?.get(nodeId)?.element
   if (!el) return
   el.classList.toggle('group-hidden', hidden)
 }
 
-function markFacadeElement(nodeId) {
+function markFacadeElement(nodeId: any) {
   const el = area?.nodeViews?.get(nodeId)?.element
   if (!el) return
   el.classList.add('group-facade')
@@ -2147,7 +2147,7 @@ function applyAllGroupStyles() {
   }
 }
 
-function setConnectionHidden(connectionId, hidden) {
+function setConnectionHidden(connectionId: any, hidden: any) {
   const view = area?.connectionViews?.get(connectionId)
   const el = view?.element
   if (!el) return
@@ -2159,7 +2159,7 @@ function setConnectionHidden(connectionId, hidden) {
  * the corresponding facade endpoint (or the reverse). Returns silently on
  * any partial failure since the validator picks up the resulting state.
  */
-async function rerouteBoundaryEdges(group, direction /* 'to-facade' | 'to-children' */) {
+async function rerouteBoundaryEdges(group: any, direction /* 'to-facade' | 'to-children' */: any) {
   const { facadeNodeId, portMap } = group
   const facade = facadeNodeId ? editor.getNode(facadeNodeId) : null
   if (!facade && direction === 'to-facade') return
@@ -2174,11 +2174,11 @@ async function rerouteBoundaryEdges(group, direction /* 'to-facade' | 'to-childr
   for (const m of portMap.outputs) {
     outputByChild.set(`${m.childNodeId}/${m.childPort}`, m.facadePort)
   }
-  const inputByFacade = new Map([
-    ...portMap.inputs.map((m) => [m.facadePort, m]),
-    ...(portMap.params ?? []).map((m) => [m.facadePort, m]),
+  const inputByFacade = new Map<any, any>([
+    ...portMap.inputs.map((m: any) => [m.facadePort, m]),
+    ...(portMap.params ?? []).map((m: any) => [m.facadePort, m]),
   ])
-  const outputByFacade = new Map(portMap.outputs.map((m) => [m.facadePort, m]))
+  const outputByFacade = new Map<any, any>(portMap.outputs.map((m: any) => [m.facadePort, m]))
 
   for (const c of [...editor.getConnections()]) {
     if (direction === 'to-facade') {
@@ -2209,7 +2209,7 @@ async function rerouteBoundaryEdges(group, direction /* 'to-facade' | 'to-childr
   }
 }
 
-async function safeAddConnection(source, sourceOutput, target, targetInput) {
+async function safeAddConnection(source: any, sourceOutput: any, target: any, targetInput: any) {
   const srcNode = editor.getNode(source)
   const tgtNode = editor.getNode(target)
   if (!srcNode || !tgtNode) return false
@@ -2227,7 +2227,7 @@ async function safeAddConnection(source, sourceOutput, target, targetInput) {
  * the selection from the rete selector by default; tests can pass an
  * explicit id set to bypass the selector.
  */
-async function groupSelected(explicitIds) {
+async function groupSelected(explicitIds?: any) {
   const ids = explicitIds ?? selectedNodeIds()
   if (ids.size < 1) {
     flashDiagnostic('Select at least one node to group')
@@ -2250,7 +2250,7 @@ async function groupSelected(explicitIds) {
   }
 
   const groupId = freshGroupId()
-  const childNodes = [...ids].map((id) => editor.getNode(id)).filter(Boolean)
+  const childNodes = [...ids].map((id: any) => editor.getNode(id)).filter(Boolean)
   for (const n of childNodes) {
     n.groupId = groupId
     if (!String(n.tag ?? '').trim()) {
@@ -2289,8 +2289,8 @@ async function groupSelected(explicitIds) {
   for (const n of childNodes) setNodeHidden(n.id, true)
   for (const c of editor.getConnections()) {
     if (
-      childNodes.some((n) => n.id === c.source) &&
-      childNodes.some((n) => n.id === c.target)
+      childNodes.some((n: any) => n.id === c.source) &&
+      childNodes.some((n: any) => n.id === c.target)
     ) {
       setConnectionHidden(c.id, true)
     }
@@ -2323,7 +2323,7 @@ async function groupSelected(explicitIds) {
  */
 function resolveTargetGroupIdForAdd() {
   const ids = selectedNodeIds()
-  const groupIds = new Set()
+  const groupIds = new Set<any>()
   for (const id of ids) {
     const n = editor.getNode(id)
     if (!n) continue
@@ -2338,7 +2338,7 @@ function resolveTargetGroupIdForAdd() {
 }
 
 /** Assign groupId on nodes and reveal them while the group is expanded. */
-async function addNodesToGroup(groupId, explicitIds) {
+async function addNodesToGroup(groupId: any, explicitIds?: any) {
   const group = state.groups.get(groupId)
   if (!group) {
     flashDiagnostic('Group not found')
@@ -2348,8 +2348,8 @@ async function addNodesToGroup(groupId, explicitIds) {
 
   const ids = explicitIds ?? selectedNodeIds()
   const candidates = [...ids]
-    .map((id) => editor.getNode(id))
-    .filter((n) => n && !isGroupFacade(n) && n.groupId !== groupId)
+    .map((id: any) => editor.getNode(id))
+    .filter((n: any) => n && !isGroupFacade(n) && n.groupId !== groupId)
 
   if (candidates.length === 0) {
     flashDiagnostic('Select ungrouped nodes to add to the group')
@@ -2412,7 +2412,7 @@ async function addToGroupFocused() {
  * Re-show the children of a collapsed group and remove the facade. The group
  * association is preserved so the user can re-collapse later.
  */
-async function expandGroup(groupId) {
+async function expandGroup(groupId: any) {
   const group = state.groups.get(groupId)
   if (!group || !group.collapsed) return
   const facade = group.facadeNodeId ? editor.getNode(group.facadeNodeId) : null
@@ -2457,7 +2457,7 @@ async function expandGroup(groupId) {
 }
 
 /** Collapse an already-grouped (but currently expanded) set of children. */
-async function collapseGroup(groupId) {
+async function collapseGroup(groupId: any) {
   const group = state.groups.get(groupId)
   if (!group || group.collapsed) return
   const children = getGroupChildren(groupId)
@@ -2467,8 +2467,8 @@ async function collapseGroup(groupId) {
     refreshInspector()
     return
   }
-  const childIds = new Set(children.map((n) => n.id))
-  let boundary = computeBoundary(childIds)
+  const childIds = new Set(children.map((n: any) => n.id))
+  let boundary: any = computeBoundary(childIds)
   const tag = groupTag(group)
   let template = group.pendingBoundarySignature ?? (tag ? getTagBoundaryTemplate(groupId, tag) : null)
   delete group.pendingBoundarySignature
@@ -2517,13 +2517,13 @@ async function collapseGroup(groupId) {
 
 /** Collapse every currently-expanded group. No-op for already-collapsed ones. */
 async function collapseAllGroups() {
-  const ids = [...state.groups.keys()].filter((gid) => !state.groups.get(gid)?.collapsed)
+  const ids = [...state.groups.keys()].filter((gid: any) => !state.groups.get(gid)?.collapsed)
   for (const gid of ids) await collapseGroup(gid)
 }
 
 /** Expand every currently-collapsed group. No-op for already-expanded ones. */
 async function expandAllGroups() {
-  const ids = [...state.groups.keys()].filter((gid) => state.groups.get(gid)?.collapsed)
+  const ids = [...state.groups.keys()].filter((gid: any) => state.groups.get(gid)?.collapsed)
   for (const gid of ids) await expandGroup(gid)
 }
 
@@ -2531,7 +2531,7 @@ async function expandAllGroups() {
  * Dissolve a group permanently. If currently collapsed, expand first; then
  * clear groupId on every child and forget the group state.
  */
-async function ungroup(groupId) {
+async function ungroup(groupId: any) {
   const group = state.groups.get(groupId)
   if (!group) return
   if (group.collapsed) await expandGroup(groupId)
@@ -2570,7 +2570,7 @@ async function toggleCollapseFocused() {
   else await collapseGroup(gid)
 }
 
-function isEditingText(el) {
+function isEditingText(el: any) {
   if (!el) return false
   const tag = el.tagName
   return (
@@ -2581,7 +2581,7 @@ function isEditingText(el) {
   )
 }
 
-let validateTimer = null
+let validateTimer: any = null
 function queueValidation() {
   clearTimeout(validateTimer)
   validateTimer = setTimeout(runValidation, 60)
@@ -2605,7 +2605,7 @@ function runValidation() {
       : { ok: false }
   state.lastResult.canRunShapes = concrete.ok
   state.lastResult.concreteReason = concrete.reason
-  renderDiagnostics(document.getElementById('diag-list'), state.lastResult)
+  renderDiagnostics(document.getElementById('diag-list')!, state.lastResult)
   refreshInspector()
   applyAllTagStyles()
   applyAllConnectionStyles()
@@ -2613,12 +2613,12 @@ function runValidation() {
   applyRuntimeErrorHighlight()
 }
 
-function inferImplicitCtorParams(result) {
+function inferImplicitCtorParams(result: any) {
   let changed = false
   for (const n of editor.getNodes()) {
     if (!n?.entry || n.entry.kind === 'input') continue
-    const ctorByName = new Map((n.entry.ctor || []).map((p) => [p.name, p]))
-    for (const [axis, paramName] of Object.entries(n.entry.bindings || {})) {
+    const ctorByName = new Map<any, any>((n.entry.ctor || []).map((p: any) => [p.name, p]))
+    for (const [axis, paramName] of Object.entries(n.entry.bindings || {}) as [string, any][]) {
       const cur = n.values?.[paramName]
       if (cur !== null && cur !== undefined && cur !== '') continue
       const param = ctorByName.get(paramName)
@@ -2659,8 +2659,8 @@ async function runRuntimeShapeCheck() {
   } catch (e) {
     state.runtimeShapes = null
     state.runtimeNumParams = null
-    state.runtimeError = e.message || String(e)
-    state.runtimeErrorNodeId = e.nodeId || null
+    state.runtimeError = (e as any).message || String(e)
+    state.runtimeErrorNodeId = (e as any).nodeId || null
   } finally {
     state.runtimeRunning = false
     refreshRuntimePanel()
@@ -2669,10 +2669,10 @@ async function runRuntimeShapeCheck() {
   }
 }
 
-function refreshInspector(options = {}) {
+function refreshInspector(options: any = {}) {
   const node = state.selectedNodeId ? editor.getNode(state.selectedNodeId) : null
   renderInspector(
-    document.getElementById('inspector-body'),
+    document.getElementById('inspector-body')!,
     node,
     state.lastResult?.sub ?? new Map(),
     () => {
@@ -2691,14 +2691,14 @@ function refreshInspector(options = {}) {
       const oldTag = String(n.tag ?? '').trim()
       applyNodeTagOnNode(n, newTag)
       if (n.entry?.kind === 'group') {
-        const gid = n.entry.groupId
+        const gid = n.entry.groupId as any
         const g = state.groups.get(gid)
         unregisterMember(state.tagAtlas, oldTag, gid)
         if (g) {
           persistGroupFacadeTag(g, newTag)
           if (nodeTagKey(newTag)) registerGroupMember(state.tagAtlas, g, n)
         }
-        forEachPeerGroup(gid, oldTag, (_peerGid, peer) => applyGroupTag(peer, newTag))
+        forEachPeerGroup(gid, oldTag, (_peerGid: any, peer: any) => applyGroupTag(peer, newTag))
         const newKey = String(newTag ?? '').trim()
         if (newKey) void alignTaggedGroupToPeers(gid, newKey)
         applyAllTagStyles()
@@ -2718,7 +2718,7 @@ function refreshInspector(options = {}) {
     async (targetNode, param) => {
       await addConstantForParam(targetNode, param)
     },
-    async (targetNode, param, shouldExpose) => {
+    async (targetNode: any, param: any, shouldExpose: any) => {
       const key = `__param__${param.name}`
       if (shouldExpose) {
         targetNode.exposeParam?.(param.name)
@@ -2800,14 +2800,14 @@ function refreshInspector(options = {}) {
 
 // The inspector's toggle action needs to act on a specific gid (not the
 // currently-focused selection), so we route through a small helper.
-async function expandGroupOrCollapse(groupId) {
+async function expandGroupOrCollapse(groupId: any) {
   const g = state.groups.get(groupId)
   if (!g) return
   if (g.collapsed) await expandGroup(groupId)
   else await collapseGroup(groupId)
 }
 
-async function addConstantForParam(targetNode, param) {
+async function addConstantForParam(targetNode: any, param: any) {
   const host = area?.nodeViews?.get(targetNode.id)?.position ?? { x: 0, y: 0 }
   const pos = { x: host.x - 260, y: host.y + 22 * Math.max(0, targetNode.entry.ctor.indexOf(param)) }
   const c = await createNode('Constant', pos)
@@ -2832,14 +2832,14 @@ async function addConstantForParam(targetNode, param) {
     const conn = new ClassicPreset.Connection(c, 'out', targetNode, targetInput)
     await editor.addConnection(conn)
   } catch (e) {
-    flashDiagnostic(`Failed to wire constant: ${e.message || String(e)}`)
+    flashDiagnostic(`Failed to wire constant: ${(e as any).message || String(e)}`)
   }
   queueValidation()
   queueAutosave()
 }
 
-function flashDiagnostic(text) {
-  const ul = document.getElementById('diag-list')
+function flashDiagnostic(text: any) {
+  const ul = document.getElementById('diag-list')!
   const li = document.createElement('li')
   li.className = 'err'
   li.textContent = text
@@ -2849,7 +2849,7 @@ function flashDiagnostic(text) {
 
 async function focusInputNode() {
   const nodes = editor.getNodes()
-  const input = nodes.find((n) => n.entry?.kind === 'input')
+  const input = nodes.find((n: any) => n.entry?.kind === 'input')
   if (!input) {
     flashDiagnostic('No Input node found')
     return
@@ -2886,7 +2886,7 @@ function exportGraph() {
 function getGraphData() {
   return {
     framework: state.framework,
-    nodes: editor.getNodes().map((n) => {
+    nodes: editor.getNodes().map((n: any) => {
       const view = area?.nodeViews?.get(n.id)
       const p = view?.position
       const position =
@@ -2894,7 +2894,7 @@ function getGraphData() {
       // Two flavours of "groupId" in the spec, distinguished by `kind`:
       //   - kind === 'group'  -> this is a facade; groupId is its identity
       //   - everything else   -> groupId is "I am a member of group X"
-      const base = {
+      const base: any = {
         id: n.id,
         name: n.entry.name,
         kind: n.entry.kind,
@@ -2902,8 +2902,8 @@ function getGraphData() {
         tag: n.tag ?? '',
         values: n.values,
         exposedParams: Object.keys(n.inputs || {})
-          .filter((k) => k.startsWith('__param__'))
-          .map((k) => k.replace(/^__param__/, '')),
+          .filter((k: any) => k.startsWith('__param__'))
+          .map((k: any) => k.replace(/^__param__/, '')),
         position,
       }
       if (n.entry.kind === 'group') {
@@ -2914,13 +2914,13 @@ function getGraphData() {
       }
       return base
     }),
-    connections: editor.getConnections().map((c) => ({
+    connections: editor.getConnections().map((c: any) => ({
       source: c.source,
       sourceOutput: c.sourceOutput,
       target: c.target,
       targetInput: c.targetInput,
     })),
-    groups: [...state.groups.values()].map((g) => {
+    groups: [...state.groups.values()].map((g: any) => {
       const facade = g.facadeNodeId ? editor.getNode(g.facadeNodeId) : null
       return {
         id: g.id,
@@ -2936,13 +2936,13 @@ function getGraphData() {
   }
 }
 
-function runCodegen(options = {}) {
-  let testCase
+function runCodegen(options: any = {}) {
+  let testCase: any
   if (options.withTest) {
     try {
       testCase = resolveInputSpecs(editor, state.framework, state.batchSize)
     } catch (err) {
-      alert(`Cannot build test case: ${err.message}`)
+      alert(`Cannot build test case: ${(err as any).message}`)
       return
     }
   }
@@ -2961,7 +2961,7 @@ bootstrap().catch((err) => {
 // Test / inspection harness. Exposed on window so headless tests can drive
 // the editor without simulating mouse interactions. Not relied on by the UI.
 if (typeof window !== 'undefined') {
-  window.__blocks = {
+  ;(window as any).__blocks = {
     get editor() {
       return editor
     },
@@ -2990,7 +2990,7 @@ if (typeof window !== 'undefined') {
     undo,
     redo,
     selectNodeIds,
-    isNodeSelected: (id) => Boolean(selector?.isSelected({ label: 'node', id })),
+    isNodeSelected: (id: any) => Boolean(selector?.isSelected({ label: 'node', id })),
     applyNodeTag: applyNodeTagOnNode,
     applyNodeName: applyNodeNameOnNode,
     syncPeerGroupStructure,
@@ -3002,7 +3002,7 @@ if (typeof window !== 'undefined') {
     },
     AUTOSAVE_KEY,
     CLIPBOARD_KEY,
-    groupNodes: (ids) => groupSelected(new Set(ids)),
+    groupNodes: (ids: any) => groupSelected(new Set(ids)),
     expandGroup,
     collapseGroup,
     collapseAllGroups,
@@ -3012,7 +3012,7 @@ if (typeof window !== 'undefined') {
     addToGroupFocused,
     runCodegen: () =>
       generateCode(editor.getNodes(), editor.getConnections(), state.framework),
-    addConnection: async (source, sourceOutput, target, targetInput) => {
+    addConnection: async (source: any, sourceOutput: any, target: any, targetInput: any) => {
       const srcNode = editor.getNode(source)
       const tgtNode = editor.getNode(target)
       if (!srcNode || !tgtNode) throw new Error('node not found')

@@ -6,19 +6,56 @@
  * tensor.shape lists from a real forward pass.
  */
 
-import { generate, planGraph } from './codegen.js'
-import { parseShapeString } from './nodes.js'
-import { resolve } from './shape.js'
+import { generate, planGraph } from './codegen.ts'
+import { parseShapeString } from './nodes.ts'
+import { resolve } from './shape.ts'
+import type { Substitution } from './shape.ts'
+import type { GraphEditor, NodeLike } from './types.ts'
 
 export const RUNNER_URL = 'http://127.0.0.1:8765/run'
 
-/** True when the graph is ready for a Python forward pass.
+/** Result of the {@link isFullyConcrete} readiness check. */
+export interface ConcreteCheck {
+  ok: boolean
+  reason?: string
+}
 
-Output ports are intentionally *not* required to be concrete — axes like
-ConvBlock's H_out/W_out are computed by PyTorch at runtime, which is what
-the shape runner is for.
-*/
-export function isFullyConcrete(editor, sub, batchSize = 2) {
+/** A resolved input tensor spec, ordered to match generated forward() args. */
+export interface InputSpec {
+  nodeId: string
+  arg: string | undefined
+  shape: number[]
+  dtype: string
+}
+
+/** The POST body sent to the Python shape runner. */
+export interface RunPayload {
+  framework: string
+  code: string
+  inputs: InputSpec[]
+  batch_size: number
+}
+
+/** Parsed runner response surfaced to the UI. */
+export interface RunResult {
+  shapes: Map<string, number[]>
+  numParams: number | null
+  payload: RunPayload
+}
+
+/** An error carrying the offending node id, when the runner blames one. */
+interface RunnerError extends Error {
+  nodeId?: string
+}
+
+/**
+ * True when the graph is ready for a Python forward pass.
+ *
+ * Output ports are intentionally *not* required to be concrete - axes like
+ * ConvBlock's H_out/W_out are computed by PyTorch at runtime, which is what
+ * the shape runner is for.
+ */
+export function isFullyConcrete(editor: GraphEditor, sub: Substitution, batchSize = 2): ConcreteCheck {
   const nodes = editor.getNodes()
   if (nodes.length === 0) return { ok: false, reason: 'Graph is empty.' }
 
@@ -27,8 +64,8 @@ export function isFullyConcrete(editor, sub, batchSize = 2) {
 
   for (const n of nodes) {
     if (n.entry.kind === 'input') {
-      // Input can remain symbolic here; runtime payload builder back-solves via
-      // substitution constraints and fills remaining unresolved axes with
+      // Input can remain symbolic here; the runtime payload builder back-solves
+      // via substitution constraints and fills remaining unresolved axes with
       // deterministic defaults.
       const dims = inputShapeToDims(n, batchSize)
       if (!dims) continue
@@ -36,10 +73,10 @@ export function isFullyConcrete(editor, sub, batchSize = 2) {
     }
     for (const port of n.entry.ctor) {
       if (!port.required) continue
-      const v = n.values[port.name]
-      const wired = editor.getConnections().some(
-        (c) => c.target === n.id && c.targetInput === `__param__${port.name}`
-      )
+      const v = n.values?.[port.name]
+      const wired = editor
+        .getConnections()
+        .some((c) => c.target === n.id && c.targetInput === `__param__${port.name}`)
       if (wired) continue
       if (v === null || v === undefined || v === '') {
         return {
@@ -53,10 +90,10 @@ export function isFullyConcrete(editor, sub, batchSize = 2) {
   return { ok: true }
 }
 
-function inputShapeToDims(inputNode, batchSize) {
+function inputShapeToDims(inputNode: NodeLike, batchSize: number): number[] | null {
   const tokens = parseShapeString(inputNode.values?.shape)
   if (tokens.length === 0) return null
-  const dims = []
+  const dims: number[] = []
   for (const tok of tokens) {
     if (tok === 'B') dims.push(batchSize)
     else if (/^-?\d+$/.test(tok)) dims.push(Number(tok))
@@ -65,7 +102,7 @@ function inputShapeToDims(inputNode, batchSize) {
   return dims
 }
 
-function defaultForAxis(base) {
+function defaultForAxis(base: string): number {
   if (base === 'B') return 2
   if (base.startsWith('H') || base.startsWith('W')) return 32
   if (base.startsWith('T')) return 16
@@ -76,10 +113,15 @@ function defaultForAxis(base) {
   return 8
 }
 
-function backSolveInputShape(inputNode, sub, batchSize, axisDefaults) {
+function backSolveInputShape(
+  inputNode: NodeLike,
+  sub: Substitution,
+  batchSize: number,
+  axisDefaults: Map<string, number>
+): number[] | null {
   const tokens = parseShapeString(inputNode.values?.shape)
   if (tokens.length === 0) return null
-  const dims = []
+  const dims: number[] = []
   for (const tok of tokens) {
     if (tok === 'B') {
       dims.push(batchSize)
@@ -97,7 +139,7 @@ function backSolveInputShape(inputNode, sub, batchSize, axisDefaults) {
       dims.push(Math.trunc(r))
       continue
     }
-    const base = String(r ?? tok).split('#')[0]
+    const base = String(r ?? tok).split('#')[0]!
     const known = axisDefaults.get(base)
     if (known != null) {
       dims.push(known)
@@ -112,22 +154,22 @@ function backSolveInputShape(inputNode, sub, batchSize, axisDefaults) {
 
 /**
  * Resolve concrete input shapes for the current graph using the validator's
- * solved substitution + axis defaults. Returns `[{nodeId, arg, shape, dtype}]`
- * ordered to match the generated forward()'s argument order.
+ * solved substitution + axis defaults. Returns input specs ordered to match
+ * the generated forward()'s argument order.
  *
- * Exposed so codegen can reuse the same back-solver when emitting an
- * embedded `test_GeneratedModel()` function — the test calls forward() with
- * the same shapes the runtime shape-runner would.
+ * Exposed so codegen can reuse the same back-solver when emitting an embedded
+ * `test_GeneratedModel()` function - the test calls forward() with the same
+ * shapes the runtime shape-runner would.
  */
-export function resolveInputSpecs(editor, framework, batchSize = 2) {
+export function resolveInputSpecs(editor: GraphEditor, _framework: string, batchSize = 2): InputSpec[] {
   const nodes = editor.getNodes()
   const connections = editor.getConnections()
   const plan = planGraph(nodes, connections)
   if (!plan) throw new Error('Graph is empty.')
 
-  const sub = (editor && editor.__lastValidationSub) || new Map()
-  const axisDefaults = new Map([['B', batchSize]])
-  const inputs = []
+  const sub: Substitution = editor.__lastValidationSub ?? new Map()
+  const axisDefaults = new Map<string, number>([['B', batchSize]])
+  const inputs: InputSpec[] = []
   for (const n of plan.ordered) {
     if (n.entry.kind !== 'input') continue
     const dims = backSolveInputShape(n, sub, batchSize, axisDefaults)
@@ -136,14 +178,14 @@ export function resolveInputSpecs(editor, framework, batchSize = 2) {
       nodeId: n.id,
       arg: plan.inputArgFor.get(n.id),
       shape: dims,
-      dtype: n.values?.dtype ?? 'float',
+      dtype: String(n.values?.dtype ?? 'float'),
     })
   }
   return inputs
 }
 
-/** Build POST body for the Python runner. */
-export function buildRunPayload(editor, framework, batchSize = 2) {
+/** Build the POST body for the Python runner. */
+export function buildRunPayload(editor: GraphEditor, framework: string, batchSize = 2): RunPayload {
   const inputs = resolveInputSpecs(editor, framework, batchSize)
   const code = generate(editor.getNodes(), editor.getConnections(), framework, {
     trace: true,
@@ -151,8 +193,8 @@ export function buildRunPayload(editor, framework, batchSize = 2) {
   return { framework, code, inputs, batch_size: batchSize }
 }
 
-/** POST to the local runner; returns Map<"nodeId/port", number[]>. */
-export async function runShapeCheck(editor, framework, batchSize = 2) {
+/** POST to the local runner; returns the parsed per-port shapes + param count. */
+export async function runShapeCheck(editor: GraphEditor, framework: string, batchSize = 2): Promise<RunResult> {
   if (framework !== 'pytorch') {
     throw new Error('Runtime shape check is PyTorch-only for now.')
   }
@@ -162,13 +204,13 @@ export async function runShapeCheck(editor, framework, batchSize = 2) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   })
-  const body = await res.json().catch(() => ({}))
+  const body = await res.json().catch(() => ({}) as Record<string, unknown>)
   if (!res.ok) {
-    const err = new Error(body?.error ?? `Runner HTTP ${res.status}`)
-    if (body?.node_id) err.nodeId = body.node_id
+    const err: RunnerError = new Error(String(body?.error ?? `Runner HTTP ${res.status}`))
+    if (body?.node_id) err.nodeId = String(body.node_id)
     throw err
   }
-  const shapes = new Map(Object.entries(body.shapes ?? {}))
+  const shapes = new Map<string, number[]>(Object.entries((body.shapes ?? {}) as Record<string, number[]>))
   const numParams =
     typeof body.num_params === 'number' && Number.isFinite(body.num_params)
       ? Math.trunc(body.num_params)

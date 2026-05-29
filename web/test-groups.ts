@@ -156,7 +156,7 @@ try {
   // _runtime_shapes dict) or the shape-runner reports empty shapes for
   // everything downstream of a group.
   const traceCode = await page.evaluate(async () => {
-    const { generate } = await import('/src/codegen.js')
+    const { generate } = await import('/src/codegen.ts')
     return generate(
       window.__blocks.editor.getNodes(),
       window.__blocks.editor.getConnections(),
@@ -757,7 +757,7 @@ try {
     blocks.applyNodeName(b, 'down1')
     blocks.refreshTagAtlas()
     // Adopt canonical values onto b (simulates the re-name adopt path).
-    const { adoptValuesFromAtlas } = await import('/src/tagAtlas.js')
+    const { adoptValuesFromAtlas } = await import('/src/tagAtlas.ts')
     adoptValuesFromAtlas(blocks.state.tagAtlas, b)
     return {
       atlas: blocks.tagAtlasSummary,

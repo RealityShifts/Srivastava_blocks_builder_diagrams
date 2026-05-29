@@ -1,7 +1,7 @@
 // Integration test: traced codegen + HTTP shape runner.
 import puppeteer from 'puppeteer'
-import { generate } from './src/codegen.js'
-import { RUNNER_URL } from './src/runtime.js'
+import { generate } from './src/codegen.ts'
+import { RUNNER_URL } from './src/runtime.ts'
 
 const RUNNER = RUNNER_URL.replace('/run', '')
 const browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox'] })

@@ -1,0 +1,45 @@
+{
+  // TypeScript configuration for the blocks-builder web app.
+  //
+  // Two consumers read the .ts sources directly:
+  //   1. Vite/esbuild  - bundles them for the browser (`npm run dev` / `build`).
+  //   2. Node >= 23     - runs the test-*.ts files via built-in type-stripping
+  //                       (no separate transpile step).
+  //
+  // Because Node only *strips* types (it never *transforms* them), the source
+  // must use "erasable" syntax only - no enums, no `namespace`, no constructor
+  // parameter properties, and all type-only imports/exports must be marked with
+  // `import type` / `export type`. The flags below enforce exactly that so the
+  // editor flags anything Node would choke on.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+
+    // We never emit with tsc - Vite (browser) and Node (tests) consume .ts
+    // directly. `tsc` is used only as a type checker (`npm run typecheck`).
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+
+    // Keep every import/export statement exactly as written so type-stripping
+    // and tree-shaking behave predictably; forbid syntax Node can't strip.
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "isolatedModules": true,
+
+    // Interop + strictness.
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": false,
+    "noImplicitOverride": true
+  },
+  // The strict project typecheck (`npm run typecheck`) covers the app source.
+  // The test-*.ts files are Node-run puppeteer/logic harnesses dominated by
+  // browser-context `page.evaluate` callbacks (inherently `any`); they execute
+  // via Node's type-stripping but are intentionally outside the strict gate.
+  "include": ["src", "vite.config.ts"],
+  "exclude": ["node_modules", "dist", "test-*.ts"]
+}

@@ -2,7 +2,7 @@
  * Hindley-Milner-style unification on shape token lists.
  *
  * The substitution is a Map from axis-variable -> (literal | other variable).
- * Following the chain via `resolve()` (in shape.js) yields the terminal value.
+ * Following the chain via `resolve()` (in shape.ts) yields the terminal value.
  *
  * - literal vs literal:    must be equal, otherwise error
  * - variable vs literal:   bind variable -> literal
@@ -14,29 +14,40 @@
  * (no constraints between them).
  */
 
-import { isLiteral, isRest, isVariable, resolve, REST_TOKEN } from './shape.js'
+import { isLiteral, isRest, isVariable, resolve } from './shape.ts'
+import type { Shape, Substitution, Token } from './shape.ts'
 
+/** Structured payload attached to a {@link UnifyError} for diagnostics. */
+export interface UnifyErrorDetails {
+  a: Token | Shape
+  b: Token | Shape
+}
+
+/** Thrown when two shapes/tokens cannot be reconciled. */
 export class UnifyError extends Error {
-  constructor(message, details) {
+  /** The two operands that failed to unify. */
+  readonly details: UnifyErrorDetails
+
+  constructor(message: string, details: UnifyErrorDetails) {
     super(message)
     this.name = 'UnifyError'
     this.details = details
   }
 }
 
-/** Walk substitution; returns same type as token if no binding. */
-function walk(tok, sub) {
+/** Walk substitution; returns the same token if there is no binding. */
+function walk(tok: Token, sub: Substitution): Token {
   return resolve(tok, sub)
 }
 
-function bind(varName, value, sub) {
+function bind(varName: string, value: Token, sub: Substitution): void {
   // Avoid trivial cycles.
   if (varName === value) return
   sub.set(varName, value)
 }
 
-/** Unify two single tokens in-place against `sub`. Throws UnifyError on conflict. */
-export function unifyToken(a, b, sub) {
+/** Unify two single tokens in-place against `sub`. Throws {@link UnifyError} on conflict. */
+export function unifyToken(a: Token, b: Token, sub: Substitution): void {
   a = walk(a, sub)
   b = walk(b, sub)
   if (a === b) return
@@ -68,21 +79,18 @@ export function unifyToken(a, b, sub) {
 /**
  * Unify two full shape arrays in-place against `sub`.
  * Handles a single `...` token on either side by absorbing the excess.
- * Throws UnifyError on conflict; on success the substitution is updated.
+ * Throws {@link UnifyError} on conflict; on success the substitution is updated.
  */
-export function unifyShape(a, b, sub) {
+export function unifyShape(a: Shape, b: Shape, sub: Substitution): void {
   const ai = a.findIndex(isRest)
   const bi = b.findIndex(isRest)
 
   // No rest tokens - must be same arity.
   if (ai === -1 && bi === -1) {
     if (a.length !== b.length) {
-      throw new UnifyError(
-        `rank mismatch: ${a.length} vs ${b.length}`,
-        { a, b }
-      )
+      throw new UnifyError(`rank mismatch: ${a.length} vs ${b.length}`, { a, b })
     }
-    for (let i = 0; i < a.length; i++) unifyToken(a[i], b[i], sub)
+    for (let i = 0; i < a.length; i++) unifyToken(a[i]!, b[i]!, sub)
     return
   }
 
@@ -90,23 +98,20 @@ export function unifyShape(a, b, sub) {
   const A = ai !== -1 ? a : expandRest(b, a)
   const B = bi !== -1 ? b : expandRest(a, b)
   if (A === null || B === null) {
-    throw new UnifyError(
-      `incompatible shapes (rest cannot reconcile)`,
-      { a, b }
-    )
+    throw new UnifyError(`incompatible shapes (rest cannot reconcile)`, { a, b })
   }
   // Both sides now contain a single rest token in matching positions.
   const aIdx = A.findIndex(isRest)
   const bIdx = B.findIndex(isRest)
-  // Anchor prefix
+  // Anchor prefix.
   const prefixLen = Math.min(aIdx, bIdx)
-  for (let i = 0; i < prefixLen; i++) unifyToken(A[i], B[i], sub)
-  // Anchor suffix
+  for (let i = 0; i < prefixLen; i++) unifyToken(A[i]!, B[i]!, sub)
+  // Anchor suffix.
   const aSuf = A.length - aIdx - 1
   const bSuf = B.length - bIdx - 1
   const suffixLen = Math.min(aSuf, bSuf)
   for (let i = 0; i < suffixLen; i++) {
-    unifyToken(A[A.length - 1 - i], B[B.length - 1 - i], sub)
+    unifyToken(A[A.length - 1 - i]!, B[B.length - 1 - i]!, sub)
   }
 }
 
@@ -116,7 +121,7 @@ export function unifyShape(a, b, sub) {
  * unchanged but verifies that an alignment exists (length must be >= the
  * concrete count of `withRest`).
  */
-function expandRest(withRest, withoutRest) {
+function expandRest(withRest: Shape, withoutRest: Shape): Shape | null {
   const restIdx = withRest.findIndex(isRest)
   if (restIdx === -1) return withoutRest
   const concreteCount = withRest.length - 1
@@ -125,6 +130,6 @@ function expandRest(withRest, withoutRest) {
 }
 
 /** Snapshot the substitution into a fresh Map (for trial unifications). */
-export function cloneSub(sub) {
+export function cloneSub(sub: Substitution): Substitution {
   return new Map(sub)
 }

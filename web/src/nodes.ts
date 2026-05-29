@@ -12,12 +12,35 @@
  */
 
 import { ClassicPreset } from 'rete'
-import { normalize, freshen } from './shape.js'
+import { normalize, freshen } from './shape.ts'
+import type { Shape, Substitution } from './shape.ts'
+import type {
+  ManifestEntry,
+  CtorParam,
+  Port,
+} from './types.ts'
 
 export const tensorSocket = new ClassicPreset.Socket('tensor')
 
 export class BlockNode extends ClassicPreset.Node {
-  constructor(entry) {
+  /** The frozen manifest entry this node instantiates. */
+  entry: ManifestEntry
+  /** Editable per-instance name; blank means "use the block type". */
+  name: string
+  /** Weight-sharing / annotation tag. */
+  tag: string
+  /** The owning group's id, or `null` for top-level nodes. */
+  groupId: string | null
+  /** Per-instance constructor parameter values, keyed by ctor param name. */
+  values: Record<string, unknown>
+  /** Cache of normalized input shapes (raw, without per-node freshening). */
+  _inputShapes: Record<string, Shape>
+  /** Cache of normalized output shapes (raw, without per-node freshening). */
+  _outputShapes: Record<string, Shape>
+  /** Ctor params eligible for exposure as `__param__` input ports. */
+  _paramSpecs: Map<string, CtorParam>
+
+  constructor(entry: ManifestEntry) {
     super(entry.name)
     this.entry = entry
     // Editable per-instance name. Blank means "use the block type" (entry.name).
@@ -34,16 +57,16 @@ export class BlockNode extends ClassicPreset.Node {
     // entry.groupId, NOT here.
     this.groupId = null
     this.values = Object.fromEntries(
-      entry.ctor.map((p) => [p.name, p.default])
+      entry.ctor.map((p: CtorParam) => [p.name, p.default])
     )
     // Cache normalized shapes (raw, without per-node freshening).
     this._inputShapes = Object.fromEntries(
-      entry.inputs.map((p) => [p.name, normalize(p.shape)])
+      entry.inputs.map((p: Port) => [p.name, normalize(p.shape)])
     )
     this._outputShapes = Object.fromEntries(
-      entry.outputs.map((p) => [p.name, normalize(p.shape)])
+      entry.outputs.map((p: Port) => [p.name, normalize(p.shape)])
     )
-    this._paramSpecs = new Map()
+    this._paramSpecs = new Map<string, CtorParam>()
 
     for (const p of entry.inputs) {
       const input = new ClassicPreset.Input(
@@ -53,7 +76,7 @@ export class BlockNode extends ClassicPreset.Node {
       )
       input.multipleConnections = Boolean(p.variadic)
       // Stash the manifest port spec for later inspection.
-      input.portSpec = p
+      ;(input as any).portSpec = p
       this.addInput(p.name, input)
     }
     // Ctor parameters are init-time values (not runtime tensor flow). They are
@@ -63,13 +86,13 @@ export class BlockNode extends ClassicPreset.Node {
     }
     for (const p of entry.outputs) {
       const output = new ClassicPreset.Output(tensorSocket, labelFor(p))
-      output.portSpec = p
+      ;(output as any).portSpec = p
       this.addOutput(p.name, output)
     }
   }
 
   /** Freshened shape for the given port, scoped to this node's id. */
-  freshenedShape(portName, side /* 'in' | 'out' */) {
+  freshenedShape(portName: string, side: 'in' | 'out'): Shape | null {
     const raw =
       side === 'in' ? this._inputShapes[portName] : this._outputShapes[portName]
     if (!raw) return null
@@ -77,7 +100,7 @@ export class BlockNode extends ClassicPreset.Node {
   }
 
   /** Apply ctor-param -> axis bindings to the substitution map. */
-  applyParamBindings(sub) {
+  applyParamBindings(sub: Substitution): void {
     const bindings = this.entry.bindings || {}
     for (const [axis, paramName] of Object.entries(bindings)) {
       const value = this.values[paramName]
@@ -96,21 +119,21 @@ export class BlockNode extends ClassicPreset.Node {
     }
   }
 
-  paramInputKey(paramName) {
+  paramInputKey(paramName: string): string {
     return `__param__${paramName}`
   }
 
-  isParamExposed(paramName) {
-    return Boolean(this.inputs[this.paramInputKey(paramName)])
+  isParamExposed(paramName: string): boolean {
+    return Boolean((this.inputs as any)[this.paramInputKey(paramName)])
   }
 
-  exposeParam(paramName) {
+  exposeParam(paramName: string): void {
     if (!this._paramSpecs.has(paramName) || this.isParamExposed(paramName)) return
-    const p = this._paramSpecs.get(paramName)
+    const p = this._paramSpecs.get(paramName) as CtorParam
     const key = this.paramInputKey(paramName)
     const input = new ClassicPreset.Input(tensorSocket, `🔴 ${p.name}`, false)
     input.multipleConnections = false
-    input.portSpec = {
+    ;(input as any).portSpec = {
       kind: 'param',
       paramName: p.name,
       required: Boolean(p.required),
@@ -119,26 +142,26 @@ export class BlockNode extends ClassicPreset.Node {
     this.addInput(key, input)
   }
 
-  hideParam(paramName) {
+  hideParam(paramName: string): void {
     const key = this.paramInputKey(paramName)
-    if (!this.inputs[key]) return
+    if (!(this.inputs as any)[key]) return
     this.removeInput(key)
   }
 }
 
-function labelFor(port) {
+function labelFor(port: Port): string {
   const tag = port.variadic ? '[*]' : port.optional ? '?' : ''
   return `${port.name}${tag}`
 }
 
 /** Effective node name: the editable name, falling back to the block type. */
-export function nodeName(node) {
+export function nodeName(node: { name?: unknown; entry?: { name?: string } } | null | undefined): string {
   const n = String(node?.name ?? '').trim()
   return n || node?.entry?.name || ''
 }
 
 /** Display title for a node: "<name>" or "<name> · <tag>". */
-export function computeNodeLabel(node) {
+export function computeNodeLabel(node: BlockNode): string {
   const base = nodeName(node)
   const t = String(node.tag ?? '').trim()
   return t ? `${base} · ${t}` : base
@@ -149,7 +172,7 @@ export function computeNodeLabel(node) {
  * still has to be told to re-render the node afterwards (`area.update('node',
  * id)`); the caller does that to keep this module free of area concerns.
  */
-export function applyNodeTag(node, newTag) {
+export function applyNodeTag(node: BlockNode, newTag: unknown): void {
   node.tag = String(newTag ?? '')
   node.label = computeNodeLabel(node)
 }
@@ -158,7 +181,7 @@ export function applyNodeTag(node, newTag) {
  * Update `node.name` and refresh its displayed label in place. Like
  * `applyNodeTag`, the caller re-renders the rete area afterwards.
  */
-export function applyNodeName(node, newName) {
+export function applyNodeName(node: BlockNode, newName: unknown): void {
   node.name = String(newName ?? '')
   node.label = computeNodeLabel(node)
 }
@@ -169,13 +192,13 @@ export function applyNodeName(node, newName) {
 // lands maximally far from every existing one in hue space - no collisions,
 // no near-duplicates even with many tags.
 const GOLDEN_ANGLE_DEG = 137.5077640500378
-const _tagColors = new Map()
+const _tagColors = new Map<string, string>()
 
 /**
  * Unique, stable colour per tag. Two different tags are guaranteed to receive
  * different (and perceptually well-separated) hues.
  */
-export function colorForTag(tag) {
+export function colorForTag(tag: unknown): string | null {
   const s = String(tag ?? '').trim().toLowerCase()
   if (!s) return null
   const cached = _tagColors.get(s)
@@ -199,7 +222,7 @@ export function colorForTag(tag) {
  * Built-in palette entry for an Input node. Mixed literals and named axes are
  * fine ("B 3 224 224", "B C H W", "2 3 64 64"). Not tied to any framework.
  */
-export const INPUT_ENTRY = {
+export const INPUT_ENTRY: ManifestEntry = {
   name: 'Input',
   module: '__builtin__',
   framework: 'any',
@@ -232,7 +255,7 @@ export const INPUT_ENTRY = {
  * Explicit graph sink. Generated forward() returns only values routed into
  * Output nodes (in topo order), ignoring ordinary leaf outputs when present.
  */
-export const OUTPUT_ENTRY = {
+export const OUTPUT_ENTRY: ManifestEntry = {
   name: 'Output',
   module: '__builtin__',
   framework: 'any',
@@ -257,7 +280,7 @@ export const OUTPUT_ENTRY = {
  * Scalar constant for init-time parameter wiring.
  * Connect `out` to a node's `🔴 <param>` input.
  */
-export const CONST_ENTRY = {
+export const CONST_ENTRY: ManifestEntry = {
   name: 'Constant',
   module: '__builtin__',
   framework: 'any',
@@ -290,7 +313,7 @@ export const CONST_ENTRY = {
  * pass as `self.<name>`. Shape must use numeric literals (symbolic axes are
  * ignored at codegen time).
  */
-export const LEARNABLE_TENSOR_ENTRY = {
+export const LEARNABLE_TENSOR_ENTRY: ManifestEntry = {
   name: 'LearnableTensor',
   module: '__builtin__',
   framework: 'any',
@@ -327,7 +350,7 @@ export const LEARNABLE_TENSOR_ENTRY = {
 }
 
 /** "B, 3,224 224" -> ["B", "3", "224", "224"] */
-export function parseShapeString(s) {
+export function parseShapeString(s: unknown): string[] {
   if (s == null) return []
   return String(s)
     .trim()
@@ -341,12 +364,12 @@ export function parseShapeString(s) {
  * inspector / palette / unifier treat it like a normal entry.
  */
 export class InputNode extends BlockNode {
-  freshenedShape(portName, side) {
+  override freshenedShape(portName: string, side: 'in' | 'out'): Shape | null {
     if (side !== 'out') return null
     const tokens = normalize(parseShapeString(this.values.shape))
     // Keep the rete port's dtype tag in sync so the validator's dtype check
     // sees the latest value the user typed.
-    const port = this.outputs[portName]
+    const port = (this.outputs as any)[portName]
     if (port?.portSpec) port.portSpec.dtype = this.values.dtype || 'any'
     return freshen(tokens, this.id)
   }
@@ -354,10 +377,10 @@ export class InputNode extends BlockNode {
 
 /** Like InputNode but for nn.Parameter / nnx.Param sources. */
 export class LearnableTensorNode extends BlockNode {
-  freshenedShape(portName, side) {
+  override freshenedShape(portName: string, side: 'in' | 'out'): Shape | null {
     if (side !== 'out') return null
     const tokens = normalize(parseShapeString(this.values.shape))
-    const port = this.outputs[portName]
+    const port = (this.outputs as any)[portName]
     if (port?.portSpec) port.portSpec.dtype = this.values.dtype || 'float'
     return freshen(tokens, this.id)
   }
@@ -365,7 +388,7 @@ export class LearnableTensorNode extends BlockNode {
 
 /** Sink node with user-typed label (`name`) and unconstrained input shape. */
 export class OutputNode extends BlockNode {
-  freshenedShape(portName, side) {
+  override freshenedShape(portName: string, side: 'in' | 'out'): Shape | null {
     if (side !== 'in') return null
     return freshen(normalize(['...']), this.id)
   }
@@ -382,7 +405,7 @@ export class OutputNode extends BlockNode {
  * axis on the input port, each RHS group an axis on the output port. Groups
  * shared verbatim between sides propagate their binding through unification.
  */
-export const REARRANGE_ENTRY = {
+export const REARRANGE_ENTRY: ManifestEntry = {
   name: 'Rearrange',
   module: '__utility__',
   framework: 'any',
@@ -414,7 +437,7 @@ export const REARRANGE_ENTRY = {
  * Built-in .reshape() / jnp.reshape() wrapper. The shape string accepts ints
  * and -1; symbolic axes are intentionally not supported here (use Rearrange).
  */
-export const RESHAPE_ENTRY = {
+export const RESHAPE_ENTRY: ManifestEntry = {
   name: 'Reshape',
   module: '__utility__',
   framework: 'any',
@@ -440,7 +463,7 @@ export const RESHAPE_ENTRY = {
  * Concatenate variadic inputs along `dim` (PyTorch dim / JAX axis).
  * Wire two or more tensors into the `xs[*]` port.
  */
-export const CONCAT_ENTRY = {
+export const CONCAT_ENTRY: ManifestEntry = {
   name: 'Concat',
   module: '__utility__',
   framework: 'any',
@@ -466,7 +489,7 @@ export const CONCAT_ENTRY = {
  * Stack variadic inputs along a new axis at `dim`.
  * All inputs must match shape; output rank is input rank + 1.
  */
-export const STACK_ENTRY = {
+export const STACK_ENTRY: ManifestEntry = {
   name: 'Stack',
   module: '__utility__',
   framework: 'any',
@@ -492,7 +515,7 @@ export const STACK_ENTRY = {
  * 2D pooling (max or average) on NCHW tensors. Emits functional pool2d
  * calls in forward() — no nn.Module wrapper.
  */
-export const POOL_ENTRY = {
+export const POOL_ENTRY: ManifestEntry = {
   name: 'Pool2d',
   module: '__utility__',
   framework: 'any',
@@ -537,7 +560,7 @@ export const POOL_ENTRY = {
  * Upsample spatial dims with bilinear (linear) interpolation. Uses
  * F.interpolate(..., mode='bilinear') on PyTorch and jax.image.resize on Flax.
  */
-export const UPSAMPLE_ENTRY = {
+export const UPSAMPLE_ENTRY: ManifestEntry = {
   name: 'Upsample',
   module: '__utility__',
   framework: 'any',
@@ -571,9 +594,9 @@ export const UPSAMPLE_ENTRY = {
  * ("1"), or a normalized parenthesized group ("(h w)"). Throws on unbalanced
  * parens; whitespace-only sides return [].
  */
-export function splitEinopsSide(side) {
+export function splitEinopsSide(side: unknown): string[] {
   const s = String(side).trim()
-  const out = []
+  const out: string[] = []
   let i = 0
   while (i < s.length) {
     if (/\s/.test(s[i])) {
@@ -602,7 +625,7 @@ export function splitEinopsSide(side) {
 }
 
 /** Parse "b c h w -> b (h w) c" into { lhs, rhs }. */
-export function parseEinopsPattern(pattern) {
+export function parseEinopsPattern(pattern: unknown): { lhs: string[]; rhs: string[] } {
   const idx = String(pattern ?? '').indexOf('->')
   if (idx < 0) throw new Error('einops pattern must contain "->"')
   return {
@@ -612,8 +635,8 @@ export function parseEinopsPattern(pattern) {
 }
 
 /** "h=8, w=16" -> Map { h:8, w:16 }. Silently skips malformed entries. */
-export function parseLengthsString(s) {
-  const out = new Map()
+export function parseLengthsString(s: unknown): Map<string, number> {
+  const out = new Map<string, number>()
   if (!s) return out
   for (const part of String(s).split(/[,;\n]/)) {
     const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(-?\d+)\s*$/.exec(part)
@@ -630,11 +653,11 @@ export function parseLengthsString(s) {
  *   - "(h w)" with all components in lengths -> product of values
  *   - everything else -> the token text as a symbolic axis (groups keep parens)
  */
-function einopsItemToToken(item, lengths) {
+function einopsItemToToken(item: string, lengths: Map<string, number>): string | number {
   if (item === '...') return '...'
   if (/^-?\d+$/.test(item)) return Number(item)
   if (!item.startsWith('(')) {
-    return lengths.has(item) ? lengths.get(item) : item
+    return lengths.has(item) ? (lengths.get(item) as number) : item
   }
   const components = item.slice(1, -1).split(/\s+/).filter(Boolean)
   let product = 1
@@ -643,7 +666,7 @@ function einopsItemToToken(item, lengths) {
     if (/^-?\d+$/.test(c)) {
       product *= Number(c)
     } else if (lengths.has(c)) {
-      product *= lengths.get(c)
+      product *= lengths.get(c) as number
     } else {
       allKnown = false
       break
@@ -654,8 +677,8 @@ function einopsItemToToken(item, lengths) {
 
 /** Source/sink node for einops.rearrange. */
 export class RearrangeNode extends BlockNode {
-  freshenedShape(portName, side) {
-    let parts
+  override freshenedShape(portName: string, side: 'in' | 'out'): Shape | null {
+    let parts: string[]
     try {
       const { lhs, rhs } = parseEinopsPattern(this.values.pattern)
       parts = side === 'in' ? lhs : rhs
@@ -670,7 +693,7 @@ export class RearrangeNode extends BlockNode {
 
 /** Sugar over tensor.reshape() / jnp.reshape(); numeric-only shape literal. */
 export class ReshapeNode extends BlockNode {
-  freshenedShape(portName, side) {
+  override freshenedShape(portName: string, side: 'in' | 'out'): Shape | null {
     if (side === 'in') {
       // Accept anything coming in - reshape doesn't care about input rank.
       return freshen(normalize(['...']), this.id)
@@ -686,25 +709,29 @@ export class ReshapeNode extends BlockNode {
  * the same axes flowing through the group as if the children were inline.
  */
 export class GroupNode extends BlockNode {
-  constructor(entry) {
+  /** Pre-freshened shapes per facade port, keyed by side. */
+  _facadeShapes: { in: Map<string, Shape>; out: Map<string, Shape> }
+
+  constructor(entry: ManifestEntry) {
     super(entry)
     // entry.portMap captures shapes that were *already* freshened against
     // the underlying child's id at collapse time. We pass them through
     // verbatim - re-freshening would mint a brand-new variable and break
     // unification with the (still-present) child node.
     this._facadeShapes = {
-      in: new Map(),
-      out: new Map(),
+      in: new Map<string, Shape>(),
+      out: new Map<string, Shape>(),
     }
-    for (const m of entry.portMap?.inputs || []) {
+    const portMap = entry.portMap as any
+    for (const m of portMap?.inputs || []) {
       this._facadeShapes.in.set(m.facadePort, m.shape)
     }
-    for (const m of entry.portMap?.outputs || []) {
+    for (const m of portMap?.outputs || []) {
       this._facadeShapes.out.set(m.facadePort, m.shape)
     }
     // Expose __param__ ports for any external constant wiring that crosses
     // the group boundary. Constants stay outside; the facade proxies them.
-    for (const m of entry.portMap?.params ?? []) {
+    for (const m of portMap?.params ?? []) {
       this._paramSpecs.set(m.paramName, {
         name: m.paramName,
         type: m.paramType ?? 'int',
@@ -714,7 +741,7 @@ export class GroupNode extends BlockNode {
     }
   }
 
-  freshenedShape(portName, side) {
+  override freshenedShape(portName: string, side: 'in' | 'out'): Shape | null {
     const shape = this._facadeShapes[side === 'in' ? 'in' : 'out']?.get(portName)
     return shape ?? null
   }
@@ -725,19 +752,19 @@ export class GroupNode extends BlockNode {
  * which child ports stick out of the group; we expose them as `in0..inN`
  * inputs and `out0..outM` outputs on the facade.
  *
- * @param {object} groupId   stable group identifier (used in tooltips/labels)
- * @param {string} name      user-facing group name
- * @param {object} boundary  { inputs: [{shape, dtype, optional, variadic}], outputs: [...] }
+ * @param groupId   stable group identifier (used in tooltips/labels)
+ * @param name      user-facing group name
+ * @param boundary  { inputs: [{shape, dtype, optional, variadic}], outputs: [...] }
  */
-export function makeGroupEntry(groupId, name, boundary) {
-  const inputs = boundary.inputs.map((b, i) => ({
+export function makeGroupEntry(groupId: string, name: string, boundary: any): ManifestEntry {
+  const inputs = boundary.inputs.map((b: any, i: number) => ({
     name: `in${i}`,
     shape: b.shape ?? ['...'],
     dtype: b.dtype ?? 'any',
     optional: Boolean(b.optional),
     variadic: false,
   }))
-  const outputs = boundary.outputs.map((b, i) => ({
+  const outputs = boundary.outputs.map((b: any, i: number) => ({
     name: `out${i}`,
     shape: b.shape ?? ['...'],
     dtype: b.dtype ?? 'any',
@@ -755,19 +782,19 @@ export function makeGroupEntry(groupId, name, boundary) {
     bindings: {},
     groupId,
     portMap: {
-      inputs: boundary.inputs.map((b, i) => ({
+      inputs: boundary.inputs.map((b: any, i: number) => ({
         facadePort: `in${i}`,
         childNodeId: b.childNodeId,
         childPort: b.childPort,
         shape: b.shape,
       })),
-      outputs: boundary.outputs.map((b, i) => ({
+      outputs: boundary.outputs.map((b: any, i: number) => ({
         facadePort: `out${i}`,
         childNodeId: b.childNodeId,
         childPort: b.childPort,
         shape: b.shape,
       })),
-      params: (boundary.params || []).map((b) => ({
+      params: (boundary.params || []).map((b: any) => ({
         facadePort: `__param__${b.paramName}`,
         childNodeId: b.childNodeId,
         childPort: b.childPort,
@@ -779,7 +806,7 @@ export function makeGroupEntry(groupId, name, boundary) {
 }
 
 /** Pick the right node class for a manifest entry. */
-export function makeNode(entry) {
+export function makeNode(entry: ManifestEntry): BlockNode {
   if (entry.kind === 'input') return new InputNode(entry)
   if (entry.kind === 'learnable') return new LearnableTensorNode(entry)
   if (entry.kind === 'output') return new OutputNode(entry)
@@ -790,7 +817,7 @@ export function makeNode(entry) {
 }
 
 /** Palette section for a manifest entry. */
-export function paletteGroup(entry) {
+export function paletteGroup(entry: ManifestEntry): string {
   if (entry.module === '__builtin__') return 'built-in'
   if (entry.module === '__utility__') return 'utility'
   // Group facades never end up in the palette; if they ever do, hide them
@@ -807,16 +834,16 @@ export function paletteGroup(entry) {
 }
 
 /** Group manifest entries by their submodule for the palette UI. */
-export function groupByModule(entries) {
-  const groups = new Map()
+export function groupByModule(entries: ManifestEntry[]): [string, ManifestEntry[]][] {
+  const groups = new Map<string, ManifestEntry[]>()
   for (const e of entries) {
     const tail = paletteGroup(e)
     if (!groups.has(tail)) groups.set(tail, [])
-    groups.get(tail).push(e)
+    ;(groups.get(tail) as ManifestEntry[]).push(e)
   }
   for (const list of groups.values())
     list.sort((a, b) => a.name.localeCompare(b.name))
-  const order = { 'built-in': 0, utility: 1 }
+  const order: Record<string, number> = { 'built-in': 0, utility: 1 }
   return [...groups.entries()].sort(([a], [b]) => {
     const oa = order[a] ?? 99
     const ob = order[b] ?? 99

@@ -7,7 +7,8 @@
       "Bash(node test-input-node.mjs)",
       "Bash(cp /tmp/smoke-name.mjs ./smoke-name.mjs)",
       "Bash(node smoke-name.mjs)",
-      "Bash(pkill -f \"vite.*5174\")"
+      "Bash(pkill -f \"vite.*5174\")",
+      "Bash(pkill -f \"vite\")"
     ]
   }
 }

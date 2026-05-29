@@ -6,13 +6,37 @@
 
 import mermaid from 'mermaid'
 
-import { groupByModule } from './nodes.js'
-import { prettyShape } from './shape.js'
+import { groupByModule } from './nodes.ts'
+import { prettyShape } from './shape.ts'
+import type { Substitution } from './shape.ts'
+import type { NodeLike, CtorParam, ManifestEntry } from './types.ts'
+
+/**
+ * Actions the inspector calls back into to manipulate a group (or a member of
+ * one). Supplied by main.js; every method is optional so the inspector can
+ * degrade gracefully when an action isn't wired up.
+ */
+export interface GroupActions {
+  getName?: (gid: string) => string | null | undefined
+  getDescription?: (gid: string) => string | null | undefined
+  setDescription?: (gid: string, value: string) => void
+  isCollapsed?: (gid: string) => boolean | null | undefined
+  rename?: (gid: string, value: string) => void
+  toggle?: (gid: string) => void
+  ungroup?: (gid: string) => void
+  addSelection?: (gid: string) => void
+}
+
+/** Options bag for {@link renderInspector}. */
+export interface InspectorOptions {
+  /** Force a full rebuild even when the same node stays selected. */
+  forceRebuild?: boolean
+}
 
 // ---------- mermaid helpers (used by the inspector Info tab) ----------
 
 let _mermaidReady = false
-function ensureMermaid() {
+function ensureMermaid(): void {
   if (_mermaidReady) return
   mermaid.initialize({
     startOnLoad: false,
@@ -24,9 +48,13 @@ function ensureMermaid() {
 }
 
 let _mermaidCounter = 0
-const _mermaidCache = new Map() // block name -> rendered svg string
+const _mermaidCache = new Map<string, string>() // block name -> rendered svg string
 
-async function renderMermaidInto(container, blockName, definition) {
+async function renderMermaidInto(
+  container: HTMLElement,
+  blockName: string,
+  definition: string
+): Promise<void> {
   if (!definition) {
     container.innerHTML = '<p class="muted">No diagram.</p>'
     return
@@ -43,14 +71,14 @@ async function renderMermaidInto(container, blockName, definition) {
     const { svg } = await mermaid.render(id, definition)
     _mermaidCache.set(blockName, svg)
     container.innerHTML = svg
-  } catch (e) {
+  } catch (e: any) {
     container.innerHTML = `<pre class="err">Mermaid render failed: ${escapeHtml(
       e?.message ?? String(e)
     )}</pre>`
   }
 }
 
-function escapeHtml(s) {
+function escapeHtml(s: unknown): string {
   return String(s)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -64,11 +92,11 @@ function escapeHtml(s) {
  * safe anchor and escape everything else. Only http(s) URLs are linkified so
  * a malicious feed can't slip in javascript: URLs.
  */
-function renderInlineMd(text) {
+function renderInlineMd(text: string): string {
   const re = /\[([^\]]+?)\]\(([^)]+?)\)/g
-  const out = []
+  const out: string[] = []
   let last = 0
-  let m
+  let m: RegExpExecArray | null
   while ((m = re.exec(text)) !== null) {
     out.push(escapeHtml(text.slice(last, m.index)))
     const safe = /^https?:\/\//i.test(m[2].trim()) ? m[2].trim() : ''
@@ -89,20 +117,20 @@ function renderInlineMd(text) {
 
 // ---------- palette ----------
 
-const PALETTE_EXPANDED_BY_DEFAULT = new Set(['built-in', 'utility'])
-const paletteCollapsed = new Map()
+const PALETTE_EXPANDED_BY_DEFAULT = new Set<string>(['built-in', 'utility'])
+const paletteCollapsed = new Map<string, boolean>()
 
-function paletteSectionCollapsed(name) {
-  if (paletteCollapsed.has(name)) return paletteCollapsed.get(name)
+function paletteSectionCollapsed(name: string): boolean {
+  if (paletteCollapsed.has(name)) return paletteCollapsed.get(name)!
   return !PALETTE_EXPANDED_BY_DEFAULT.has(name)
 }
 
-function setPaletteSectionCollapsed(name, collapsed) {
+function setPaletteSectionCollapsed(name: string, collapsed: boolean): void {
   paletteCollapsed.set(name, collapsed)
 }
 
-function syncSectionCollapsed(section) {
-  const name = section.dataset.group
+function syncSectionCollapsed(section: HTMLElement): void {
+  const name = section.dataset.group!
   const collapsed = paletteSectionCollapsed(name)
   section.classList.toggle('collapsed', collapsed)
   section.querySelector('.palette-section-header')?.setAttribute(
@@ -111,7 +139,11 @@ function syncSectionCollapsed(section) {
   )
 }
 
-export function renderPalette(rootEl, entries, onCreate) {
+export function renderPalette(
+  rootEl: HTMLElement,
+  entries: ManifestEntry[],
+  onCreate: (entry: ManifestEntry) => void
+): void {
   rootEl.replaceChildren()
   const groups = groupByModule(entries)
   for (const [moduleName, list] of groups) {
@@ -145,9 +177,9 @@ export function renderPalette(rootEl, entries, onCreate) {
       const meta = describePorts(entry)
       item.innerHTML = `<div>${entry.name}</div><div class="meta">${meta}</div>`
       item.addEventListener('click', () => onCreate(entry))
-      item.addEventListener('dragstart', (e) => {
-        e.dataTransfer.effectAllowed = 'copy'
-        e.dataTransfer.setData('application/x-block-name', entry.name)
+      item.addEventListener('dragstart', (e: DragEvent) => {
+        e.dataTransfer!.effectAllowed = 'copy'
+        e.dataTransfer!.setData('application/x-block-name', entry.name)
       })
       body.appendChild(item)
     }
@@ -158,7 +190,7 @@ export function renderPalette(rootEl, entries, onCreate) {
   }
 }
 
-function describePorts(entry) {
+function describePorts(entry: ManifestEntry): string {
   const i = entry.inputs.length
   const o = entry.outputs.length
   const k =
@@ -182,12 +214,12 @@ function describePorts(entry) {
   return `${k} · ${i} in / ${o} out`
 }
 
-export function filterPalette(rootEl, query) {
+export function filterPalette(rootEl: HTMLElement, query: string): void {
   const q = query.trim().toLowerCase()
-  rootEl.querySelectorAll('.palette-section').forEach((section) => {
+  rootEl.querySelectorAll<HTMLElement>('.palette-section').forEach((section) => {
     let any = false
-    section.querySelectorAll('.block-item').forEach((el) => {
-      const show = !q || el.dataset.name.toLowerCase().includes(q)
+    section.querySelectorAll<HTMLElement>('.block-item').forEach((el) => {
+      const show = !q || el.dataset.name!.toLowerCase().includes(q)
       el.style.display = show ? '' : 'none'
       if (show) any = true
     })
@@ -208,10 +240,10 @@ export function filterPalette(rootEl, query) {
 
 // Track which node is currently displayed so we can do incremental refreshes
 // after validation runs without blowing away focused <input> elements.
-let _currentNodeId = null
+let _currentNodeId: string | null = null
 let _activeTab = 'params' // 'params' | 'info' — persists across selections
 
-function buildGroupPanel(node, actions) {
+function buildGroupPanel(node: any, actions: GroupActions): HTMLDivElement {
   const wrap = document.createElement('div')
   wrap.className = 'group-panel'
 
@@ -273,7 +305,11 @@ function buildGroupPanel(node, actions) {
   return wrap
 }
 
-function buildPortsSection(node, sub, runtimeShapes) {
+function buildPortsSection(
+  node: any,
+  sub: Substitution,
+  runtimeShapes: Map<string, number[]> | null
+): HTMLDivElement {
   const ports = document.createElement('div')
   ports.className = 'ports'
   // Output nodes sink a tensor on input `x`; label that section "Output" so
@@ -289,7 +325,14 @@ function buildPortsSection(node, sub, runtimeShapes) {
   return ports
 }
 
-function buildParamsPanel(node, sub, runtimeShapes, onChange, onAddConst, onToggleParamPort) {
+function buildParamsPanel(
+  node: any,
+  sub: Substitution,
+  runtimeShapes: Map<string, number[]> | null,
+  onChange: () => void,
+  onAddConst: (node: NodeLike, param: CtorParam) => void,
+  onToggleParamPort: (node: NodeLike, param: CtorParam, shouldExpose: boolean) => void
+): HTMLDivElement {
   const panel = document.createElement('div')
   panel.className = 'tab-panel'
   panel.dataset.tab = 'params'
@@ -345,7 +388,7 @@ function buildParamsPanel(node, sub, runtimeShapes, onChange, onAddConst, onTogg
   return panel
 }
 
-function buildGroupInfoPanel(gid, actions) {
+function buildGroupInfoPanel(gid: string, actions: GroupActions): HTMLDivElement {
   const panel = document.createElement('div')
   panel.className = 'tab-panel info-panel group-info-panel'
   panel.dataset.tab = 'info'
@@ -384,7 +427,11 @@ function buildGroupInfoPanel(gid, actions) {
   return panel
 }
 
-function buildInfoPanel(node, blockInfo, groupActions) {
+function buildInfoPanel(
+  node: any,
+  blockInfo: Map<string, any> | null | undefined,
+  groupActions: GroupActions | null | undefined
+): HTMLDivElement {
   const gid =
     node.entry.kind === 'group' ? node.entry.groupId : node.groupId ?? null
   if (gid && groupActions) {
@@ -442,7 +489,7 @@ function buildInfoPanel(node, blockInfo, groupActions) {
   return panel
 }
 
-function buildCollapsibleSection(sec) {
+function buildCollapsibleSection(sec: any): HTMLElement {
   const details = document.createElement('details')
   details.className = 'info-section'
   // "See also" is the most useful at a glance; open it by default.
@@ -463,19 +510,19 @@ function buildCollapsibleSection(sec) {
 }
 
 export function renderInspector(
-  rootEl,
-  node,
-  sub,
-  onChange,
-  runtimeShapes,
-  blockInfo,
-  onTagChange,
-  onAddConst,
-  onToggleParamPort,
-  groupActions,
-  options = {},
-  onNameChange
-) {
+  rootEl: HTMLElement,
+  node: NodeLike | null,
+  sub: Substitution,
+  onChange: () => void,
+  runtimeShapes: Map<string, number[]> | null,
+  blockInfo: Map<string, any> | null | undefined,
+  onTagChange: (node: NodeLike, value: string) => void,
+  onAddConst: (node: NodeLike, param: CtorParam) => void,
+  onToggleParamPort: (node: NodeLike, param: CtorParam, shouldExpose: boolean) => void,
+  groupActions: GroupActions | null | undefined,
+  options: InspectorOptions = {},
+  onNameChange?: ((node: NodeLike, value: string) => void) | undefined
+): void {
   if (!node) {
     _currentNodeId = null
     rootEl.replaceChildren()
@@ -485,6 +532,10 @@ export function renderInspector(
     rootEl.appendChild(p)
     return
   }
+
+  // Cast to the dynamic Rete-coupled node surface used by the DOM builders
+  // below (freshenedShape, live port specs, mutable values, etc.).
+  const n = node as any
 
   // Same node selected: just refresh the params panel's ports section so the
   // user's focus on a control stays put across validation runs. The Info tab
@@ -498,14 +549,14 @@ export function renderInspector(
       // duplicate, implicit ctor back-fill like inferred in_ch, tag-sync
       // adopting peer values). Skip the control the user is actively editing so
       // an in-progress edit and caret position are preserved.
-      for (const param of node.entry.ctor ?? []) {
-        const ctrl = paramsPanel.querySelector(`[id="ctrl-${node.id}-${param.name}"]`)
+      for (const param of n.entry.ctor ?? []) {
+        const ctrl = paramsPanel.querySelector<HTMLInputElement>(`[id="ctrl-${node.id}-${param.name}"]`)
         if (!ctrl || ctrl === document.activeElement) continue
-        const next = String(controlDisplayValue(param, node.values[param.name]))
+        const next = String(controlDisplayValue(param, n.values[param.name]))
         if (String(ctrl.value) !== next) ctrl.value = next
       }
       const oldPorts = paramsPanel.querySelector('.ports')
-      const fresh = buildPortsSection(node, sub, runtimeShapes)
+      const fresh = buildPortsSection(n, sub, runtimeShapes)
       if (oldPorts) oldPorts.replaceWith(fresh)
       else paramsPanel.appendChild(fresh)
     }
@@ -528,7 +579,7 @@ export function renderInspector(
   // Group controls. Shown when the node is either the group facade itself or
   // a member of a group (groupId set). The action callbacks come from main.js.
   if (groupActions && (node.entry.kind === 'group' || node.groupId)) {
-    rootEl.appendChild(buildGroupPanel(node, groupActions))
+    rootEl.appendChild(buildGroupPanel(n, groupActions))
   }
 
   // Name row. The editable per-instance name drives ctor-param sync (same name
@@ -600,18 +651,18 @@ export function renderInspector(
   rootEl.appendChild(tabs)
 
   const paramsPanel = buildParamsPanel(
-    node,
+    n,
     sub,
     runtimeShapes,
     onChange,
     onAddConst,
     onToggleParamPort
   )
-  const infoPanel = buildInfoPanel(node, blockInfo, groupActions)
+  const infoPanel = buildInfoPanel(n, blockInfo, groupActions)
   rootEl.appendChild(paramsPanel)
   rootEl.appendChild(infoPanel)
 
-  const activate = (tab) => {
+  const activate = (tab: string) => {
     _activeTab = tab
     paramsBtn.classList.toggle('active', tab === 'params')
     infoBtn.classList.toggle('active', tab === 'info')
@@ -623,7 +674,14 @@ export function renderInspector(
   activate(_activeTab)
 }
 
-function portList(title, list, node, sub, side, runtimeShapes) {
+function portList(
+  title: string,
+  list: any[],
+  node: any,
+  sub: Substitution,
+  side: 'in' | 'out',
+  runtimeShapes: Map<string, number[]> | null
+): HTMLDivElement {
   const wrap = document.createElement('div')
   const h = document.createElement('h4')
   h.textContent = title
@@ -660,7 +718,7 @@ function portList(title, list, node, sub, side, runtimeShapes) {
  * makeControl initializes each control. Used both at build time and when
  * reconciling an already-rendered control with a programmatically-changed value.
  */
-function controlDisplayValue(param, value) {
+function controlDisplayValue(param: any, value: any): any {
   if (Array.isArray(param.choices) && param.choices.length > 0) {
     return String(value ?? param.choices[0])
   }
@@ -669,7 +727,11 @@ function controlDisplayValue(param, value) {
   return value ?? '' // int / float / string / any
 }
 
-function makeControl(param, value, onChange) {
+function makeControl(
+  param: any,
+  value: any,
+  onChange: (v: any) => void
+): HTMLInputElement | HTMLSelectElement {
   const type = param.type
   if (Array.isArray(param.choices) && param.choices.length > 0) {
     const el = document.createElement('select')
@@ -734,7 +796,16 @@ function makeControl(param, value, onChange) {
 
 // ---------- diagnostics ----------
 
-export function renderDiagnostics(rootEl, result) {
+interface Diagnostic {
+  message: string
+}
+
+interface DiagnosticsResult {
+  errors: Diagnostic[]
+  warnings: Diagnostic[]
+}
+
+export function renderDiagnostics(rootEl: HTMLElement, result: DiagnosticsResult): void {
   rootEl.replaceChildren()
   const { errors, warnings } = result
   if (errors.length === 0 && warnings.length === 0) {
@@ -760,9 +831,9 @@ export function renderDiagnostics(rootEl, result) {
 
 // ---------- code dialog ----------
 
-export function showCode(code) {
-  const dlg = document.getElementById('codegen-dialog')
-  const out = document.getElementById('codegen-output')
+export function showCode(code: string): void {
+  const dlg = document.getElementById('codegen-dialog') as HTMLDialogElement
+  const out = document.getElementById('codegen-output')!
   // Render one <span class="code-line"> per line so a CSS counter can show a
   // line-number gutter. The numbers live in a ::before, so they are not part
   // of textContent and don't leak into Copy or text selection.
@@ -788,22 +859,33 @@ export function showCode(code) {
   else dlg.setAttribute('open', '')
 }
 
-export function wireCodeDialog() {
-  const dlg = document.getElementById('codegen-dialog')
-  document.getElementById('close-code-btn').addEventListener('click', () => dlg.close())
-  document.getElementById('copy-code-btn').addEventListener('click', async () => {
-    const txt = document.getElementById('codegen-output').textContent
+export function wireCodeDialog(): void {
+  const dlg = document.getElementById('codegen-dialog') as HTMLDialogElement
+  document.getElementById('close-code-btn')!.addEventListener('click', () => dlg.close())
+  document.getElementById('copy-code-btn')!.addEventListener('click', async () => {
+    const txt = document.getElementById('codegen-output')!.textContent
     try {
-      await navigator.clipboard.writeText(txt)
+      await navigator.clipboard.writeText(txt ?? '')
     } catch {
       /* ignore */
     }
   })
 }
 
-function formatParamCount(n) {
+function formatParamCount(n: unknown): string | null {
   if (n == null || !Number.isFinite(n)) return null
   return Number(n).toLocaleString('en-US')
+}
+
+/** Single options bag accepted by {@link updateRuntimePanel}. */
+export interface RuntimePanelState {
+  framework?: string
+  lastResult?: any
+  batchSize?: number
+  runtimeShapes?: Map<string, number[]> | null
+  runtimeNumParams?: number | null
+  running?: boolean
+  lastError?: string | null
 }
 
 export function updateRuntimePanel({
@@ -814,10 +896,10 @@ export function updateRuntimePanel({
   runtimeNumParams,
   running,
   lastError,
-}) {
-  const btn = document.getElementById('run-shapes-btn')
+}: RuntimePanelState): void {
+  const btn = document.getElementById('run-shapes-btn') as HTMLButtonElement | null
   const status = document.getElementById('runtime-status')
-  const batchInput = document.getElementById('batch-size')
+  const batchInput = document.getElementById('batch-size') as HTMLInputElement | null
   if (!btn || !status) return
 
   if (batchInput && document.activeElement !== batchInput) {
@@ -861,7 +943,7 @@ export function updateRuntimePanel({
   }
 }
 
-function isGraphRunnable(lastResult, batchSize) {
+function isGraphRunnable(lastResult: any, batchSize: number | undefined): boolean {
   // Button stays disabled until runtime.js isFullyConcrete passes; main.js sets
   // state.canRunShapes from that on each validation tick.
   return Boolean(lastResult?.canRunShapes)

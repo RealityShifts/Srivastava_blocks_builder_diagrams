@@ -1,7 +1,7 @@
 // Quick smoke test of the pure-JS modules (no rete / DOM needed).
-import { normalize, freshen, prettyShape } from './src/shape.js'
-import { unifyShape, UnifyError } from './src/unify.js'
-import { generate, inputForwardArgName, outputReturnArgName } from './src/codegen.js'
+import { normalize, freshen, prettyShape } from './src/shape.ts'
+import { unifyShape, UnifyError } from './src/unify.ts'
+import { generate, inputForwardArgName, outputReturnArgName } from './src/codegen.ts'
 import {
   parseEinopsPattern,
   parseLengthsString,
@@ -18,14 +18,14 @@ import {
   RearrangeNode,
   ReshapeNode,
   paletteGroup,
-} from './src/nodes.js'
+} from './src/nodes.ts'
 import {
   boundarySignatureFromBoundary,
   boundarySignatureFromEntry,
   boundarySignaturesMatch,
   applySignatureToBoundary,
-} from './src/groupBoundary.js'
-import { copyNodeValues, nodesInSameNameFamily } from './src/tagSync.js'
+} from './src/groupBoundary.ts'
+import { copyNodeValues, nodesInSameNameFamily } from './src/tagSync.ts'
 import {
   makeTagAtlas,
   registerNodeMember,
@@ -37,7 +37,7 @@ import {
   recordGroupMeta,
   adoptValuesFromAtlas,
   adoptExposedParamsFromAtlas,
-} from './src/tagAtlas.js'
+} from './src/tagAtlas.ts'
 
 let pass = 0
 let fail = 0
@@ -752,7 +752,7 @@ console.log('validator tag conflicts')
 {
   // Synthesize the smallest editor-shaped object the validator needs.
   async function loadValidator() {
-    return (await import('./src/validator.js')).validate
+    return (await import('./src/validator.ts')).validate
   }
   const validate = await loadValidator()
   const conv = {

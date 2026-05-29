@@ -13,34 +13,83 @@
  *   }
  */
 
-import { unifyShape, UnifyError, cloneSub } from './unify.js'
-import { isVariable, isRest } from './shape.js'
-import { boundarySignatureFromEntry, boundarySignaturesMatch } from './groupBoundary.js'
+import { unifyShape, UnifyError, cloneSub } from './unify.ts'
+import { isVariable, isRest } from './shape.ts'
+import { boundarySignatureFromEntry, boundarySignaturesMatch } from './groupBoundary.ts'
+import type { GraphEditor, NodeLike } from './types.ts'
+import type { Shape, Token, Substitution } from './shape.ts'
 
-export function validate(editor) {
+// `isVariable`/`isRest` are imported to keep parity with the original module
+// surface (re-exported convenience for downstream callers); reference them so
+// erasable-only type-stripping leaves them as live value imports.
+void isVariable
+void isRest
+
+/**
+ * A single validation diagnostic (error or warning). All diagnostics carry a
+ * machine-readable `kind` plus a human-readable `message`. Individual kinds may
+ * attach extra fields (e.g. `connection`, `source`, `target`) — the index
+ * signature keeps those open without losing the required core fields.
+ */
+export interface Diagnostic {
+  /** Machine-readable category, e.g. `'shape'`, `'dtype'`, `'tag-conflict'`. */
+  kind: string
+  /** Human-readable description shown in the UI. */
+  message: string
+  /** Optional location hint (some diagnostics use this instead of structured fields). */
+  where?: string
+  /** Forward-compatible extra fields (connection id, source/target endpoints, ...). */
+  [key: string]: unknown
+}
+
+/**
+ * The result of a full graph validation pass.
+ */
+export interface ValidationResult {
+  /** True when there are no hard errors (warnings are allowed). */
+  ok: boolean
+  /** Hard errors that block codegen. */
+  errors: Diagnostic[]
+  /** Non-blocking warnings surfaced to the user. */
+  warnings: Diagnostic[]
+  /** The resolved substitution after unifying across every edge. */
+  sub: Substitution
+  /** Per-port resolved shapes keyed by `"nodeId/portName/side"`. */
+  portShapes: Map<string, Token[]>
+}
+
+/** The outcome of a {@link dryRunEdge} prediction. */
+export interface DryRunResult {
+  /** Whether the candidate edge would be accepted. */
+  ok: boolean
+  /** When present, why the edge was rejected or flagged (e.g. `'untyped'`, dtype/shape reason). */
+  reason?: string
+}
+
+export function validate(editor: GraphEditor): ValidationResult {
   const nodes = editor.getNodes()
   const connections = editor.getConnections()
-  const sub = new Map()
-  const errors = []
-  const warnings = []
+  const sub: Substitution = new Map()
+  const errors: Diagnostic[] = []
+  const warnings: Diagnostic[] = []
 
   // 1. Seed the substitution with ctor-param-derived bindings.
   for (const n of nodes) {
-    if (typeof n.applyParamBindings === 'function') {
-      n.applyParamBindings(sub)
+    if (typeof (n as any).applyParamBindings === 'function') {
+      (n as any).applyParamBindings(sub)
     }
   }
 
   // 2. Process every connection: unify the producer's output shape with the
   //    consumer's input shape.
   for (const c of connections) {
-    const src = editor.getNode(c.source)
-    const tgt = editor.getNode(c.target)
+    const src = editor.getNode?.(c.source) as NodeLike | null | undefined
+    const tgt = editor.getNode?.(c.target) as NodeLike | null | undefined
     if (!src || !tgt) continue
-    const targetSpec = tgt.inputs?.[c.targetInput]?.portSpec
+    const targetSpec = (tgt.inputs as any)?.[c.targetInput]?.portSpec
     if (targetSpec?.kind === 'param') continue
-    const outShape = src.freshenedShape(c.sourceOutput, 'out')
-    const inShape = tgt.freshenedShape(c.targetInput, 'in')
+    const outShape = (src as any).freshenedShape(c.sourceOutput, 'out') as Shape | undefined
+    const inShape = (tgt as any).freshenedShape(c.targetInput, 'in') as Shape | undefined
     if (!outShape || !inShape) {
       warnings.push({
         kind: 'missing-shape',
@@ -50,8 +99,8 @@ export function validate(editor) {
       continue
     }
     // Dtype compatibility: dtypes from the manifest are coarse labels.
-    const outPort = src.outputs[c.sourceOutput]?.portSpec
-    const inPort = tgt.inputs[c.targetInput]?.portSpec
+    const outPort = (src.outputs as any)[c.sourceOutput]?.portSpec
+    const inPort = (tgt.inputs as any)[c.targetInput]?.portSpec
     if (
       outPort &&
       inPort &&
@@ -72,8 +121,8 @@ export function validate(editor) {
         errors.push({
           kind: 'shape',
           connection: c.id,
-          source: { node: src.id, port: c.sourceOutput, label: src.label },
-          target: { node: tgt.id, port: c.targetInput, label: tgt.label },
+          source: { node: src.id, port: c.sourceOutput, label: (src as any).label },
+          target: { node: tgt.id, port: c.targetInput, label: (tgt as any).label },
           message: `Shape mismatch: ${describeNode(src)}:${c.sourceOutput} -> ${describeNode(tgt)}:${c.targetInput} — ${e.message}`,
         })
       } else throw e
@@ -84,17 +133,17 @@ export function validate(editor) {
   //     non-empty tag must agree on block/group type (and ctor values for
   //     modules), otherwise codegen would emit one self.<attr> backed by a
   //     single instance yet called from sites that semantically expect another.
-  const tagGroups = new Map()
+  const tagGroups = new Map<string, NodeLike[]>()
   for (const n of nodes) {
     if (n.entry.kind !== 'module' && n.entry.kind !== 'group') continue
     const t = String(n.tag ?? '').trim()
     if (!t) continue
     if (!tagGroups.has(t)) tagGroups.set(t, [])
-    tagGroups.get(t).push(n)
+    tagGroups.get(t)!.push(n)
   }
   // Explicit per-instance name (blank names don't participate in the check -
   // they neither sync params nor force a shared name).
-  const explicitName = (n) => String(n.name ?? '').trim()
+  const explicitName = (n: NodeLike) => String(n.name ?? '').trim()
   for (const [tag, group] of tagGroups) {
     if (group.length < 2) continue
     const head = group[0]
@@ -157,7 +206,7 @@ export function validate(editor) {
   }
 
   // 3. Detect required-but-unconnected input ports.
-  const incoming = new Map()
+  const incoming = new Map<string, number>()
   for (const c of connections) {
     const key = `${c.target}/${c.targetInput}`
     incoming.set(key, (incoming.get(key) ?? 0) + 1)
@@ -197,18 +246,18 @@ export function validate(editor) {
   }
 
   // 4. Build per-port resolved shapes for hover/inspector display.
-  const portShapes = new Map()
+  const portShapes = new Map<string, Token[]>()
   for (const n of nodes) {
     for (const port of n.entry.inputs) {
       portShapes.set(
         `${n.id}/${port.name}/in`,
-        n.freshenedShape(port.name, 'in')
+        (n as any).freshenedShape(port.name, 'in')
       )
     }
     for (const port of n.entry.outputs) {
       portShapes.set(
         `${n.id}/${port.name}/out`,
-        n.freshenedShape(port.name, 'out')
+        (n as any).freshenedShape(port.name, 'out')
       )
     }
   }
@@ -220,17 +269,23 @@ export function validate(editor) {
  * Predict whether a candidate edge would be accepted *without* mutating the
  * live substitution. Used to gate connection creation in the editor pipe.
  */
-export function dryRunEdge(editor, sourceNode, sourcePort, targetNode, targetPort) {
-  const targetSpec = targetNode.inputs?.[targetPort]?.portSpec
+export function dryRunEdge(
+  editor: GraphEditor,
+  sourceNode: NodeLike,
+  sourcePort: string,
+  targetNode: NodeLike,
+  targetPort: string
+): DryRunResult {
+  const targetSpec = (targetNode.inputs as any)?.[targetPort]?.portSpec
   if (targetSpec?.kind === 'param') return { ok: true }
   const { sub } = validate(editor)
   const trial = cloneSub(sub)
-  const outShape = sourceNode.freshenedShape(sourcePort, 'out')
-  const inShape = targetNode.freshenedShape(targetPort, 'in')
+  const outShape = (sourceNode as any).freshenedShape(sourcePort, 'out') as Shape | undefined
+  const inShape = (targetNode as any).freshenedShape(targetPort, 'in') as Shape | undefined
   if (!outShape || !inShape) return { ok: true, reason: 'untyped' }
   // dtype check
-  const outDtype = sourceNode.outputs[sourcePort]?.portSpec?.dtype
-  const inDtype = targetNode.inputs[targetPort]?.portSpec?.dtype
+  const outDtype = (sourceNode.outputs as any)[sourcePort]?.portSpec?.dtype
+  const inDtype = (targetNode.inputs as any)[targetPort]?.portSpec?.dtype
   if (
     outDtype &&
     inDtype &&
@@ -244,16 +299,19 @@ export function dryRunEdge(editor, sourceNode, sourcePort, targetNode, targetPor
     unifyShape(outShape, inShape, trial)
     return { ok: true }
   } catch (e) {
-    return { ok: false, reason: e.message }
+    return { ok: false, reason: (e as Error).message }
   }
 }
 
-function describeNode(n) {
-  return `${n.label}#${shortId(n.id)}`
+function describeNode(n: NodeLike): string {
+  return `${(n as any).label}#${shortId(n.id)}`
 }
 
 /** First ctor param whose value differs between two nodes, or null. */
-function ctorValueDiff(a, b) {
+function ctorValueDiff(
+  a: NodeLike,
+  b: NodeLike
+): { param: string; a: unknown; b: unknown } | null {
   for (const p of a.entry.ctor || []) {
     const va = a.values?.[p.name]
     const vb = b.values?.[p.name]
@@ -262,11 +320,11 @@ function ctorValueDiff(a, b) {
   return null
 }
 
-function ctorValueEqual(a, b) {
+function ctorValueEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true
   // Treat null/undefined/'' as the same "unset" sentinel - common for
   // implicit-inferred ctor params like in_ch that get filled in later.
-  const isUnset = (v) => v === null || v === undefined || v === ''
+  const isUnset = (v: unknown) => v === null || v === undefined || v === ''
   if (isUnset(a) && isUnset(b)) return true
   if (Array.isArray(a) && Array.isArray(b)) {
     return a.length === b.length && a.every((x, i) => ctorValueEqual(x, b[i]))
@@ -274,7 +332,7 @@ function ctorValueEqual(a, b) {
   return false
 }
 
-function shortId(id) {
+function shortId(id: string): string {
   return String(id).slice(0, 6)
 }
 
@@ -284,18 +342,21 @@ function shortId(id) {
  * warnings: when the boundary edge has been rerouted to the facade, the
  * child's own input port looks dangling but is in fact wired through.
  */
-function collectFacadeOwnership(nodes) {
-  const inputs = new Set()
-  const outputs = new Set()
+function collectFacadeOwnership(
+  nodes: NodeLike[]
+): { inputs: Set<string>; outputs: Set<string> } {
+  const inputs = new Set<string>()
+  const outputs = new Set<string>()
   for (const n of nodes) {
     if (n.entry?.kind !== 'group') continue
-    for (const m of n.entry.portMap?.inputs || []) {
+    const portMap = n.entry.portMap as any
+    for (const m of portMap?.inputs || []) {
       inputs.add(`${m.childNodeId}/${m.childPort}`)
     }
-    for (const m of n.entry.portMap?.params || []) {
+    for (const m of portMap?.params || []) {
       inputs.add(`${m.childNodeId}/${m.childPort}`)
     }
-    for (const m of n.entry.portMap?.outputs || []) {
+    for (const m of portMap?.outputs || []) {
       outputs.add(`${m.childNodeId}/${m.childPort}`)
     }
   }

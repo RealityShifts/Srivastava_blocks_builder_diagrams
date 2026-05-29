@@ -17,10 +17,43 @@
  * No DOM / Rete references live here so the module stays test-friendly.
  */
 
-import { nodeTagKey, nodeNameKey, copyNodeValues } from './tagSync.js'
+import { nodeTagKey, nodeNameKey, copyNodeValues } from './tagSync.ts'
+import type { AtlasEntry, Group, NodeLike, TagAtlas } from './types.ts'
+import type { BoundarySignature } from './groupBoundary.ts'
 
-/** Family used to decide if two members can be merged under one tag. */
-function memberFamily(node) {
+/** A patch applied to a group's shared metadata via {@link recordGroupMeta}. */
+export interface GroupMetaPatch {
+  name?: string
+  description?: string
+  boundarySignature?: BoundarySignature | null
+}
+
+/** The exposed-param reconciliation result from {@link adoptExposedParamsFromAtlas}. */
+export interface ExposedParamDiff {
+  toExpose: string[]
+  toHide: string[]
+}
+
+/** Per-key summary used by tests to assert atlas state. */
+export interface AtlasEntrySummary {
+  tag: string
+  family: string | null
+  memberCount: number
+  values: Record<string, unknown>
+  exposedParams: string[]
+  name: string
+  description: string
+}
+
+/** Dependencies {@link rebuildAtlas} needs to walk the current editor + groups. */
+export interface RebuildAtlasContext {
+  editor: { getNodes(): NodeLike[] }
+  groups?: Map<string, Group> | null
+  getNode: (id: string) => NodeLike | null | undefined
+}
+
+/** Family used to decide if two members can be merged under one key. */
+function memberFamily(node: NodeLike | null | undefined): string | null {
   if (!node?.entry) return null
   if (node.entry.kind === 'group') return `group:${node.entry.name}`
   if (node.entry.kind === 'module' || node.entry.kind === 'learnable') {
@@ -29,52 +62,54 @@ function memberFamily(node) {
   return `${node.entry.kind}:${node.entry.name}`
 }
 
-function blankEntry(tag, family) {
+function blankEntry(tag: string, family: string | null): AtlasEntry {
   return {
     tag,
     family,
     blockName: '',
     values: {},
-    exposedParams: new Set(),
+    exposedParams: new Set<string>(),
     description: '',
     name: '',
     boundarySignature: null,
-    members: new Set(),
+    members: new Set<string>(),
   }
 }
 
-function exposedParamSet(node) {
-  const out = new Set()
+function exposedParamSet(node: NodeLike | null | undefined): Set<string> {
+  const out = new Set<string>()
   for (const portName of Object.keys(node?.inputs ?? {})) {
     if (portName.startsWith('__param__')) out.add(portName.slice('__param__'.length))
   }
   return out
 }
 
-export function makeTagAtlas() {
-  return new Map()
+export function makeTagAtlas(): TagAtlas {
+  return new Map<string, AtlasEntry>()
 }
 
-export function getAtlasEntry(atlas, tag) {
+/** Look up an entry by a raw tag string (used for groups). */
+export function getAtlasEntry(atlas: TagAtlas, tag: unknown): AtlasEntry | null {
   const key = nodeTagKey(tag)
   if (!key) return null
   return atlas.get(key) ?? null
 }
 
 /** Look up the entry a regular node belongs to (keyed by its name). */
-export function getNodeAtlasEntry(atlas, node) {
+export function getNodeAtlasEntry(atlas: TagAtlas, node: NodeLike | null | undefined): AtlasEntry | null {
   const key = nodeNameKey(node)
   if (!key) return null
   return atlas.get(key) ?? null
 }
 
 /**
- * Register a tagged BlockNode against the atlas. Returns the entry the node
- * now belongs to. When the entry was newly created the node's own values
- * become the canonical seed; when joining an existing entry the caller is
- * expected to apply the canonical values back onto the node.
+ * Register a named BlockNode against the atlas. Returns the entry the node now
+ * belongs to, or `null` if the node has no explicit name. When the entry was
+ * newly created the node's own values become the canonical seed; when joining
+ * an existing entry the caller is expected to apply the canonical values back
+ * onto the node.
  */
-export function registerNodeMember(atlas, node) {
+export function registerNodeMember(atlas: TagAtlas, node: NodeLike): AtlasEntry | null {
   const key = nodeNameKey(node)
   if (!key) return null
   const family = memberFamily(node)
@@ -95,7 +130,11 @@ export function registerNodeMember(atlas, node) {
  * canonical groupId (any one) and the user-visible name + description so
  * peers can adopt them.
  */
-export function registerGroupMember(atlas, group, facadeNode) {
+export function registerGroupMember(
+  atlas: TagAtlas,
+  group: Group,
+  facadeNode: NodeLike | null | undefined
+): AtlasEntry | null {
   const key = nodeTagKey(group?.facadeTag ?? facadeNode?.tag)
   if (!key) return null
   const family = `group:${facadeNode?.entry?.name ?? group.name ?? 'Group'}`
@@ -111,7 +150,7 @@ export function registerGroupMember(atlas, group, facadeNode) {
   return entry
 }
 
-export function unregisterMember(atlas, tag, memberId) {
+export function unregisterMember(atlas: TagAtlas, tag: unknown, memberId: string): void {
   const key = nodeTagKey(tag)
   if (!key) return
   const entry = atlas.get(key)
@@ -124,10 +163,10 @@ export function unregisterMember(atlas, tag, memberId) {
  * Push the atlas's canonical values onto a node and return the list of
  * params that actually changed (so the caller can decide what to refresh).
  */
-export function adoptValuesFromAtlas(atlas, node) {
+export function adoptValuesFromAtlas(atlas: TagAtlas, node: NodeLike): string[] {
   const entry = getNodeAtlasEntry(atlas, node)
   if (!entry) return []
-  const changed = []
+  const changed: string[] = []
   if (!node.values) node.values = {}
   for (const [paramName, value] of Object.entries(entry.values)) {
     if (node.values[paramName] !== value) {
@@ -139,13 +178,13 @@ export function adoptValuesFromAtlas(atlas, node) {
 }
 
 /** Should the exposed-param set on a freshly-joined node be synced too? */
-export function adoptExposedParamsFromAtlas(atlas, node) {
+export function adoptExposedParamsFromAtlas(atlas: TagAtlas, node: NodeLike): ExposedParamDiff {
   const entry = getNodeAtlasEntry(atlas, node)
   if (!entry) return { toExpose: [], toHide: [] }
   const current = exposedParamSet(node)
   const target = entry.exposedParams
-  const toExpose = []
-  const toHide = []
+  const toExpose: string[] = []
+  const toHide: string[] = []
   for (const name of target) if (!current.has(name)) toExpose.push(name)
   for (const name of current) if (!target.has(name)) toHide.push(name)
   return { toExpose, toHide }
@@ -153,9 +192,9 @@ export function adoptExposedParamsFromAtlas(atlas, node) {
 
 /**
  * Record a value change on a member and return the peer ids that should be
- * updated. The new value becomes canonical for the tag key.
+ * updated. The new value becomes canonical for the key.
  */
-export function recordValueChange(atlas, sourceNode, paramName) {
+export function recordValueChange(atlas: TagAtlas, sourceNode: NodeLike, paramName: string): string[] {
   const entry = getNodeAtlasEntry(atlas, sourceNode)
   if (!entry) return []
   entry.values[paramName] = sourceNode.values?.[paramName]
@@ -163,7 +202,7 @@ export function recordValueChange(atlas, sourceNode, paramName) {
 }
 
 /** Bulk-record all ctor values from a node (used when seeding from a peer). */
-export function recordAllValues(atlas, sourceNode) {
+export function recordAllValues(atlas: TagAtlas, sourceNode: NodeLike): string[] {
   const entry = getNodeAtlasEntry(atlas, sourceNode)
   if (!entry || !sourceNode?.values) return []
   for (const key of Object.keys(sourceNode.values)) {
@@ -176,7 +215,12 @@ export function recordAllValues(atlas, sourceNode) {
  * Record an exposed-param toggle and return peers that should mirror the
  * structural change.
  */
-export function recordExposedParamChange(atlas, sourceNode, paramName, isExposed) {
+export function recordExposedParamChange(
+  atlas: TagAtlas,
+  sourceNode: NodeLike,
+  paramName: string,
+  isExposed: boolean
+): string[] {
   const entry = getNodeAtlasEntry(atlas, sourceNode)
   if (!entry) return []
   if (isExposed) entry.exposedParams.add(paramName)
@@ -185,7 +229,7 @@ export function recordExposedParamChange(atlas, sourceNode, paramName, isExposed
 }
 
 /** Update group meta (name/description) for the tag family. */
-export function recordGroupMeta(atlas, sourceGroup, patch) {
+export function recordGroupMeta(atlas: TagAtlas, sourceGroup: Group, patch: GroupMetaPatch): string[] {
   const entry = getAtlasEntry(atlas, sourceGroup?.facadeTag)
   if (!entry) return []
   if (patch.name !== undefined) entry.name = String(patch.name ?? '')
@@ -195,7 +239,7 @@ export function recordGroupMeta(atlas, sourceGroup, patch) {
 }
 
 /** Rebuild the atlas from the current editor + groups snapshot. */
-export function rebuildAtlas({ editor, groups, getNode }) {
+export function rebuildAtlas({ editor, groups, getNode }: RebuildAtlasContext): TagAtlas {
   const atlas = makeTagAtlas()
   for (const node of editor.getNodes()) {
     if (node?.entry?.kind === 'group') continue // groups go via the groups map
@@ -217,8 +261,8 @@ export function rebuildAtlas({ editor, groups, getNode }) {
 }
 
 /** Convenience: source-of-truth check used by tests. */
-export function atlasSummary(atlas) {
-  const out = {}
+export function atlasSummary(atlas: TagAtlas): Record<string, AtlasEntrySummary> {
+  const out: Record<string, AtlasEntrySummary> = {}
   for (const [key, entry] of atlas) {
     out[key] = {
       tag: entry.tag,

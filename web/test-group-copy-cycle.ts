@@ -4,13 +4,13 @@
 //     peer-group sync maps source children to peer children; when several
 //     children share a tag, that map must pair them positionally (in topo
 //     order) rather than collapsing onto one peer and mis-pairing the rest.
-//     See buildSourceToPeerChildMap in src/main.js.
+//     See buildSourceToPeerChildMap in src/main.ts.
 //
 //  2. A false "boundary interface differs" weight-shared error that appears
 //     immediately after paste and only clears on the next structural action.
 //     The pasted facade must carry the proxied child port dtypes (not 'any')
 //     so its interface matches the original's. See pasteClipboard's facade
-//     boundary reconstruction in src/main.js.
+//     boundary reconstruction in src/main.ts.
 //
 // Case: three uniform 128->128 ConvBlocks all tagged "dup", grouped and
 // chained out of creation order. Uniform channels mean even a mis-paired edge

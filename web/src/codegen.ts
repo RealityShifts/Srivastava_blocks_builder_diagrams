@@ -12,35 +12,68 @@
  * base class name and the entry method (forward vs __call__).
  */
 
-function topoSort(nodes, connections) {
-  const indeg = new Map()
-  const out = new Map()
+import type { NodeLike, Connection, ManifestEntry } from './types.ts'
+
+/** The naming maps, wiring tables, and topo order returned by {@link planGraph}. */
+export interface PlanGraph {
+  /** Nodes in topological order. */
+  ordered: NodeLike[]
+  /** Input-node id -> forward() argument name. */
+  inputArgFor: Map<string, string>
+  /** Output-node id -> return variable name. */
+  outputReturnFor: Map<string, string>
+  /** Node id -> `self.<attr>` attribute name. */
+  attrName: Map<string, string>
+  /** Node id -> forward()-scope local variable name. */
+  localName: Map<string, string>
+  /** Python module -> set of referenced block names to import. */
+  imports: Map<string, Set<string>>
+  /** `<targetId>/<targetInput>` -> incoming connection(s). */
+  incoming: Map<string, Connection[]>
+  /** `<nodeId>/<portName>` -> the variable holding that port's value. */
+  outputVarFor: Map<string, string>
+  /** Unwired required input ports surfaced as forward() args. */
+  entryInputs: any[]
+}
+
+/** Options accepted by {@link generate}. */
+export interface GenerateOptions {
+  /** trace=true records tensor.shape per port and forward() returns the dict. */
+  trace?: boolean
+  /** When provided, appends a `test_GeneratedModel()` function plus an
+   *  `if __name__ == "__main__":` entrypoint built from these input specs. */
+  testCase?: Array<{ arg: string; shape: number[]; dtype?: string }>
+}
+
+function topoSort(nodes: NodeLike[], connections: Connection[]): NodeLike[] {
+  const indeg = new Map<string, number>()
+  const out = new Map<string, string[]>()
   for (const n of nodes) {
     indeg.set(n.id, 0)
     out.set(n.id, [])
   }
   for (const c of connections) {
     if (!out.has(c.source) || !indeg.has(c.target)) continue
-    indeg.set(c.target, indeg.get(c.target) + 1)
-    out.get(c.source).push(c.target)
+    indeg.set(c.target, (indeg.get(c.target) as number) + 1)
+    ;(out.get(c.source) as string[]).push(c.target)
   }
   const queue = [...indeg.entries()].filter(([, d]) => d === 0).map(([k]) => k)
-  const order = []
+  const order: string[] = []
   while (queue.length) {
-    const id = queue.shift()
+    const id = queue.shift() as string
     order.push(id)
     for (const tgt of out.get(id) ?? []) {
-      indeg.set(tgt, indeg.get(tgt) - 1)
+      indeg.set(tgt, (indeg.get(tgt) as number) - 1)
       if (indeg.get(tgt) === 0) queue.push(tgt)
     }
   }
   if (order.length !== nodes.length) {
     throw new Error('graph contains a cycle')
   }
-  return order.map((id) => nodes.find((n) => n.id === id))
+  return order.map((id) => nodes.find((n) => n.id === id) as NodeLike)
 }
 
-function pyRepr(value) {
+function pyRepr(value: any): string {
   if (value === null || value === undefined) return 'None'
   if (typeof value === 'boolean') return value ? 'True' : 'False'
   if (typeof value === 'number') return String(value)
@@ -49,7 +82,7 @@ function pyRepr(value) {
   return JSON.stringify(value)
 }
 
-function snake(name, suffix) {
+function snake(name: string, suffix: any): string {
   const base = name
     .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
     .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
@@ -58,7 +91,7 @@ function snake(name, suffix) {
 }
 
 /** Coerce arbitrary user-typed text into a valid Python identifier. */
-export function sanitizePyIdent(raw, fallback = 'x') {
+export function sanitizePyIdent(raw: unknown, fallback: string = 'x'): string {
   const s = String(raw ?? '').trim()
   if (!s) return fallback
   let out = s.replace(/[^A-Za-z0-9_]/g, '_')
@@ -70,7 +103,7 @@ export function sanitizePyIdent(raw, fallback = 'x') {
  * Python forward() argument for an Input node. A custom `name` (when not the
  * default `x`) wins; otherwise a non-empty tag is used; else `x`.
  */
-export function inputForwardArgName(node) {
+export function inputForwardArgName(node: NodeLike): string {
   const rawName = String(node.values?.name ?? '').trim()
   if (rawName && rawName !== 'x') return sanitizePyIdent(rawName, 'x')
   const tag = sanitizePyIdent(node.tag ?? '', '')
@@ -82,7 +115,7 @@ export function inputForwardArgName(node) {
  * Return variable for an explicit Output node. Custom `name` (when not the
  * default `y`) wins; otherwise a non-empty tag is used; else `y`.
  */
-export function outputReturnArgName(node) {
+export function outputReturnArgName(node: NodeLike): string {
   const rawName = String(node.values?.name ?? '').trim()
   if (rawName && rawName !== 'y') return sanitizePyIdent(rawName, 'y')
   const tag = sanitizePyIdent(node.tag ?? '', '')
@@ -105,7 +138,7 @@ export function outputReturnArgName(node) {
 //   - Empty / missing shape -> `"..."` (any rank, any sizes).
 //   - dtype 'any' / unknown -> `Shaped` (matches any numeric dtype).
 // ---------------------------------------------------------------------------
-const JAXTYPING_BY_DTYPE = {
+const JAXTYPING_BY_DTYPE: Record<string, string> = {
   float: 'Float',
   float16: 'Float',
   float32: 'Float',
@@ -125,12 +158,12 @@ const JAXTYPING_BY_DTYPE = {
   '': 'Shaped',
 }
 
-function jaxtypingDtype(dtype) {
+function jaxtypingDtype(dtype: any): string {
   const key = String(dtype ?? '').toLowerCase().trim()
   return JAXTYPING_BY_DTYPE[key] || 'Shaped'
 }
 
-function sanitizeAxis(tok) {
+function sanitizeAxis(tok: any): string {
   const s = String(tok ?? '').trim()
   if (!s) return '_'
   if (s === '...') return '...'
@@ -143,8 +176,8 @@ function sanitizeAxis(tok) {
 
 /** Normalize a shape (array of tokens OR space-separated string) into the
  *  axis string jaxtyping expects, e.g. ["B","C","H","W"] -> "B C H W". */
-function jaxtypingShape(shape) {
-  let toks = []
+function jaxtypingShape(shape: any): string {
+  let toks: any[] = []
   if (Array.isArray(shape)) toks = shape
   else if (typeof shape === 'string') toks = shape.split(/[\s,]+/)
   toks = toks.map((t) => String(t ?? '').trim()).filter((t) => t.length > 0)
@@ -162,7 +195,7 @@ function jaxtypingShape(shape) {
 }
 
 /** `Float[Tensor, "B C H W"]` style annotation. */
-function jaxtypingAnno(shape, dtype, tensorType, usedDtypes) {
+function jaxtypingAnno(shape: any, dtype: any, tensorType: string, usedDtypes?: Set<string>): string {
   const cls = jaxtypingDtype(dtype)
   usedDtypes?.add(cls)
   return `${cls}[${tensorType}, "${jaxtypingShape(shape)}"]`
@@ -172,7 +205,7 @@ function jaxtypingAnno(shape, dtype, tensorType, usedDtypes) {
  * Shared graph planning used by generate() and the runtime shape runner.
  * Returns naming maps, wiring tables, and topo order.
  */
-export function planGraph(nodes, connections) {
+export function planGraph(nodes: NodeLike[], connections: Connection[]): PlanGraph | null {
   if (nodes.length === 0) return null
   const nodeIds = new Set(nodes.map((n) => n.id))
   const wired = connections.filter((c) => nodeIds.has(c.source) && nodeIds.has(c.target))
@@ -182,16 +215,16 @@ export function planGraph(nodes, connections) {
   // locals. Splitting them lets `self.shared` and local `shared` coexist
   // (Python is fine with this) so weight-shared twins get nice names like
   // `shared = self.shared(x)` / `shared2 = self.shared(shared)`.
-  const localPool = new Set()
-  const attrPool = new Set()
-  const allocLocal = (base) => {
+  const localPool = new Set<string>()
+  const attrPool = new Set<string>()
+  const allocLocal = (base: string) => {
     let c = base
     let i = 2
     while (localPool.has(c)) c = `${base}${i++}`
     localPool.add(c)
     return c
   }
-  const allocAttr = (base) => {
+  const allocAttr = (base: string) => {
     let c = base
     let i = 2
     while (attrPool.has(c)) c = `${base}${i++}`
@@ -199,14 +232,14 @@ export function planGraph(nodes, connections) {
     return c
   }
 
-  const inputArgFor = new Map()
+  const inputArgFor = new Map<string, string>()
   for (const n of ordered) {
     if (n.entry.kind === 'input') {
       inputArgFor.set(n.id, allocLocal(inputForwardArgName(n)))
     }
   }
 
-  const outputReturnFor = new Map()
+  const outputReturnFor = new Map<string, string>()
   for (const n of ordered) {
     if (n.entry.kind === 'output') {
       outputReturnFor.set(n.id, allocLocal(outputReturnArgName(n)))
@@ -222,15 +255,15 @@ export function planGraph(nodes, connections) {
   // `self.<attr> = ...` in __init__, multiple call sites in forward. Weight-
   // shared instances are validated to share a name, so the first member names
   // the shared slot. Non-module kinds (input, learnable, ...) never share.
-  const attrBaseFor = (n, i) => {
+  const attrBaseFor = (n: NodeLike, i: any) => {
     const explicit = String(n.name ?? '').trim()
     if (explicit) return sanitizePyIdent(explicit, snake(n.entry.name, i))
     const tag = sanitizePyIdent(n.tag ?? '', '')
     if (tag) return tag
     return snake(n.entry.name, i)
   }
-  const attrName = new Map()
-  const sharedKeyToAttr = new Map() // tag -> attr name
+  const attrName = new Map<string, string>()
+  const sharedKeyToAttr = new Map<string, string>() // tag -> attr name
   ordered.forEach((n, i) => {
     if (n.entry.kind === 'input') return
     if (n.entry.kind === 'learnable') {
@@ -245,7 +278,7 @@ export function planGraph(nodes, connections) {
       if (!sharedKeyToAttr.has(tag)) {
         sharedKeyToAttr.set(tag, allocAttr(attrBaseFor(n, i)))
       }
-      attrName.set(n.id, sharedKeyToAttr.get(tag))
+      attrName.set(n.id, sharedKeyToAttr.get(tag) as string)
       return
     }
     attrName.set(n.id, allocAttr(attrBaseFor(n, i)))
@@ -255,31 +288,31 @@ export function planGraph(nodes, connections) {
   // For non-shared nodes this matches the attr name exactly; for shared-
   // weight twins each call site gets a bumped suffix so the first call's
   // output isn't clobbered by the second.
-  const localName = new Map()
+  const localName = new Map<string, string>()
   ordered.forEach((n) => {
     if (n.entry.kind === 'input' || n.entry.kind === 'learnable') return
-    localName.set(n.id, allocLocal(attrName.get(n.id)))
+    localName.set(n.id, allocLocal(attrName.get(n.id) as string))
   })
 
-  const imports = new Map()
+  const imports = new Map<string, Set<string>>()
   for (const n of ordered) {
     if (n.entry.kind === 'input') continue
     if (n.entry.module?.startsWith('__')) continue // synthetic nodes wire imports separately
     if (!imports.has(n.entry.module)) imports.set(n.entry.module, new Set())
-    imports.get(n.entry.module).add(n.entry.name)
+    ;(imports.get(n.entry.module) as Set<string>).add(n.entry.name)
   }
 
-  const incoming = new Map()
+  const incoming = new Map<string, Connection[]>()
   for (const c of wired) {
     const key = `${c.target}/${c.targetInput}`
     if (!incoming.has(key)) incoming.set(key, [])
-    incoming.get(key).push(c)
+    ;(incoming.get(key) as Connection[]).push(c)
   }
 
-  const outputVarFor = new Map()
+  const outputVarFor = new Map<string, string>()
   for (const n of ordered) {
     if (n.entry.kind === 'input') {
-      outputVarFor.set(`${n.id}/out`, inputArgFor.get(n.id))
+      outputVarFor.set(`${n.id}/out`, inputArgFor.get(n.id) as string)
       continue
     }
     if (n.entry.kind === 'learnable') {
@@ -290,7 +323,7 @@ export function planGraph(nodes, connections) {
     for (const port of n.entry.outputs) {
       outputVarFor.set(
         `${n.id}/${port.name}`,
-        multi ? `${localName.get(n.id)}_${port.name}` : localName.get(n.id)
+        multi ? `${localName.get(n.id)}_${port.name}` : (localName.get(n.id) as string)
       )
     }
   }
@@ -323,13 +356,18 @@ export function planGraph(nodes, connections) {
  * emitted as its own nn.Module / nnx.Module subclass, and the main class
  * instantiates the subclasses at the facade locations.
  */
-export function generate(nodes, connections, framework, options = {}) {
+export function generate(
+  nodes: NodeLike[],
+  connections: Connection[],
+  framework: string,
+  options: GenerateOptions = {}
+): string {
   const partition = partitionByGroup(nodes, connections)
   const { facadesByGid, childrenByGid, internalByGid } = partition
 
   // Assign Python class names to groups up front so both the main class and
   // any cross-references (e.g. nested calls) agree.
-  const classNames = new Map()
+  const classNames = new Map<string, string>()
   for (const [gid, facade] of facadesByGid) {
     classNames.set(gid, groupClassName(facade.entry.name, gid))
   }
@@ -338,9 +376,9 @@ export function generate(nodes, connections, framework, options = {}) {
   // the graph. When a group is expanded the facade is gone but children keep
   // their groupId; treating those orphans as top-level keeps the generated
   // model intact (otherwise children silently disappear from forward()).
-  const isGroupedAway = (n) => Boolean(n?.groupId && facadesByGid.has(n.groupId))
+  const isGroupedAway = (n: any) => Boolean(n?.groupId && facadesByGid.has(n.groupId))
   const topNodes = nodes.filter((n) => !isGroupedAway(n))
-  const byIdAll = new Map(nodes.map((n) => [n.id, n]))
+  const byIdAll = new Map<string, NodeLike>(nodes.map((n) => [n.id, n]))
   const topConnections = connections.filter((c) => {
     const src = byIdAll.get(c.source)
     const tgt = byIdAll.get(c.target)
@@ -352,8 +390,8 @@ export function generate(nodes, connections, framework, options = {}) {
   // followed by the main class. We don't yet know which jaxtyping dtype
   // classes will be referenced, so we reserve a placeholder line and patch
   // it once every emitClassBody() has filled `usedDtypes`.
-  const usedDtypes = new Set()
-  const lines = ['from __future__ import annotations', '']
+  const usedDtypes = new Set<string>()
+  const lines: string[] = ['from __future__ import annotations', '']
   emitFrameworkImports(lines, framework)
   const jaxtypingLineIdx = lines.length
   lines.push('') // placeholder for `from jaxtyping import ...`
@@ -373,16 +411,16 @@ export function generate(nodes, connections, framework, options = {}) {
   // because the user duplicated a group), the second one reuses the first's
   // class definition rather than emitting a redefinition. Each facade still
   // gets its own `self.<attr> = ClassName()` instance in the main class.
-  const subClassSections = []
-  const emittedClassNames = new Set()
+  const subClassSections: string[] = []
+  const emittedClassNames = new Set<string>()
   for (const [gid, facade] of facadesByGid) {
-    const cls = classNames.get(gid)
+    const cls = classNames.get(gid) as string
     if (emittedClassNames.has(cls)) continue
     emittedClassNames.add(cls)
     const children = childrenByGid.get(gid) || []
     const internals = internalByGid.get(gid) || []
     const view = buildSubgraphView(facade, children, internals)
-    const subLines = []
+    const subLines: string[] = []
     emitClassBody(
       subLines,
       view.nodes,
@@ -427,12 +465,12 @@ export function generate(nodes, connections, framework, options = {}) {
  * Emit `def test_<ClassName>() ...` and an `if __name__ == "__main__":` block
  * that instantiates the model with dummy tensors and prints the output shape.
  */
-function emitTestCase(lines, framework, className, inputs, trace) {
-  const shapeTuple = (shape) => {
+function emitTestCase(lines: string[], framework: string, className: string, inputs: any[], trace: boolean): void {
+  const shapeTuple = (shape: number[]) => {
     const dims = shape.map((d) => (Number.isFinite(d) ? String(Math.trunc(d)) : '1'))
     return `(${dims.join(', ')}${dims.length === 1 ? ',' : ''})`
   }
-  const tensorExpr = (shape, dtype) => {
+  const tensorExpr = (shape: number[], dtype: any) => {
     const cat = jaxtypingDtype(dtype)
     const s = shapeTuple(shape)
     if (framework === 'pytorch') {
@@ -485,7 +523,7 @@ function emitTestCase(lines, framework, className, inputs, trace) {
   lines.push('')
 }
 
-function renderJaxtypingImport(usedDtypes, framework) {
+function renderJaxtypingImport(usedDtypes: Set<string>, framework: string): string {
   // Always import the Tensor/Array symbol so signatures don't depend on whether
   // any input had a recognized dtype.
   const sorted = [...usedDtypes].sort()
@@ -498,7 +536,7 @@ function renderJaxtypingImport(usedDtypes, framework) {
 
 /** Walk back from a port reference and return its declared shape/dtype.
  *  Returns `null` if we can't resolve (no edge, unknown port). */
-function resolveSourceShapeDtype(ref, ordered, incoming) {
+function resolveSourceShapeDtype(ref: any, ordered: NodeLike[], incoming: Map<string, Connection[]>): any {
   // ref is { nodeId, portName } - the port itself is a SOURCE (output port).
   const owner = ordered.find((n) => n.id === ref.nodeId)
   if (!owner) return null
@@ -521,7 +559,7 @@ function resolveSourceShapeDtype(ref, ordered, incoming) {
 }
 
 /** Resolve the source (shape, dtype) of an Output node's incoming edge. */
-function resolveOutputSourceShapeDtype(outNode, ordered, incoming) {
+function resolveOutputSourceShapeDtype(outNode: NodeLike, ordered: NodeLike[], incoming: Map<string, Connection[]>): any {
   const edges = incoming.get(`${outNode.id}/x`) ?? []
   if (edges.length === 0) return null
   const c = edges[0]
@@ -532,20 +570,20 @@ function resolveOutputSourceShapeDtype(outNode, ordered, incoming) {
   )
 }
 
-function buildReturnAnnotation({ ordered, connections, incoming, isSubclass, facade, tensorType, usedDtypes }) {
+function buildReturnAnnotation({ ordered, connections, incoming, isSubclass, facade, tensorType, usedDtypes }: any): string {
   // Sub-class return matches its facade's portMap.outputs (one virtual Output
   // per boundary, ordered out0..outN). Read shapes directly from the facade
   // so we don't depend on whether buildSubgraphView set virtual port shapes.
-  let entries = []
+  let entries: any[] = []
   if (isSubclass && facade) {
-    entries = (facade.entry.portMap?.outputs ?? []).map((m) => ({
+    entries = (facade.entry.portMap?.outputs ?? []).map((m: any) => ({
       shape: m.shape ?? ['...'],
       dtype: 'any',
     }))
   } else {
     // Main class: prefer explicit Output nodes; otherwise terminal output
     // ports become the return tuple (same logic the body uses for `return`).
-    const outNodes = ordered.filter((n) => n.entry.kind === 'output')
+    const outNodes = ordered.filter((n: NodeLike) => n.entry.kind === 'output')
     if (outNodes.length > 0) {
       for (const o of outNodes) {
         const sd = resolveOutputSourceShapeDtype(o, ordered, incoming)
@@ -573,7 +611,7 @@ function buildReturnAnnotation({ ordered, connections, incoming, isSubclass, fac
   return `tuple[${annos.join(', ')}]`
 }
 
-function emitFrameworkImports(lines, framework) {
+function emitFrameworkImports(lines: string[], framework: string): void {
   if (framework === 'pytorch') {
     lines.push('import torch')
     lines.push('import torch.nn as nn')
@@ -584,21 +622,30 @@ function emitFrameworkImports(lines, framework) {
   }
 }
 
-function emitUserImports(lines, allNodes) {
-  const imports = new Map()
+function emitUserImports(lines: string[], allNodes: NodeLike[]): void {
+  const imports = new Map<string, Set<string>>()
   for (const n of allNodes) {
     if (n.entry.kind === 'input') continue
     if (n.entry.kind === 'group') continue // facades are defined locally
     if (n.entry.module?.startsWith('__')) continue
     if (!imports.has(n.entry.module)) imports.set(n.entry.module, new Set())
-    imports.get(n.entry.module).add(n.entry.name)
+    ;(imports.get(n.entry.module) as Set<string>).add(n.entry.name)
   }
   for (const [mod, names] of imports) {
     lines.push(`from ${mod} import ${[...names].sort().join(', ')}`)
   }
 }
 
-function emitClassBody(lines, nodes, connections, framework, className, classNames, options, typing = {}) {
+function emitClassBody(
+  lines: string[],
+  nodes: NodeLike[],
+  connections: Connection[],
+  framework: string,
+  className: string,
+  classNames: Map<string, string>,
+  options: GenerateOptions,
+  typing: any = {}
+): void {
   // Subclasses (anything other than the main entry point) MUST always return
   // real tensors so the main class's wiring keeps working - even in trace
   // mode. Without this, the subclass would emit `return _runtime_shapes` and
@@ -634,7 +681,7 @@ function emitClassBody(lines, nodes, connections, framework, className, classNam
   const { initParams, paramRef } = analyzeConstWiring(nodes, connections, attrName)
   if (facade) mergeGroupFacadeInitParams(facade, ordered, initParams, paramRef)
 
-  const initSigParts = []
+  const initSigParts: string[] = []
   if (framework === 'flax') initSigParts.push('*, rngs: nnx.Rngs')
   for (const p of initParams) {
     initSigParts.push(`${p.initName}: ${p.pyType} = ${p.defaultLit}`)
@@ -656,13 +703,13 @@ function emitClassBody(lines, nodes, connections, framework, className, classNam
   )
   const learnableNodes = ordered.filter((n) => n.entry.kind === 'learnable')
   if (moduleNodes.length === 0 && learnableNodes.length === 0) lines.push('        pass')
-  const emittedAttrs = new Set()
+  const emittedAttrs = new Set<string>()
   for (const n of moduleNodes) {
-    const attr = attrName.get(n.id)
+    const attr = attrName.get(n.id) as string
     if (emittedAttrs.has(attr)) continue
     emittedAttrs.add(attr)
     if (n.entry.kind === 'group') {
-      const sub = classNames.get(n.entry.groupId) || groupClassName(n.entry.name, n.entry.groupId)
+      const sub = classNames.get(n.entry.groupId as string) || groupClassName(n.entry.name, n.entry.groupId)
       const args = groupCtorArgs(n, paramRef)
       if (framework === 'flax') args.push('rngs=rngs')
       lines.push(`        self.${attr} = ${sub}(${args.join(', ')})`)
@@ -673,7 +720,7 @@ function emitClassBody(lines, nodes, connections, framework, className, classNam
     }
   }
   for (const n of learnableNodes) {
-    const attr = attrName.get(n.id)
+    const attr = attrName.get(n.id) as string
     if (emittedAttrs.has(attr)) continue
     emittedAttrs.add(attr)
     lines.push(`        ${learnableInitLine(n, attr, framework)}`)
@@ -683,14 +730,14 @@ function emitClassBody(lines, nodes, connections, framework, className, classNam
   // ------- forward / __call__ -------
   // Only explicit Input nodes become forward() arguments.
   const inputNodes = ordered.filter((n) => n.entry.kind === 'input')
-  const inputArgs = inputNodes.map((n) => inputArgFor.get(n.id))
+  const inputArgs = inputNodes.map((n) => inputArgFor.get(n.id) as string)
 
   // Resolve a jaxtyping annotation for each forward arg. For the main class
   // we use the user's Input ctor (shape/dtype). For a subclass we read the
   // facade's portMap so the signature reflects what the parent passes in.
   const argAnnotations = inputNodes.map((n, i) => {
-    let shape
-    let dtype = 'any'
+    let shape: any
+    let dtype: any = 'any'
     if (facade) {
       const m = facade.entry?.portMap?.inputs?.[i]
       if (m) shape = m.shape
@@ -772,8 +819,8 @@ function emitClassBody(lines, nodes, connections, framework, className, classNam
       continue
     }
     // Build the argument expression for each input port of this node.
-    const callArgs = []
-    const danglingPorts = []
+    const callArgs: string[] = []
+    const danglingPorts: string[] = []
     for (const port of n.entry.inputs) {
       const key = `${n.id}/${port.name}`
       const incomingEdges = incoming.get(key) ?? []
@@ -886,7 +933,7 @@ function emitClassBody(lines, nodes, connections, framework, className, classNam
  * Built-in shape ops (rearrange, reshape) use bespoke call shapes;
  * everything else follows the standard module/function path.
  */
-function buildCallExpr(node, callArgs, attrName, framework) {
+function buildCallExpr(node: NodeLike, callArgs: string[], attrName: Map<string, string>, framework: string): string {
   if (node.entry.kind === 'const') {
     return constLiteral(node)
   }
@@ -942,7 +989,7 @@ function buildCallExpr(node, callArgs, attrName, framework) {
   return `${node.entry.name}(${callArgs.join(', ')})`
 }
 
-function constLiteral(node) {
+function constLiteral(node: NodeLike): string {
   const type = String(node.values?.value_type ?? 'int')
   const raw = node.values?.value
   if (type === 'bool') {
@@ -960,13 +1007,13 @@ function constLiteral(node) {
  *  value. Wired constants name the param after the target ctor slot; unwired
  *  ones use the codegen attr name (constant_0, …). Module ctors reference the
  *  __init__ parameter directly — no self.* storage. */
-function analyzeConstWiring(nodes, connections, attrName) {
-  const byId = new Map(nodes.map((n) => [n.id, n]))
-  const constInitByNodeId = new Map()
-  const paramRef = new Map()
-  const usedInitNames = new Set()
+function analyzeConstWiring(nodes: NodeLike[], connections: Connection[], attrName: Map<string, string>): { initParams: any[]; paramRef: Map<string, string> } {
+  const byId = new Map<string, NodeLike>(nodes.map((n) => [n.id, n]))
+  const constInitByNodeId = new Map<string, any>()
+  const paramRef = new Map<string, string>()
+  const usedInitNames = new Set<string>()
 
-  const allocInitName = (base) => {
+  const allocInitName = (base: any) => {
     let c = sanitizePyIdent(base, 'param')
     let i = 2
     while (usedInitNames.has(c)) c = `${sanitizePyIdent(base, 'param')}${i++}`
@@ -974,7 +1021,7 @@ function analyzeConstWiring(nodes, connections, attrName) {
     return c
   }
 
-  const pyTypeForConst = (constNode, paramDef) => {
+  const pyTypeForConst = (constNode: NodeLike, paramDef: any) => {
     const vt = constNode.values?.value_type || paramDef?.type || 'int'
     if (vt === 'bool') return 'bool'
     if (vt === 'str') return 'str'
@@ -987,7 +1034,7 @@ function analyzeConstWiring(nodes, connections, attrName) {
     const target = byId.get(c.target)
     if (!source || !target) continue
     if (source.entry?.kind !== 'const') continue
-    const spec = target.inputs?.[c.targetInput]?.portSpec
+    const spec = (target.inputs as any)?.[c.targetInput]?.portSpec
     if (spec?.kind !== 'param') continue
     const paramName = spec.paramName
     const paramDef = (target.entry.ctor || []).find((p) => p.name === paramName)
@@ -1017,8 +1064,8 @@ function analyzeConstWiring(nodes, connections, attrName) {
 }
 
 /** Subclass __init__ params for facade param ports (external constants wire here). */
-function mergeGroupFacadeInitParams(facade, nodes, initParams, paramRef) {
-  const byId = new Map(nodes.map((n) => [n.id, n]))
+function mergeGroupFacadeInitParams(facade: any, nodes: NodeLike[], initParams: any[], paramRef: Map<string, string>): void {
+  const byId = new Map<string, NodeLike>(nodes.map((n) => [n.id, n]))
   const used = new Set(initParams.map((p) => p.initName))
   for (const m of facade.entry?.portMap?.params ?? []) {
     const child = byId.get(m.childNodeId)
@@ -1040,7 +1087,7 @@ function mergeGroupFacadeInitParams(facade, nodes, initParams, paramRef) {
   }
 }
 
-function pyTypeForParamDef(paramDef, fallbackType) {
+function pyTypeForParamDef(paramDef: any, fallbackType: any): string {
   const t = paramDef?.type ?? fallbackType ?? 'int'
   if (t === 'bool') return 'bool'
   if (t === 'str') return 'str'
@@ -1049,16 +1096,16 @@ function pyTypeForParamDef(paramDef, fallbackType) {
 }
 
 /** Pass wired constants through to a group facade's __init__. */
-function groupCtorArgs(facadeNode, paramRef) {
-  const out = []
-  for (const m of facadeNode.entry?.portMap?.params ?? []) {
+function groupCtorArgs(facadeNode: NodeLike, paramRef: Map<string, string>): string[] {
+  const out: string[] = []
+  for (const m of (facadeNode.entry as any)?.portMap?.params ?? []) {
     const wired = paramRef.get(`${facadeNode.id}::${m.paramName}`)
     if (wired) out.push(`${m.paramName}=${wired}`)
   }
   return out
 }
 
-function positionalSource(callArgs, portName) {
+function positionalSource(callArgs: string[], portName: string): string {
   const prefix = `${portName}=`
   const found = callArgs.find((a) => a.startsWith(prefix))
   if (!found) return 'None'  // dangling input; runtime will fail loudly
@@ -1066,23 +1113,23 @@ function positionalSource(callArgs, portName) {
 }
 
 /** Pull `[a, b, c]` from `xs=[a, b, c]` in callArgs; default `[]`. */
-function variadicList(callArgs, portName) {
+function variadicList(callArgs: string[], portName: string): string {
   const prefix = `${portName}=`
   const found = callArgs.find((a) => a.startsWith(prefix))
   if (!found) return '[]'
   return found.slice(prefix.length)
 }
 
-function parseAxisDim(v, fallback = 0) {
+function parseAxisDim(v: any, fallback: number = 0): number {
   if (v === null || v === undefined || v === '') return fallback
   const n = Number(v)
   return Number.isFinite(n) ? Math.trunc(n) : fallback
 }
 
 /** "h=8, w=16; b=2" -> "h=8, w=16, b=2" (only valid name=int kwargs). */
-function parseLengthsKwargs(s) {
+function parseLengthsKwargs(s: any): string {
   if (!s) return ''
-  const out = []
+  const out: string[] = []
   for (const part of String(s).split(/[,;\n]/)) {
     const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(-?\d+)\s*$/.exec(part)
     if (m) out.push(`${m[1]}=${m[2]}`)
@@ -1091,12 +1138,12 @@ function parseLengthsKwargs(s) {
 }
 
 /** Space/comma-separated int (or -1) tokens. Defaults to "-1" if empty. */
-function parseReshapeDims(s) {
+function parseReshapeDims(s: any): number[] {
   const toks = String(s ?? '')
     .trim()
     .split(/[\s,]+/)
     .filter(Boolean)
-  const dims = []
+  const dims: number[] = []
   for (const t of toks) {
     if (/^-?\d+$/.test(t)) dims.push(Number(t))
   }
@@ -1104,19 +1151,19 @@ function parseReshapeDims(s) {
 }
 
 /** Numeric-only shape tokens for LearnableTensor __init__ (defaults to scalar). */
-function parseLearnableDims(s) {
+function parseLearnableDims(s: any): number[] {
   const toks = String(s ?? '')
     .trim()
     .split(/[\s,]+/)
     .filter(Boolean)
-  const dims = []
+  const dims: number[] = []
   for (const t of toks) {
     if (/^\d+$/.test(t)) dims.push(Number(t))
   }
   return dims.length ? dims : [1]
 }
 
-function learnableInitLine(node, attr, framework) {
+function learnableInitLine(node: NodeLike, attr: string, framework: string): string {
   const dims = parseLearnableDims(node.values?.shape)
   const init = String(node.values?.init ?? 'randn').toLowerCase()
   const shapeArgs = dims.join(', ')
@@ -1135,20 +1182,20 @@ function learnableInitLine(node, attr, framework) {
   return `self.${attr} = nnx.Param(${arr})`
 }
 
-function parseBoolValue(v, fallback = false) {
+function parseBoolValue(v: any, fallback: boolean = false): boolean {
   if (v === true || v === 'true' || v === '1' || v === 1) return true
   if (v === false || v === 'false' || v === '0' || v === 0) return false
   return fallback
 }
 
-function parseScaleFactor(v, fallback = 2) {
+function parseScaleFactor(v: any, fallback: number = 2): number {
   if (v === null || v === undefined || v === '') return fallback
   const n = Number(v)
   return Number.isFinite(n) && n > 0 ? n : fallback
 }
 
 /** stride=0 means "same as kernel_size" (PyTorch default behaviour). */
-function parsePoolParams(values = {}) {
+function parsePoolParams(values: any = {}): { kernel: number; stride: number; padding: number; mode: string } {
   const kernel = parseAxisDim(values.kernel_size, 2)
   const strideRaw = values.stride
   const stride =
@@ -1160,15 +1207,15 @@ function parsePoolParams(values = {}) {
   return { kernel, stride, padding, mode }
 }
 
-function ctorArgs(node, paramRef = new Map()) {
-  const out = []
+function ctorArgs(node: NodeLike, paramRef: Map<string, string> = new Map()): string[] {
+  const out: string[] = []
   for (const p of node.entry.ctor) {
     const wired = paramRef.get(`${node.id}::${p.name}`)
     if (wired) {
       out.push(`${p.name}=${wired}`)
       continue
     }
-    const v = node.values[p.name]
+    const v = (node.values as any)[p.name]
     if (v === null || v === undefined || v === '') continue
     // Skip if it equals the default to keep the output tidy.
     if (deepEqual(v, p.default)) continue
@@ -1177,7 +1224,7 @@ function ctorArgs(node, paramRef = new Map()) {
   return out
 }
 
-function coerce(v, type) {
+function coerce(v: any, type: any): any {
   if (type === 'int' && typeof v === 'string') {
     const n = Number(v)
     if (Number.isFinite(n) && Number.isInteger(n)) return n
@@ -1193,7 +1240,7 @@ function coerce(v, type) {
   return v
 }
 
-function deepEqual(a, b) {
+function deepEqual(a: any, b: any): boolean {
   if (a === b) return true
   if (Array.isArray(a) && Array.isArray(b)) {
     return a.length === b.length && a.every((x, i) => deepEqual(x, b[i]))
@@ -1202,10 +1249,10 @@ function deepEqual(a, b) {
 }
 
 /** Input ports with no incoming edges that aren't optional ⇒ surfaced as forward() args. */
-function findEntryInputs(nodes, connections, usedNames = new Set()) {
+function findEntryInputs(nodes: NodeLike[], connections: Connection[], usedNames: Set<string> = new Set()): any[] {
   const incomingKeys = new Set(connections.map((c) => `${c.target}/${c.targetInput}`))
-  const out = []
-  const allocate = (base) => {
+  const out: any[] = []
+  const allocate = (base: string) => {
     let candidate = base
     let i = 2
     while (usedNames.has(candidate)) candidate = `${base}${i++}`
@@ -1231,7 +1278,7 @@ function findEntryInputs(nodes, connections, usedNames = new Set()) {
   return out
 }
 
-function explicitReturnEntry(outNode, incoming, outputVarFor, outputReturnFor) {
+function explicitReturnEntry(outNode: NodeLike, incoming: Map<string, Connection[]>, outputVarFor: Map<string, string>, outputReturnFor: Map<string, string>): any {
   const key = `${outNode.id}/x`
   const edges = incoming.get(key) ?? []
   if (edges.length === 0) return null
@@ -1243,8 +1290,8 @@ function explicitReturnEntry(outNode, incoming, outputVarFor, outputReturnFor) {
 }
 
 /** Return aliases for explicit Output nodes (topo order). */
-function collectExplicitReturns(ordered, incoming, outputVarFor, outputReturnFor) {
-  const out = []
+function collectExplicitReturns(ordered: NodeLike[], incoming: Map<string, Connection[]>, outputVarFor: Map<string, string>, outputReturnFor: Map<string, string>): any[] {
+  const out: any[] = []
   for (const n of ordered) {
     if (n.entry.kind !== 'output') continue
     const entry = explicitReturnEntry(n, incoming, outputVarFor, outputReturnFor)
@@ -1257,7 +1304,7 @@ function collectExplicitReturns(ordered, incoming, outputVarFor, outputReturnFor
  * Like collectExplicitReturns, but sorts Output nodes by the trailing numeric
  * index in `values.name` (e.g. "out0" < "out1" < "out10").
  */
-function collectExplicitReturnsOrdered(ordered, incoming, outputVarFor, outputReturnFor) {
+function collectExplicitReturnsOrdered(ordered: NodeLike[], incoming: Map<string, Connection[]>, outputVarFor: Map<string, string>, outputReturnFor: Map<string, string>): any[] {
   const outNodes = ordered.filter((n) => n.entry.kind === 'output')
   outNodes.sort((a, b) => {
     const ai = parseInt(String(a.values?.name ?? '').replace(/^\D+/, ''), 10)
@@ -1266,7 +1313,7 @@ function collectExplicitReturnsOrdered(ordered, incoming, outputVarFor, outputRe
     const bx = Number.isFinite(bi) ? bi : 0
     return ax - bx
   })
-  const out = []
+  const out: any[] = []
   for (const n of outNodes) {
     const entry = explicitReturnEntry(n, incoming, outputVarFor, outputReturnFor)
     if (entry) out.push(entry)
@@ -1282,37 +1329,37 @@ function collectExplicitReturnsOrdered(ordered, incoming, outputVarFor, outputRe
 // signature.
 // ---------------------------------------------------------------------------
 
-function partitionByGroup(nodes, connections) {
-  const facadesByGid = new Map()
+function partitionByGroup(nodes: NodeLike[], connections: Connection[]): { facadesByGid: Map<string, NodeLike>; childrenByGid: Map<string, NodeLike[]>; internalByGid: Map<string, Connection[]> } {
+  const facadesByGid = new Map<string, NodeLike>()
   for (const n of nodes) {
     if (n.entry?.kind === 'group' && n.entry.groupId) {
       facadesByGid.set(n.entry.groupId, n)
     }
   }
-  const childrenByGid = new Map()
-  const internalByGid = new Map()
+  const childrenByGid = new Map<string, NodeLike[]>()
+  const internalByGid = new Map<string, Connection[]>()
   for (const gid of facadesByGid.keys()) {
     childrenByGid.set(gid, [])
     internalByGid.set(gid, [])
   }
-  const byId = new Map(nodes.map((n) => [n.id, n]))
+  const byId = new Map<string, NodeLike>(nodes.map((n) => [n.id, n]))
   for (const n of nodes) {
     if (n.entry?.kind === 'group') continue
     if (n.groupId && childrenByGid.has(n.groupId)) {
-      childrenByGid.get(n.groupId).push(n)
+      ;(childrenByGid.get(n.groupId) as NodeLike[]).push(n)
     }
   }
   for (const c of connections) {
     const src = byId.get(c.source)
     const tgt = byId.get(c.target)
     if (src?.groupId && src.groupId === tgt?.groupId && internalByGid.has(src.groupId)) {
-      internalByGid.get(src.groupId).push(c)
+      ;(internalByGid.get(src.groupId) as Connection[]).push(c)
     }
   }
   return { facadesByGid, childrenByGid, internalByGid }
 }
 
-function groupClassName(facadeName, _gid) {
+function groupClassName(facadeName: any, _gid: any): string {
   // Class name comes purely from the user-facing group name so that two
   // groups sharing a name (e.g. duplicating "Encoder") map to the *same*
   // generated class instead of `Encoder_aaaa` and `Encoder_bbbb`. Multiple
@@ -1328,11 +1375,11 @@ function groupClassName(facadeName, _gid) {
  * collect each boundary output, and the internal edges are the rest of the
  * subgraph's structure.
  */
-function buildSubgraphView(facade, children, internalConnections) {
+function buildSubgraphView(facade: any, children: NodeLike[], internalConnections: Connection[]): { nodes: any[]; connections: any[] } {
   const inputs = facade.entry.portMap?.inputs || []
   const outputs = facade.entry.portMap?.outputs || []
 
-  const makeVirtual = (id, entry, values) => ({
+  const makeVirtual = (id: string, entry: any, values: any): any => ({
     id,
     entry,
     label: entry.name,
@@ -1340,16 +1387,16 @@ function buildSubgraphView(facade, children, internalConnections) {
     groupId: null,
     values,
     inputs: Object.fromEntries(
-      (entry.inputs || []).map((p) => [p.name, { portSpec: p }])
+      (entry.inputs || []).map((p: any) => [p.name, { portSpec: p }])
     ),
     outputs: Object.fromEntries(
-      (entry.outputs || []).map((p) => [p.name, { portSpec: p }])
+      (entry.outputs || []).map((p: any) => [p.name, { portSpec: p }])
     ),
     freshenedShape() { return null },
     applyParamBindings() {},
   })
 
-  const virtualInputs = inputs.map((m, i) =>
+  const virtualInputs = inputs.map((m: any, i: number) =>
     makeVirtual(
       `__sg_in_${facade.id}_${i}`,
       {
@@ -1369,7 +1416,7 @@ function buildSubgraphView(facade, children, internalConnections) {
       { name: `in${i}`, shape: '', dtype: 'any', optional: Boolean(facade.entry?.inputs?.[i]?.optional) }
     )
   )
-  const virtualOutputs = outputs.map((m, i) =>
+  const virtualOutputs = outputs.map((m: any, i: number) =>
     makeVirtual(
       `__sg_out_${facade.id}_${i}`,
       {
@@ -1388,21 +1435,21 @@ function buildSubgraphView(facade, children, internalConnections) {
   )
 
   const inputEdges = inputs
-    .map((m, i) => ({
+    .map((m: any, i: number) => ({
       source: `__sg_in_${facade.id}_${i}`,
       sourceOutput: 'out',
       target: m.childNodeId,
       targetInput: m.childPort,
     }))
-    .filter((c) => c.target && c.targetInput)
+    .filter((c: any) => c.target && c.targetInput)
   const outputEdges = outputs
-    .map((m, i) => ({
+    .map((m: any, i: number) => ({
       source: m.childNodeId,
       sourceOutput: m.childPort,
       target: `__sg_out_${facade.id}_${i}`,
       targetInput: 'x',
     }))
-    .filter((c) => c.source && c.sourceOutput)
+    .filter((c: any) => c.source && c.sourceOutput)
 
   return {
     nodes: [...virtualInputs, ...children, ...virtualOutputs],
@@ -1411,9 +1458,9 @@ function buildSubgraphView(facade, children, internalConnections) {
 }
 
 /** Output ports that have no outgoing edges ⇒ return values. */
-function findTerminals(nodes, connections) {
+function findTerminals(nodes: NodeLike[], connections: Connection[]): any[] {
   const sourceKeys = new Set(connections.map((c) => `${c.source}/${c.sourceOutput}`))
-  const out = []
+  const out: any[] = []
   for (const n of nodes) {
     for (const port of n.entry.outputs) {
       const key = `${n.id}/${port.name}`
