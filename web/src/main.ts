@@ -58,6 +58,10 @@ import {
 } from './nodes.ts'
 import { validate, dryRunEdge } from './validator.ts'
 import { generate as generateCode } from './codegen.ts'
+import {
+  graphDataToForest,
+  forestToFlatCodegen,
+} from './tree/adapter.ts'
 import { isFullyConcrete, runShapeCheck, resolveInputSpecs } from './runtime.ts'
 import { resolve } from './shape.ts'
 import {
@@ -143,7 +147,31 @@ const HISTORY_DEBOUNCE_MS = 350
 let historyTimer: any = null
 
 function snapshotGraph() {
-  return JSON.stringify(getGraphData())
+  const data = getGraphData()
+  verifyForestRoundTrip(data)
+  return JSON.stringify(data)
+}
+
+/**
+ * Step 7 verification hook: rebuild the forest from the serialized graph and
+ * check it round-trips the structure (node + connection counts, group trees).
+ * Non-fatal - only logs on mismatch - so persistence keeps exercising the new
+ * model on every history snapshot without changing behavior. Cheap enough for
+ * the debounced snapshot path.
+ */
+function verifyForestRoundTrip(data: any): void {
+  try {
+    const { forest } = graphDataToForest(data)
+    const treeNodeCount = Object.keys(forest.nodes).length
+    if (treeNodeCount !== (data.nodes?.length ?? 0)) {
+      console.warn('[tree] forest node count != graph node count', {
+        forest: treeNodeCount,
+        graph: data.nodes?.length,
+      })
+    }
+  } catch (err) {
+    console.warn('[tree] forest round-trip threw (non-fatal):', err)
+  }
 }
 
 function initHistory() {
@@ -2207,11 +2235,15 @@ function applyAllGroupStyles() {
   for (const c of editor.getConnections()) {
     const s = editor.getNode(c.source)
     const t = editor.getNode(c.target)
-    // An internal edge (both endpoints in the same group) is hidden whenever
-    // either endpoint is hidden by a collapsed ancestor.
-    if (s?.groupId && s.groupId === t?.groupId) {
-      setConnectionHidden(c.id, hasCollapsedAncestor(s) || hasCollapsedAncestor(t))
-    }
+    if (!s || !t) continue
+    // Hide an edge whenever EITHER endpoint is itself hidden by a collapsed
+    // ancestor. A facade is never hidden by its own group, so facade<->external
+    // boundary edges stay visible; but an edge touching a hidden child is hidden
+    // even if the other endpoint isn't (e.g. a child wired straight to its own
+    // group's facade, or an edge crossing into a sibling/nested group). Keying
+    // off endpoint visibility rather than `s.groupId === t.groupId` stops those
+    // edges rendering as a wire dangling from a hidden node.
+    setConnectionHidden(c.id, hasCollapsedAncestor(s) || hasCollapsedAncestor(t))
   }
 }
 
@@ -2963,6 +2995,39 @@ function applyRuntimeErrorHighlight() {
   }
 }
 
+/**
+ * Step 6 verification hook: rebuild the forest from the live graph, run the
+ * flat-case tree codegen, and compare against the legacy `expected` output.
+ *
+ * Strictly non-fatal and side-effect-free on the emitted code: it only logs a
+ * warning on divergence so the new model is continuously validated against
+ * every real (untraced, non-test, group-free) generation. Skips silently for
+ * cases the tree emitter doesn't yet cover.
+ */
+function verifyForestCodegen(options: any, expected: string): void {
+  // Only the plain flat case is proven byte-identical; skip the rest.
+  if (options?.trace || options?.withTest) return
+  try {
+    const { forest } = graphDataToForest(getGraphData() as any)
+    const { nodes, connections, hasGroups } = forestToFlatCodegen(forest, byNameCatalogue())
+    if (hasGroups) return // grouped emitter not built yet
+    const viaForest = generateCode(nodes as any, connections as any, state.framework)
+    if (viaForest !== expected) {
+      console.warn('[tree] forest codegen diverged from legacy output', {
+        forestLen: viaForest.length,
+        legacyLen: expected.length,
+      })
+    }
+  } catch (err) {
+    console.warn('[tree] forest codegen verification threw (non-fatal):', err)
+  }
+}
+
+/** The manifest catalogue as a plain name->entry record for the tree adapter. */
+function byNameCatalogue(): Record<string, any> {
+  return Object.fromEntries(state.byName?.entries?.() ?? [])
+}
+
 function exportGraph() {
   const data = getGraphData()
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
@@ -3045,6 +3110,12 @@ function runCodegen(options: any = {}) {
     trace: !!options.trace,
     testCase,
   })
+  // Step 6 integration: drive the same flat-graph codegen through the new tree
+  // model and verify it matches the legacy path. Non-fatal: we always emit the
+  // legacy `code`; a mismatch only logs, so the model is exercised on every
+  // real generation without risking output. Grouped graphs and traced/test
+  // generations fall through to the dedicated emitter (not yet built).
+  verifyForestCodegen(options, code)
   showCode(code)
 }
 

@@ -1502,6 +1502,35 @@ function partitionByGroup(nodes: NodeLike[], connections: Connection[]): { facad
     const tgt = byId.get(c.target)
     if (src?.groupId && src.groupId === tgt?.groupId && internalByGid.has(src.groupId)) {
       ;(internalByGid.get(src.groupId) as Connection[]).push(c)
+      continue
+    }
+    // Self-referential boundary edge: a child wired straight into its OWN
+    // group's facade input (e.g. a residual skip where an attention output
+    // feeds the group's `in_i`, which the portMap then routes into a sibling
+    // child). Such an edge is NOT same-group (the facade's node.groupId differs),
+    // so it would otherwise be dropped here while buildSubgraphView only emits a
+    // synthetic Input for that port - severing the child->child link and, for a
+    // variadic target like an Elementwise `xs`, silently losing one operand.
+    // Rewrite it to the direct internal edge the portMap implies.
+    const srcGid = src?.groupId
+    if (
+      srcGid &&
+      tgt?.entry?.kind === 'group' &&
+      tgt.entry.groupId === srcGid &&
+      internalByGid.has(srcGid)
+    ) {
+      const m = (tgt.entry as any).portMap?.inputs?.find(
+        (pm: any) => pm.facadePort === c.targetInput
+      )
+      if (m?.childNodeId && m.childPort) {
+        ;(internalByGid.get(srcGid) as Connection[]).push({
+          id: `__self_boundary_${c.id ?? `${c.source}_${c.targetInput}`}`,
+          source: c.source,
+          sourceOutput: c.sourceOutput,
+          target: m.childNodeId,
+          targetInput: m.childPort,
+        })
+      }
     }
   }
   return { facadesByGid, childrenByGid, internalByGid }

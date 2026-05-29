@@ -164,6 +164,65 @@ try {
   check('expand inner reveals the leaves', vis.afterInnerExpand.leavesVisible === true, vis)
   check('re-collapse outer hides the inner facade again', vis.afterOuterCollapse.innerFacadeHidden === true, vis)
 
+  // Regression: a child output wired straight into its OWN group's facade
+  // input (a residual that skips back into the group, as produced by some
+  // self-attention layouts). When the group is collapsed the child is hidden,
+  // so the edge must be CSS-hidden too - otherwise it renders as a wire
+  // dangling from nowhere. The old visibility rule only hid edges whose two
+  // endpoints shared a groupId, which a child->facade edge never does.
+  const selfFacade = await page.evaluate(async () => {
+    const blocks = (window as any).__blocks
+    const area = blocks.area
+    await blocks.clearGraph()
+    // Two convs in a collapsed group; conv `a` also feeds the facade's spare
+    // input port, modelling the residual-to-own-facade pattern.
+    const graph = {
+      framework: blocks.state.framework,
+      nodes: [
+        { id: 'inp', name: 'Input', kind: 'input', values: { name: 'x', shape: 'B 3 16 16', dtype: 'float' }, position: { x: -400, y: 0 } },
+        { id: 'a', name: 'ConvBlock', kind: 'module', tag: 'aa', values: { in_ch: 3, out_ch: 8 }, position: { x: 0, y: 0 }, groupId: 'gSelf' },
+        { id: 'b', name: 'ConvBlock', kind: 'module', tag: 'bb', values: { in_ch: 8, out_ch: 8 }, position: { x: 200, y: 0 }, groupId: 'gSelf' },
+        { id: 'eltw', name: 'Elementwise', kind: 'eltwise', instanceName: 'Add', tag: 'cc', values: { op: 'add' }, position: { x: 400, y: 0 }, groupId: 'gSelf' },
+        { id: 'facade', name: 'Group1', kind: 'group', groupId: 'gSelf', position: { x: 200, y: 0 },
+          portMap: {
+            inputs: [
+              { facadePort: 'in0', childNodeId: 'a', childPort: 'x', shape: ['...'] },
+              { facadePort: 'in1', childNodeId: 'eltw', childPort: 'xs', shape: ['...'] },
+            ],
+            outputs: [ { facadePort: 'out0', childNodeId: 'eltw', childPort: 'out', shape: ['...'] } ],
+            params: [],
+          } },
+        { id: 'out', name: 'Output', kind: 'output', values: { name: 'y' }, position: { x: 700, y: 0 } },
+      ],
+      connections: [
+        { source: 'inp', sourceOutput: 'out', target: 'facade', targetInput: 'in0' },
+        { source: 'a', sourceOutput: 'out', target: 'b', targetInput: 'x' },
+        { source: 'b', sourceOutput: 'out', target: 'eltw', targetInput: 'xs' },
+        // The offending edge: child `a` feeds its own group's facade input.
+        { source: 'a', sourceOutput: 'out', target: 'facade', targetInput: 'in1' },
+        { source: 'facade', sourceOutput: 'out0', target: 'out', targetInput: 'x' },
+      ],
+      groups: [
+        { id: 'gSelf', name: 'Group1', collapsed: true, facadeNodeId: 'facade', savedPosition: { x: 200, y: 0 }, childOffsets: {} },
+      ],
+    }
+    await blocks.importGraph(graph)
+    await new Promise((r) => setTimeout(r, 30))
+    const ed = blocks.editor
+    const childA = ed.getNodes().find((n: any) => n.values?.in_ch === 3)
+    const facadeNode = ed.getNodes().find((n: any) => n.entry.kind === 'group')
+    const childHidden = !!area.nodeViews.get(childA.id)?.element.classList.contains('group-hidden')
+    // The child->own-facade edge: source is the hidden child, target the facade.
+    const offending = ed.getConnections().find((c: any) => c.source === childA.id && c.target === facadeNode.id)
+    const edgeHidden = offending
+      ? !!area.connectionViews.get(offending.id)?.element.classList.contains('group-hidden')
+      : null
+    return { childHidden, edgeFound: !!offending, edgeHidden }
+  })
+  check('collapsed group child is hidden', selfFacade.childHidden === true, selfFacade)
+  check('child->own-facade edge exists', selfFacade.edgeFound === true, selfFacade)
+  check('child->own-facade edge is hidden (no dangling wire)', selfFacade.edgeHidden === true, selfFacade)
+
   if (consoleErrors.length > 0) {
     console.log('\nConsole errors observed:')
     consoleErrors.forEach((e) => console.log('  ', e))
