@@ -34,7 +34,8 @@
     "test:tree-adapter": "node test-tree-adapter.ts",
     "test:tree": "node test-tree-signature.ts && node test-tree-expand.ts && node test-tree-adapter.ts && node test-forest-codegen-fixture.ts",
     "test:forest-codegen-parity": "node test-forest-codegen-parity.ts",
-    "test:forest-codegen-fixture": "node test-forest-codegen-fixture.ts"
+    "test:forest-codegen-fixture": "node test-forest-codegen-fixture.ts",
+    "test:variadic-in-group": "node test-variadic-in-group.ts"
   },
   "dependencies": {
     "@retejs/lit-plugin": "^2.0.5",

@@ -229,13 +229,17 @@ export function validate(editor: GraphEditor): ValidationResult {
   }
 
   // Concat / Stack / Elementwise need at least two wires on their variadic port.
+  // A variadic child port inside a collapsed group receives its wires through
+  // the group facade's boundary port, not directly - so we also count edges
+  // arriving at any facade boundary port that routes to this child/port.
+  const facadePortsForChild = collectFacadePortsForChild(nodes) // "childId/childPort" -> ["facadeId/facadePort", ...]
   for (const n of nodes) {
     if (n.entry.kind !== 'concat' && n.entry.kind !== 'stack' && n.entry.kind !== 'eltwise') continue
     for (const port of n.entry.inputs) {
       if (!port.variadic) continue
-      const count = connections.filter(
-        (c) => c.target === n.id && c.targetInput === port.name
-      ).length
+      const directKey = `${n.id}/${port.name}`
+      const targets = new Set<string>([directKey, ...(facadePortsForChild.get(directKey) ?? [])])
+      const count = connections.filter((c) => targets.has(`${c.target}/${c.targetInput}`)).length
       if (count < 2) {
         warnings.push({
           kind: 'variadic-min',
@@ -342,6 +346,30 @@ function shortId(id: string): string {
  * warnings: when the boundary edge has been rerouted to the facade, the
  * child's own input port looks dangling but is in fact wired through.
  */
+/**
+ * Map each owned child input port to the facade boundary port(s) that route
+ * into it: `"childId/childPort" -> ["facadeId/facadePort", ...]`. Used to count
+ * variadic fan-in that arrives through a collapsed group's boundary rather than
+ * directly on the child. A single child port can be fed by more than one facade
+ * port (and a facade port can be the target of multiple external edges).
+ */
+function collectFacadePortsForChild(nodes: NodeLike[]): Map<string, string[]> {
+  const out = new Map<string, string[]>()
+  for (const n of nodes) {
+    if (n.entry?.kind !== 'group') continue
+    const portMap = n.entry.portMap as any
+    for (const m of portMap?.inputs || []) {
+      if (!m?.childNodeId || !m?.childPort || !m?.facadePort) continue
+      const childKey = `${m.childNodeId}/${m.childPort}`
+      const facadeKey = `${n.id}/${m.facadePort}`
+      const list = out.get(childKey) ?? []
+      list.push(facadeKey)
+      out.set(childKey, list)
+    }
+  }
+  return out
+}
+
 function collectFacadeOwnership(
   nodes: NodeLike[]
 ): { inputs: Set<string>; outputs: Set<string> } {
