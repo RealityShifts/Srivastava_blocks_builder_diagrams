@@ -156,19 +156,30 @@ export function graphDataToForest(data: GraphData): {
   forest: Forest
   exposedByNode: Map<NodeId, Set<string>>
   facadeMeta: Map<NodeId, FacadeMeta>
+  /** Group tree name (gid) -> emitted Python class name (may repeat across gids). */
+  groupClassName: Map<string, string>
+  /** Original serialized node-id order, so codegen emission can match the editor. */
+  nodeOrder: NodeId[]
 } {
   const forest = emptyForest('main')
   const exposedByNode = new Map<NodeId, Set<string>>()
   const facadeMeta = new Map<NodeId, FacadeMeta>()
 
-  // 1. Register a Tree for every group (named by its class name).
+  // 1. Register a Tree for every group, keyed by its UNIQUE gid - NOT its
+  //    class name. Multiple group instances that share a class name (e.g. three
+  //    "Face_to_embedding" groups) are DISTINCT subgraphs with their own
+  //    children; keying by name would collapse them into one corrupt tree. The
+  //    shared class name is carried separately (groupClassName) so codegen still
+  //    dedups to a single emitted class.
   const groupById = new Map<string, GraphGroupSpec>()
-  const treeNameForGroup = new Map<string, string>()
+  const treeNameForGroup = new Map<string, string>() // gid -> unique tree name (the gid)
+  const groupClassName = new Map<string, string>() // tree name (gid) -> class name
   for (const g of data.groups ?? []) {
     groupById.set(g.id, g)
-    const name = g.name || `Group_${g.id}`
-    treeNameForGroup.set(g.id, name)
-    ensureTree(forest, name)
+    const treeName = g.id // unique per instance
+    treeNameForGroup.set(g.id, treeName)
+    groupClassName.set(treeName, g.name || `Group_${g.id}`)
+    ensureTree(forest, treeName)
   }
 
   // 2. Map facadeNodeId -> the group it represents, so we can route a facade
@@ -192,6 +203,7 @@ export function graphDataToForest(data: GraphData): {
       // serialized `name` is authoritative here).
       name: spec.name,
       tag: spec.tag || undefined,
+      instanceName: spec.instanceName || undefined,
       values: spec.values ? { ...spec.values } : {},
     }
 
@@ -261,7 +273,8 @@ export function graphDataToForest(data: GraphData): {
     forest.trees[owner]?.list_of_connections.push(conn)
   }
 
-  return { forest, exposedByNode, facadeMeta }
+  const nodeOrder = data.nodes.map((n) => n.id)
+  return { forest, exposedByNode, facadeMeta, groupClassName, nodeOrder }
 }
 
 // ---------------------------------------------------------------------------
@@ -352,7 +365,9 @@ export function forestToGenerateInput(
   forest: Forest,
   catalogue: ManifestCatalogue,
   exposedByNode: Map<NodeId, Set<string>> = new Map(),
-  facadeMeta: Map<NodeId, FacadeMeta> = new Map()
+  facadeMeta: Map<NodeId, FacadeMeta> = new Map(),
+  groupClassName: Map<string, string> = new Map(),
+  nodeOrder: NodeId[] = []
 ): { nodes: NodeLike[]; connections: FlatConnection[] } {
   const isGroupTree = (name: string) => !catalogue[name] && Boolean(forest.trees[name])
   const nodes: NodeLike[] = []
@@ -389,8 +404,9 @@ export function forestToGenerateInput(
         const gid = fm?.groupId ?? node.name
         const pmIn = fm?.inPorts ?? []
         const pmOut = fm?.outPorts ?? []
+        const className = groupClassName.get(node.name) ?? node.name
         const entry: ManifestEntry = {
-          name: node.name, // group name -> drives groupClassName -> class name
+          name: className, // emitted class name (shared across same-name groups)
           module: '__group__',
           kind: 'group',
           ctor: [],
@@ -411,7 +427,7 @@ export function forestToGenerateInput(
         nodes.push({
           id: node.id,
           entry,
-          name: '',
+          name: node.instanceName ?? '',
           tag: node.tag ?? '',
           groupId: memberGidOf.get(node.id) ?? null,
           values: { ...(node.values ?? {}) },
@@ -425,7 +441,7 @@ export function forestToGenerateInput(
       nodes.push({
         id: node.id,
         entry,
-        name: '',
+        name: node.instanceName ?? '',
         tag: node.tag ?? '',
         groupId: memberGidOf.get(node.id) ?? null,
         values: { ...(node.values ?? {}) },
@@ -441,6 +457,14 @@ export function forestToGenerateInput(
         targetInput: c.toInput,
       })
     }
+  }
+
+  // Emit nodes in the original serialized order so codegen's class/topo ordering
+  // matches the live editor exactly (byte-identical output). Nodes not in the
+  // order list (shouldn't happen) keep their discovery order at the end.
+  if (nodeOrder.length) {
+    const rank = new Map(nodeOrder.map((id, i) => [id, i]))
+    nodes.sort((a, b) => (rank.get(a.id) ?? 1e9) - (rank.get(b.id) ?? 1e9))
   }
 
   return { nodes, connections }

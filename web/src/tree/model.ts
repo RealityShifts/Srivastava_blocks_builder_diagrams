@@ -128,6 +128,12 @@ export interface TreeNode {
   name: TreeName
   /** Weight-sharing tag -> shared `self.<tag>` class property in codegen. */
   tag?: string
+  /**
+   * Editable per-instance display name (the legacy `instanceName`). Drives the
+   * generated attr/variable base name when set (e.g. an Elementwise node named
+   * "Add" emits `Add = (...)`). Blank means "derive from tag/block".
+   */
+  instanceName?: string
   /** Per-instance ctor-param overrides, keyed by param name. */
   values?: Record<string, unknown>
 }

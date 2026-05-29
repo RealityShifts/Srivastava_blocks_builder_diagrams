@@ -135,16 +135,19 @@ function flatFixture(): { nodes: NodeLike[]; conns: FlatConn[]; data: GraphData 
     ],
     groups: [{ id: 'g1', name: 'Encoder', collapsed: true, facadeNodeId: 'fac' }],
   }
-  const { forest } = graphDataToForest(data)
-  check('group: Encoder tree created', Boolean(forest.trees['Encoder']))
-  const enc = getTree(forest, 'Encoder')
+  const { forest, groupClassName } = graphDataToForest(data)
+  // Group trees are keyed by their unique gid (not class name) so duplicate
+  // class names don't collapse; the class name is carried separately.
+  check('group: tree keyed by gid g1', Boolean(forest.trees['g1']))
+  check('group: g1 class name is Encoder', groupClassName.get('g1') === 'Encoder')
+  const enc = getTree(forest, 'g1')
   check('group: Encoder has 2 children', enc.list_of_nodes.length === 2, enc.list_of_nodes)
   check('group: boundary inputs gc1@x', JSON.stringify(enc.inputs) === JSON.stringify(['gc1@x']), enc.inputs)
   check('group: boundary outputs gc2@y', JSON.stringify(enc.outputs) === JSON.stringify(['gc2@y']), enc.outputs)
   check('group: internal edge gc1->gc2 in Encoder', enc.list_of_connections.some((c) => c.from === 'gc1' && c.to === 'gc2'))
-  // The facade node lives in main, referencing the Encoder tree.
+  // The facade node lives in main, referencing the group tree (by gid).
   const main = getTree(forest, 'main')
-  check('group: facade node in main references Encoder', main.list_of_nodes.includes('fac') && forest.nodes['fac']!.name === 'Encoder')
+  check('group: facade node in main references g1', main.list_of_nodes.includes('fac') && forest.nodes['fac']!.name === 'g1')
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)
