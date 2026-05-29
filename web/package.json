@@ -27,7 +27,12 @@
     "test:history-paste-select": "node test-history-paste-select.ts",
     "test:group-name-sync": "node test-group-name-sync.ts",
     "test:group-optional-ports": "node test-group-optional-ports.ts",
-    "test:inspector-reactivity": "node test-inspector-reactivity.ts"
+    "test:group-residual-boundary": "node test-group-residual-boundary.ts",
+    "test:inspector-reactivity": "node test-inspector-reactivity.ts",
+    "test:tree-signature": "node test-tree-signature.ts",
+    "test:tree-expand": "node test-tree-expand.ts",
+    "test:tree-adapter": "node test-tree-adapter.ts",
+    "test:tree": "node test-tree-signature.ts && node test-tree-expand.ts && node test-tree-adapter.ts"
   },
   "dependencies": {
     "@retejs/lit-plugin": "^2.0.5",
