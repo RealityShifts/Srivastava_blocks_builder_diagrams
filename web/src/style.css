@@ -625,7 +625,8 @@ main {
   padding: 3px 6px;
   font: inherit;
 }
-#run-shapes-btn {
+#run-shapes-btn,
+#run-shapes-upto-btn {
   width: 100%;
   background: var(--panel-2);
   color: var(--text);
@@ -636,11 +637,16 @@ main {
   font: inherit;
   margin-bottom: 6px;
 }
-#run-shapes-btn:hover:not(:disabled) {
+#run-shapes-upto-btn {
+  font-size: 0.92em; /* secondary / debug action */
+}
+#run-shapes-btn:hover:not(:disabled),
+#run-shapes-upto-btn:hover:not(:disabled) {
   background: #232844;
   color: var(--accent);
 }
-#run-shapes-btn:disabled {
+#run-shapes-btn:disabled,
+#run-shapes-upto-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }

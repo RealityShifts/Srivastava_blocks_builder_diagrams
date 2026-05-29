@@ -20,7 +20,9 @@
       "Bash(node test-nested-groups.ts)",
       "Bash(node test-nested-groups-e2e.ts)",
       "Bash(node test-groups.ts)",
-      "Bash(node _repro_nested_param.ts)"
+      "Bash(node _repro_nested_param.ts)",
+      "Bash(node test-subgraph-upto.ts)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:5173/)"
     ],
     "additionalDirectories": [
       "/tmp"

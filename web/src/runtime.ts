@@ -184,21 +184,113 @@ export function resolveInputSpecs(editor: GraphEditor, _framework: string, batch
   return inputs
 }
 
-/** Build the POST body for the Python runner. */
-export function buildRunPayload(editor: GraphEditor, framework: string, batchSize = 2): RunPayload {
-  const inputs = resolveInputSpecs(editor, framework, batchSize)
-  const code = generate(editor.getNodes(), editor.getConnections(), framework, {
-    trace: true,
-  })
+/**
+ * Restrict the graph to `stopAtNodeId` and everything UPSTREAM of it (its
+ * ancestor closure over the connection graph), dropping all downstream nodes.
+ * The target node then has no consumer, so codegen's terminal detection turns
+ * its output into the model's return value - i.e. the forward pass runs only up
+ * to (and including) the selected node. This lets you click the node just
+ * before a runtime break and see every shape that resolved up to that point.
+ *
+ * Returns a {nodes, connections} view; the editor itself is never mutated.
+ */
+export function subgraphUpTo(
+  editor: GraphEditor,
+  stopAtNodeId: string
+): { nodes: NodeLike[]; connections: any[] } {
+  const allNodes = editor.getNodes()
+  const allConns = editor.getConnections()
+  const byId = new Map(allNodes.map((n) => [n.id, n]))
+  if (!byId.has(stopAtNodeId)) return { nodes: allNodes, connections: allConns }
+
+  // Incoming edges per node, then BFS upstream from the target.
+  const incoming = new Map<string, any[]>()
+  for (const c of allConns) {
+    if (!incoming.has(c.target)) incoming.set(c.target, [])
+    incoming.get(c.target)!.push(c)
+  }
+  const keep = new Set<string>([stopAtNodeId])
+  const queue = [stopAtNodeId]
+  while (queue.length) {
+    const id = queue.shift()!
+    for (const c of incoming.get(id) ?? []) {
+      if (!keep.has(c.source)) {
+        keep.add(c.source)
+        queue.push(c.source)
+      }
+    }
+  }
+  // Input nodes are always kept so forward() still has its arguments, even when
+  // the target's branch doesn't transitively reach every Input.
+  for (const n of allNodes) if (n.entry?.kind === 'input') keep.add(n.id)
+
+  // A kept group facade needs ALL its members (and recursively any nested group
+  // members), since codegen partitions children by groupId, not by connection.
+  // Likewise a kept grouped child needs its facade so the group still compiles.
+  let grew = true
+  while (grew) {
+    grew = false
+    for (const n of allNodes) {
+      if (keep.has(n.id)) continue
+      // member of a kept facade's group?
+      const facadeKept =
+        n.groupId &&
+        allNodes.some(
+          (f) => keep.has(f.id) && f.entry?.kind === 'group' && (f.entry as any).groupId === n.groupId
+        )
+      // facade whose group has a kept member?
+      const facadeOfKeptMember =
+        n.entry?.kind === 'group' &&
+        allNodes.some((m) => keep.has(m.id) && m.groupId === (n.entry as any).groupId)
+      if (facadeKept || facadeOfKeptMember) {
+        keep.add(n.id)
+        grew = true
+      }
+    }
+  }
+
+  const nodes = allNodes.filter((n) => keep.has(n.id))
+  const connections = allConns.filter((c) => keep.has(c.source) && keep.has(c.target))
+  return { nodes, connections }
+}
+
+/**
+ * Build the POST body for the Python runner. When `stopAtNodeId` is given, the
+ * graph is truncated to that node's ancestor closure so the forward pass runs
+ * only up to the selected node (see {@link subgraphUpTo}).
+ */
+export function buildRunPayload(
+  editor: GraphEditor,
+  framework: string,
+  batchSize = 2,
+  stopAtNodeId?: string
+): RunPayload {
+  const view = stopAtNodeId
+    ? subgraphUpTo(editor, stopAtNodeId)
+    : { nodes: editor.getNodes(), connections: editor.getConnections() }
+  // resolveInputSpecs only reads Input nodes + the validation sub, both still
+  // valid on the truncated view, so reuse the editor for input back-solving.
+  const inputs = resolveInputSpecs(editor, framework, batchSize).filter((spec) =>
+    view.nodes.some((n) => n.id === spec.nodeId)
+  )
+  const code = generate(view.nodes, view.connections, framework, { trace: true })
   return { framework, code, inputs, batch_size: batchSize }
 }
 
-/** POST to the local runner; returns the parsed per-port shapes + param count. */
-export async function runShapeCheck(editor: GraphEditor, framework: string, batchSize = 2): Promise<RunResult> {
+/**
+ * POST to the local runner; returns the parsed per-port shapes + param count.
+ * Pass `stopAtNodeId` to run only up to a selected node (incremental debugging).
+ */
+export async function runShapeCheck(
+  editor: GraphEditor,
+  framework: string,
+  batchSize = 2,
+  stopAtNodeId?: string
+): Promise<RunResult> {
   if (framework !== 'pytorch') {
     throw new Error('Runtime shape check is PyTorch-only for now.')
   }
-  const payload = buildRunPayload(editor, framework, batchSize)
+  const payload = buildRunPayload(editor, framework, batchSize, stopAtNodeId)
   const res = await fetch(RUNNER_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

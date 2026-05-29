@@ -802,6 +802,7 @@ async function bootstrap() {
     onSelectionChanged(nodeId) {
       state.selectedNodeId = nodeId
       refreshInspector()
+      refreshRuntimePanel() // toggle "Run up to selected" with the selection
     },
   })
   selector = nodeSelection.selector
@@ -935,6 +936,7 @@ async function bootstrap() {
   document.getElementById('collapse-all-btn')!.addEventListener('click', () => collapseAllGroups())
   document.getElementById('expand-all-btn')!.addEventListener('click', () => expandAllGroups())
   document.getElementById('run-shapes-btn')!.addEventListener('click', () => runRuntimeShapeCheck())
+  document.getElementById('run-shapes-upto-btn')!.addEventListener('click', () => runRuntimeShapeCheckUpToSelected())
   document.getElementById('batch-size')!.addEventListener('input', (e: any) => {
     state.batchSize = Math.max(1, Math.trunc(Number(e.target.value) || 2))
     state.runtimeShapes = null
@@ -2703,10 +2705,11 @@ function refreshRuntimePanel() {
     runtimeNumParams: state.runtimeNumParams,
     running: state.runtimeRunning,
     lastError: state.runtimeError,
+    hasSelection: Boolean(state.selectedNodeId),
   })
 }
 
-async function runRuntimeShapeCheck() {
+async function runRuntimeShapeCheck(stopAtNodeId?: string) {
   if (state.runtimeRunning || state.framework !== 'pytorch') return
   state.runtimeRunning = true
   state.runtimeError = null
@@ -2714,7 +2717,12 @@ async function runRuntimeShapeCheck() {
   refreshRuntimePanel()
   applyRuntimeErrorHighlight()
   try {
-    const { shapes, numParams } = await runShapeCheck(editor, state.framework, state.batchSize)
+    const { shapes, numParams } = await runShapeCheck(
+      editor,
+      state.framework,
+      state.batchSize,
+      stopAtNodeId
+    )
     state.runtimeShapes = shapes
     state.runtimeNumParams = numParams
     state.runtimeErrorNodeId = null
@@ -2729,6 +2737,16 @@ async function runRuntimeShapeCheck() {
     applyRuntimeErrorHighlight()
     refreshInspector()
   }
+}
+
+/** Run the forward pass only up to the currently-selected node, for debugging
+ *  the last working node before a runtime break. */
+async function runRuntimeShapeCheckUpToSelected() {
+  if (!state.selectedNodeId) {
+    flashDiagnostic('Select a node to run shapes up to it')
+    return
+  }
+  await runRuntimeShapeCheck(state.selectedNodeId)
 }
 
 function refreshInspector(options: any = {}) {

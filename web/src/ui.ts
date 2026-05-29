@@ -886,6 +886,8 @@ export interface RuntimePanelState {
   runtimeNumParams?: number | null
   running?: boolean
   lastError?: string | null
+  /** Whether a node is currently selected (enables "Run up to selected"). */
+  hasSelection?: boolean
 }
 
 export function updateRuntimePanel({
@@ -896,8 +898,10 @@ export function updateRuntimePanel({
   runtimeNumParams,
   running,
   lastError,
+  hasSelection,
 }: RuntimePanelState): void {
   const btn = document.getElementById('run-shapes-btn') as HTMLButtonElement | null
+  const uptoBtn = document.getElementById('run-shapes-upto-btn') as HTMLButtonElement | null
   const status = document.getElementById('runtime-status')
   const batchInput = document.getElementById('batch-size') as HTMLInputElement | null
   if (!btn || !status) return
@@ -908,6 +912,7 @@ export function updateRuntimePanel({
 
   if (framework !== 'pytorch') {
     btn.disabled = true
+    if (uptoBtn) uptoBtn.disabled = true
     status.textContent = 'Switch to pytorch_blocks to run shape checks.'
     status.className = 'muted'
     return
@@ -917,6 +922,9 @@ export function updateRuntimePanel({
     running ||
     !(lastResult?.ok ?? false) ||
     Boolean(lastResult && !isGraphRunnable(lastResult, batchSize))
+  // "Run up to selected" follows the same runnability gate, but additionally
+  // requires a selected node to act as the stop point.
+  if (uptoBtn) uptoBtn.disabled = btn.disabled || !hasSelection
 
   if (running) {
     status.textContent = 'Running forward pass…'
