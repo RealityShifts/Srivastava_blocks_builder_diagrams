@@ -805,3 +805,71 @@ main {
   user-select: none;
   -webkit-user-select: none;
 }
+
+/* Mermaid graph-preview dialog (reuses the codegen dialog's chrome). */
+#mermaid-dialog {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 0;
+  width: 80vw;
+  max-width: 1100px;
+  height: 80vh;
+  box-shadow: var(--shadow);
+}
+#mermaid-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.5);
+}
+#mermaid-dialog header {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+}
+#mermaid-dialog header .grow {
+  flex: 1;
+}
+#mermaid-dialog header button {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font: inherit;
+}
+#mermaid-dialog .mermaid-preview {
+  height: calc(100% - 110px);
+  overflow: auto;
+  padding: 16px;
+  background: #fff; /* mermaid 'default' theme renders for light backgrounds */
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+#mermaid-dialog .mermaid-preview svg {
+  max-width: 100%;
+  height: auto;
+}
+#mermaid-dialog .mermaid-source-wrap {
+  border-top: 1px solid var(--line);
+  max-height: 40%;
+  overflow: auto;
+}
+#mermaid-dialog .mermaid-source-wrap summary {
+  padding: 6px 14px;
+  cursor: pointer;
+  color: var(--muted, #888);
+  user-select: none;
+}
+#mermaid-dialog .mermaid-source-wrap pre {
+  margin: 0;
+  padding: 10px 16px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  background: var(--bg);
+  white-space: pre-wrap;
+  word-break: break-word;
+}

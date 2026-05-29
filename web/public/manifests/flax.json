@@ -45,7 +45,8 @@
     ],
     "bindings": {
       "D": "dim"
-    }
+    },
+    "description": "Attention-weighted pooling with a single learnable query token."
   },
   {
     "name": "CrossAttention",
@@ -120,7 +121,8 @@
     ],
     "bindings": {
       "D": "dim"
-    }
+    },
+    "description": "Attention from a query stream to a separate key/value stream."
   },
   {
     "name": "LinearAttention",
@@ -169,7 +171,8 @@
     ],
     "bindings": {
       "D": "dim"
-    }
+    },
+    "description": "Linear-complexity attention via the kernel trick (Performer-lite)."
   },
   {
     "name": "MultiHeadAttention",
@@ -261,7 +264,8 @@
     ],
     "bindings": {
       "D": "dim"
-    }
+    },
+    "description": "Pre-norm-friendly multi-head attention with optional causal masking."
   },
   {
     "name": "RelativePositionBias",
@@ -308,7 +312,8 @@
         "name": "out"
       }
     ],
-    "bindings": {}
+    "bindings": {},
+    "description": "T5-style logarithmic relative-position bias."
   },
   {
     "name": "RotaryEmbedding",
@@ -352,7 +357,8 @@
         "name": "out1"
       }
     ],
-    "bindings": {}
+    "bindings": {},
+    "description": "Rotary positional embedding (Su et al. 2021 / LLaMA)."
   },
   {
     "name": "WindowAttention",
@@ -407,7 +413,8 @@
     ],
     "bindings": {
       "D": "dim"
-    }
+    },
+    "description": "Local attention restricted to fixed-size windows."
   },
   {
     "name": "apply_rotary",
@@ -461,7 +468,8 @@
         "name": "out"
       }
     ],
-    "bindings": {}
+    "bindings": {},
+    "description": "Rotate the last dim of ``x`` by RoPE angles. ``x`` is ``(..., T, D)``."
   },
   {
     "name": "scaled_dot_product_attention",
@@ -530,7 +538,8 @@
         "name": "out"
       }
     ],
-    "bindings": {}
+    "bindings": {},
+    "description": "``softmax(QK^T / sqrt(d)) V``.  q/k/v are ``(B, T, H, D)``."
   },
   {
     "name": "ASPP",
@@ -593,7 +602,8 @@
     "bindings": {
       "C_in": "in_ch",
       "C_out": "out_ch"
-    }
+    },
+    "description": "Atrous Spatial Pyramid Pooling - DeepLab v3."
   },
   {
     "name": "CBAM",
@@ -650,7 +660,8 @@
     ],
     "bindings": {
       "C": "channels"
-    }
+    },
+    "description": "Convolutional Block Attention Module (channel + spatial)."
   },
   {
     "name": "DeformableAttention",
@@ -705,7 +716,8 @@
     ],
     "bindings": {
       "D": "dim"
-    }
+    },
+    "description": "Multi-head deformable attention (Zhu et al. - Deformable DETR)."
   },
   {
     "name": "DeformableConv2d",
@@ -781,7 +793,8 @@
     "bindings": {
       "C_in": "in_ch",
       "C_out": "out_ch"
-    }
+    },
+    "description": "Deformable convolution v1 (Dai et al. 2017), pure-JAX with bilinear sample."
   },
   {
     "name": "DenseBlock",
@@ -838,7 +851,8 @@
     ],
     "bindings": {
       "C_in": "in_ch"
-    }
+    },
+    "description": "A dense block with ``num_layers`` densely-connected conv units."
   },
   {
     "name": "FeaturePyramidNetwork",
@@ -881,7 +895,8 @@
         "name": "out"
       }
     ],
-    "bindings": {}
+    "bindings": {},
+    "description": "Top-down FPN with lateral 1x1 connections (Lin et al. 2017)."
   },
   {
     "name": "InceptionBlock",
@@ -950,7 +965,8 @@
     ],
     "bindings": {
       "C_in": "in_ch"
-    }
+    },
+    "description": "Naive Inception-v1 module: 1x1, 3x3, 5x5 and pool branches."
   },
   {
     "name": "PixelShuffleUpsample",
@@ -1001,7 +1017,8 @@
     ],
     "bindings": {
       "C": "channels"
-    }
+    },
+    "description": "Sub-pixel convolution: ESPCN / SRResNet upsampler."
   },
   {
     "name": "SpatialPyramidPooling",
@@ -1046,7 +1063,8 @@
         "name": "out"
       }
     ],
-    "bindings": {}
+    "bindings": {},
+    "description": "Multi-scale pyramid average pooling, output is flattened."
   },
   {
     "name": "SqueezeExcitation",
@@ -1097,7 +1115,8 @@
     ],
     "bindings": {
       "C": "channels"
-    }
+    },
+    "description": "Hu et al. 2017 - SE channel attention."
   },
   {
     "name": "pixel_shuffle",
@@ -1133,7 +1152,8 @@
         "name": "out"
       }
     ],
-    "bindings": {}
+    "bindings": {},
+    "description": "ESPCN sub-pixel rearrange. Input ``(B, H, W, C*scale^2)``."
   },
   {
     "name": "AdaIN",
@@ -1192,7 +1212,8 @@
         "name": "out"
       }
     ],
-    "bindings": {}
+    "bindings": {},
+    "description": "Adaptive Instance Normalization (Huang & Belongie 2017)."
   },
   {
     "name": "ConvBlock",
@@ -1292,7 +1313,8 @@
     "bindings": {
       "C_in": "in_ch",
       "C_out": "out_ch"
-    }
+    },
+    "description": "Conv -> Norm -> Activation: the standard conv \"lego\" piece."
   },
   {
     "name": "DepthwiseSeparableConv",
@@ -1368,7 +1390,8 @@
     "bindings": {
       "C_in": "in_ch",
       "C_out": "out_ch"
-    }
+    },
+    "description": "Depthwise 3x3 -> pointwise 1x1 (MobileNet-style)."
   },
   {
     "name": "InstanceNorm",
@@ -1417,7 +1440,8 @@
         "name": "out"
       }
     ],
-    "bindings": {}
+    "bindings": {},
+    "description": "Per-sample, per-channel normalization (Ulyanov et al. 2016)."
   },
   {
     "name": "ResidualBlock",
@@ -1487,7 +1511,8 @@
     "bindings": {
       "C_in": "in_ch",
       "C_out": "out_ch"
-    }
+    },
+    "description": "ResNet \"basic block\": ``y = act(F(x) + shortcut(x))``."
   },
   {
     "name": "SPADE",
@@ -1554,7 +1579,8 @@
         "name": "out"
       }
     ],
-    "bindings": {}
+    "bindings": {},
+    "description": "Spatially-Adaptive (De)normalization (Park et al. 2019)."
   },
   {
     "name": "SkipConnection",
@@ -1597,7 +1623,8 @@
         "name": "out"
       }
     ],
-    "bindings": {}
+    "bindings": {},
+    "description": "Generic residual / concat wrapper: ``y = combine(f(x), x)``."
   },
   {
     "name": "SpectralNorm",
@@ -1636,7 +1663,8 @@
         "name": "out"
       }
     ],
-    "bindings": {}
+    "bindings": {},
+    "description": "Power-iteration spectral norm (Miyato et al. 2018)."
   },
   {
     "name": "WeightNorm",
@@ -1673,7 +1701,8 @@
         "name": "out"
       }
     ],
-    "bindings": {}
+    "bindings": {},
+    "description": "Salimans & Kingma 2016 - reparameterizes ``W = g * v / ||v||``."
   },
   {
     "name": "ColumnParallelLinear",
@@ -1726,7 +1755,8 @@
     ],
     "bindings": {
       "D_in": "in_features"
-    }
+    },
+    "description": "Linear whose ``out_features`` are sharded across the tensor-parallel group."
   },
   {
     "name": "LowRankLinear",
@@ -1786,7 +1816,8 @@
     "bindings": {
       "D_in": "in_features",
       "D_out": "out_features"
-    }
+    },
+    "description": "Replaces a dense ``in -> out`` layer with two thin layers (rank ``r``)."
   },
   {
     "name": "PipelineStage",
@@ -1835,7 +1866,8 @@
         "name": "out"
       }
     ],
-    "bindings": {}
+    "bindings": {},
+    "description": "A single stage of a pipeline: takes input from prev stage, sends to next."
   },
   {
     "name": "QuantizedLinear4bit",
@@ -1889,7 +1921,8 @@
     "bindings": {
       "D_in": "in_features",
       "D_out": "out_features"
-    }
+    },
+    "description": "Simulated 4-bit symmetric weight quantization, two values per byte."
   },
   {
     "name": "QuantizedLinearInt8",
@@ -1943,7 +1976,8 @@
     "bindings": {
       "D_in": "in_features",
       "D_out": "out_features"
-    }
+    },
+    "description": "Simulated INT8 linear: stores INT8 weights, dequantizes for matmul."
   },
   {
     "name": "RowParallelLinear",
@@ -1996,7 +2030,8 @@
     ],
     "bindings": {
       "D_out": "out_features"
-    }
+    },
+    "description": "Linear whose ``in_features`` are sharded; performs all-reduce after matmul."
   },
   {
     "name": "TokenPruner",
@@ -2047,7 +2082,8 @@
         "name": "out"
       }
     ],
-    "bindings": {}
+    "bindings": {},
+    "description": "Drops the lowest-scoring tokens to a fixed keep ratio (DynamicViT-style)."
   },
   {
     "name": "dequantize_int8",
@@ -2129,7 +2165,8 @@
         "name": "out1"
       }
     ],
-    "bindings": {}
+    "bindings": {},
+    "description": "Per-output-row symmetric INT8 quantization."
   },
   {
     "name": "CLIPLoss",
@@ -2175,7 +2212,8 @@
         "name": "out"
       }
     ],
-    "bindings": {}
+    "bindings": {},
+    "description": "CLIP loss with a learnable temperature ``logit_scale``."
   },
   {
     "name": "LearnedPositionalEmbedding",
@@ -2224,7 +2262,8 @@
     ],
     "bindings": {
       "D": "dim"
-    }
+    },
+    "description": "Standard learned positional encoding (BERT-style)."
   },
   {
     "name": "ProjectionHead",
@@ -2278,7 +2317,8 @@
     "bindings": {
       "D_in": "in_dim",
       "D_out": "out_dim"
-    }
+    },
+    "description": "SimCLR-style 2-layer MLP projection head."
   },
   {
     "name": "SinusoidalPositionalEmbedding",
@@ -2327,7 +2367,8 @@
     ],
     "bindings": {
       "D": "dim"
-    }
+    },
+    "description": "Vaswani et al. 2017 - non-learned sinusoidal positions."
   },
   {
     "name": "info_nce",
@@ -2366,7 +2407,8 @@
         "name": "out"
       }
     ],
-    "bindings": {}
+    "bindings": {},
+    "description": "Symmetric InfoNCE / NT-Xent loss used by SimCLR & CLIP."
   },
   {
     "name": "DiscriminatorBlock",
@@ -2430,7 +2472,8 @@
     "bindings": {
       "C_in": "in_ch",
       "C_out": "out_ch"
-    }
+    },
+    "description": "Strided 4x4 conv -> instance-norm -> LeakyReLU(0.2)."
   },
   {
     "name": "EqualConv2d",
@@ -2512,7 +2555,8 @@
     "bindings": {
       "C_in": "in_ch",
       "C_out": "out_ch"
-    }
+    },
+    "description": "Equalized-LR 2-D convolution (NHWC, StyleGAN family)."
   },
   {
     "name": "EqualLinear",
@@ -2578,7 +2622,8 @@
     "bindings": {
       "D_in": "in_features",
       "D_out": "out_features"
-    }
+    },
+    "description": "Equalized-LR linear used by Progressive GAN / StyleGAN."
   },
   {
     "name": "GeneratorBlock",
@@ -2636,7 +2681,8 @@
     "bindings": {
       "C_in": "in_ch",
       "C_out": "out_ch"
-    }
+    },
+    "description": "Up-sample -> conv -> norm -> ReLU."
   },
   {
     "name": "MappingNetwork",
@@ -2690,7 +2736,8 @@
     "bindings": {
       "D_z": "z_dim",
       "D_w": "w_dim"
-    }
+    },
+    "description": "StyleGAN ``z -> w`` mapping network (8-layer MLP)."
   },
   {
     "name": "MinibatchStdDev",
@@ -2733,7 +2780,8 @@
         "name": "out"
       }
     ],
-    "bindings": {}
+    "bindings": {},
+    "description": "Karras et al. 2017 - appends per-batch std as an extra feature map."
   },
   {
     "name": "ModulatedConv2d",
@@ -2814,7 +2862,8 @@
       "C_in": "in_ch",
       "C_out": "out_ch",
       "D_w": "w_dim"
-    }
+    },
+    "description": "StyleGAN2 modulated/demodulated convolution (NHWC)."
   },
   {
     "name": "ProgressiveGrowing",
@@ -2863,7 +2912,8 @@
         "name": "out"
       }
     ],
-    "bindings": {}
+    "bindings": {},
+    "description": "Smooth fade between low- and high-resolution outputs by ``alpha``."
   },
   {
     "name": "StyleBlock",
@@ -2938,7 +2988,8 @@
       "C_in": "in_ch",
       "C_out": "out_ch",
       "D_w": "w_dim"
-    }
+    },
+    "description": "ModulatedConv + noise injection + leaky-ReLU."
   },
   {
     "name": "AffineCouplingLayer",
@@ -2994,7 +3045,8 @@
     ],
     "bindings": {
       "D": "dim"
-    }
+    },
+    "description": "RealNVP affine coupling: half the dims are scaled/shifted by the other half."
   },
   {
     "name": "AutoregressiveBlock",
@@ -3039,7 +3091,8 @@
     ],
     "bindings": {
       "C": "channels"
-    }
+    },
+    "description": "A residual gated PixelCNN block."
   },
   {
     "name": "EnergyBasedModel",
@@ -3077,7 +3130,8 @@
         "name": "out"
       }
     ],
-    "bindings": {}
+    "bindings": {},
+    "description": "Wraps any net so its scalar output is the energy ``E_theta(x)``."
   },
   {
     "name": "MaskedConv2d",
@@ -3147,7 +3201,8 @@
     "bindings": {
       "C_in": "in_ch",
       "C_out": "out_ch"
-    }
+    },
+    "description": "Masked 2D conv used by PixelCNN."
   },
   {
     "name": "VAE",
@@ -3233,7 +3288,8 @@
     ],
     "bindings": {
       "C": "channels"
-    }
+    },
+    "description": "Minimal convolutional VAE (NHWC); designed for 64x64 inputs by default."
   },
   {
     "name": "reparameterize",
@@ -3272,7 +3328,8 @@
         "name": "out"
       }
     ],
-    "bindings": {}
+    "bindings": {},
+    "description": "``z = mu + sigma * eps``,  ``eps ~ N(0, I)``."
   },
   {
     "name": "GraphAttention",
@@ -3341,7 +3398,8 @@
     ],
     "bindings": {
       "D_in": "in_dim"
-    }
+    },
+    "description": "Multi-head Graph Attention layer (Velickovic 2018)."
   },
   {
     "name": "GraphConv",
@@ -3399,7 +3457,8 @@
     "bindings": {
       "D_in": "in_dim",
       "D_out": "out_dim"
-    }
+    },
+    "description": "Symmetric-normalized GCN: ``X' = D^{-1/2} A D^{-1/2} X W``."
   },
   {
     "name": "MessagePassing",
@@ -3451,7 +3510,8 @@
         "name": "out"
       }
     ],
-    "bindings": {}
+    "bindings": {},
+    "description": "Generic message passing scaffold; subclass and override ``message``."
   },
   {
     "name": "scatter_max",
@@ -3625,7 +3685,8 @@
         "name": "out"
       }
     ],
-    "bindings": {}
+    "bindings": {},
+    "description": "Soft addressable key/value memory (NTM/Memory-Networks flavour)."
   },
   {
     "name": "MemoryAttention",
@@ -3691,7 +3752,8 @@
     ],
     "bindings": {
       "D": "dim"
-    }
+    },
+    "description": "Cross-attention over an external memory bank (e.g. retrieved facts)."
   },
   {
     "name": "PerceiverResampler",
@@ -3759,7 +3821,8 @@
     "bindings": {
       "D": "dim",
       "K": "num_latents"
-    }
+    },
+    "description": "Compresses a long sequence of input tokens into ``num_latents`` queries."
   },
   {
     "name": "QFormer",
@@ -3830,7 +3893,8 @@
         "name": "out"
       }
     ],
-    "bindings": {}
+    "bindings": {},
+    "description": "Bridges a frozen image encoder and a frozen LLM via learnable queries."
   },
   {
     "name": "clip_grad_norm",
@@ -3848,7 +3912,8 @@
         "name": "out"
       }
     ],
-    "bindings": {}
+    "bindings": {},
+    "description": "Globally clip gradients so their L2 norm is at most ``max_norm``."
   },
   {
     "name": "ActorCritic",
@@ -3917,7 +3982,8 @@
         "name": "out1"
       }
     ],
-    "bindings": {}
+    "bindings": {},
+    "description": "Combined actor-critic network sharing a torso."
   },
   {
     "name": "PolicyNetwork",
@@ -3977,7 +4043,8 @@
         "name": "out"
       }
     ],
-    "bindings": {}
+    "bindings": {},
+    "description": "Stochastic policy outputting categorical or Gaussian-action parameters."
   },
   {
     "name": "QNetwork",
@@ -4031,7 +4098,8 @@
         "name": "out"
       }
     ],
-    "bindings": {}
+    "bindings": {},
+    "description": "Action-value ``Q(s, a)`` with a discrete output head."
   },
   {
     "name": "ValueNetwork",
@@ -4078,7 +4146,8 @@
         "name": "out"
       }
     ],
-    "bindings": {}
+    "bindings": {},
+    "description": "State value ``V_phi(s)``."
   },
   {
     "name": "GRUCell",
@@ -4135,7 +4204,8 @@
     ],
     "bindings": {
       "D_in": "in_dim"
-    }
+    },
+    "description": "Cho et al. 2014 - simplified gating."
   },
   {
     "name": "LSTMCell",
@@ -4192,7 +4262,8 @@
     ],
     "bindings": {
       "D_in": "in_dim"
-    }
+    },
+    "description": "LSTM cell with explicit input/forget/cell/output gates."
   },
   {
     "name": "MambaBlock",
@@ -4253,7 +4324,8 @@
     ],
     "bindings": {
       "D": "dim"
-    }
+    },
+    "description": "A small Mamba-style block: depthwise conv + selective scan + gate."
   },
   {
     "name": "RNNCell",
@@ -4310,7 +4382,8 @@
     ],
     "bindings": {
       "D_in": "in_dim"
-    }
+    },
+    "description": "``h_t = tanh(W_ih x_t + W_hh h_{t-1} + b)``."
   },
   {
     "name": "StateSpaceModel",
@@ -4359,7 +4432,8 @@
     ],
     "bindings": {
       "D": "dim"
-    }
+    },
+    "description": "Diagonal SSM with learnable continuous parameters, ZOH-discretized."
   },
   {
     "name": "run_recurrent",
@@ -4393,7 +4467,8 @@
         "name": "out"
       }
     ],
-    "bindings": {}
+    "bindings": {},
+    "description": "Apply ``cell`` along the time dimension of ``x: (B, T, D)``."
   },
   {
     "name": "selective_scan",
@@ -4470,7 +4545,8 @@
         "name": "out"
       }
     ],
-    "bindings": {}
+    "bindings": {},
+    "description": "Selective scan: ``x_t = exp(d * A) x_{t-1} + d * B u_t``."
   },
   {
     "name": "CapsuleLayer",
@@ -4538,7 +4614,8 @@
     "bindings": {
       "N_in": "num_in",
       "N_out": "num_out"
-    }
+    },
+    "description": "Fully-connected capsule layer with dynamic routing."
   },
   {
     "name": "FNOBlock",
@@ -4595,7 +4672,8 @@
     ],
     "bindings": {
       "C": "channels"
-    }
+    },
+    "description": "Spectral conv + 1x1 residual + GELU (Li et al. 2020)."
   },
   {
     "name": "KANLayer",
@@ -4658,7 +4736,8 @@
     "bindings": {
       "D_in": "in_dim",
       "D_out": "out_dim"
-    }
+    },
+    "description": "A single layer of a Kolmogorov-Arnold Network (Liu et al. 2024)."
   },
   {
     "name": "NeuralODE",
@@ -4715,7 +4794,8 @@
         "name": "out"
       }
     ],
-    "bindings": {}
+    "bindings": {},
+    "description": "Continuous-depth network: integrate ``dh/dt = f_theta(h, t)`` with explicit Euler."
   },
   {
     "name": "SlotAttention",
@@ -4783,7 +4863,8 @@
     "bindings": {
       "K": "num_slots",
       "D": "dim"
-    }
+    },
+    "description": "Slot Attention (Locatello et al. 2020) for object-centric learning."
   },
   {
     "name": "SpectralConv2d",
@@ -4847,7 +4928,8 @@
     "bindings": {
       "C_in": "in_ch",
       "C_out": "out_ch"
-    }
+    },
+    "description": "The core spectral conv used inside FNO (NHWC layout)."
   },
   {
     "name": "dynamic_routing",
@@ -4882,7 +4964,8 @@
         "name": "out"
       }
     ],
-    "bindings": {}
+    "bindings": {},
+    "description": "Standalone dynamic routing on pre-computed votes ``(B, O, I, D)``."
   },
   {
     "name": "squash",
@@ -4912,7 +4995,8 @@
         "name": "out"
       }
     ],
-    "bindings": {}
+    "bindings": {},
+    "description": "Sabour et al. 2017 - non-linear \"squash\" preserving direction but compressing norm."
   },
   {
     "name": "FeedForward",
@@ -4965,7 +5049,8 @@
     ],
     "bindings": {
       "D": "dim"
-    }
+    },
+    "description": "Vanilla two-layer MLP used inside transformer blocks."
   },
   {
     "name": "GEGLU",
@@ -5012,7 +5097,8 @@
     ],
     "bindings": {
       "D": "dim"
-    }
+    },
+    "description": "GEGLU FFN: GLU variant gated by GELU (Shazeer 2020)."
   },
   {
     "name": "MixtureOfExperts",
@@ -5073,7 +5159,8 @@
     ],
     "bindings": {
       "D": "dim"
-    }
+    },
+    "description": "Token-level top-k MoE FFN (Shazeer / Switch / Mixtral)."
   },
   {
     "name": "SwiGLU",
@@ -5120,7 +5207,8 @@
     ],
     "bindings": {
       "D": "dim"
-    }
+    },
+    "description": "SwiGLU FFN: ``Linear(SiLU(W1 x) * W3 x) -> W2``  (LLaMA / PaLM)."
   },
   {
     "name": "TransformerDecoderBlock",
@@ -5201,7 +5289,8 @@
     ],
     "bindings": {
       "D": "dim"
-    }
+    },
+    "description": "Pre-norm decoder block: causal self-attn + cross-attn + MLP."
   },
   {
     "name": "TransformerEncoderBlock",
@@ -5265,7 +5354,8 @@
     ],
     "bindings": {
       "D": "dim"
-    }
+    },
+    "description": "Pre-norm encoder block (BERT/ViT style)."
   },
   {
     "name": "ControlNetBlock",
@@ -5322,7 +5412,8 @@
     ],
     "bindings": {
       "C_out": "out_ch"
-    }
+    },
+    "description": "Toy ControlNet hint encoder - encodes a conditioning image and adds via ZeroConv."
   },
   {
     "name": "DownsampleBlock",
@@ -5373,7 +5464,8 @@
     ],
     "bindings": {
       "C": "channels"
-    }
+    },
+    "description": "Strided 3x3 conv (or avg-pool) for halving spatial size."
   },
   {
     "name": "HyperNetwork",
@@ -5444,7 +5536,8 @@
       "D_code": "code_dim",
       "D_in": "in_dim",
       "D_out": "out_dim"
-    }
+    },
+    "description": "Small network that generates ``in_dim -> out_dim`` weight matrices on-the-fly."
   },
   {
     "name": "IPAdapterCrossAttention",
@@ -5533,7 +5626,8 @@
     ],
     "bindings": {
       "D": "dim"
-    }
+    },
+    "description": "Two-stream cross-attention: text + image-prompt features (Ye et al. 2023)."
   },
   {
     "name": "LoRAConv2d",
@@ -5588,7 +5682,8 @@
         "name": "out"
       }
     ],
-    "bindings": {}
+    "bindings": {},
+    "description": "LoRA adapter for an :class:`nnx.Conv` (NHWC)."
   },
   {
     "name": "LoRALinear",
@@ -5639,7 +5734,8 @@
         "name": "out"
       }
     ],
-    "bindings": {}
+    "bindings": {},
+    "description": "Low-rank adapter for an existing :class:`nnx.Linear`."
   },
   {
     "name": "NoisePredictor",
@@ -5700,7 +5796,8 @@
         "name": "out"
       }
     ],
-    "bindings": {}
+    "bindings": {},
+    "description": "Wraps a UNet so it predicts noise ``epsilon_theta(x_t, t, c)``."
   },
   {
     "name": "SinusoidalTimeEmbedding",
@@ -5740,7 +5837,8 @@
     ],
     "bindings": {
       "D": "dim"
-    }
+    },
+    "description": "Diffusion-style sinusoidal embedding of integer timesteps."
   },
   {
     "name": "TimestepMLP",
@@ -5784,7 +5882,8 @@
         "name": "out"
       }
     ],
-    "bindings": {}
+    "bindings": {},
+    "description": "Sinusoidal embedding followed by a 2-layer MLP - used by DDPM/SD."
   },
   {
     "name": "UNet",
@@ -5868,7 +5967,8 @@
     "bindings": {
       "C_in": "in_ch",
       "C_out": "out_ch"
-    }
+    },
+    "description": "A compact diffusion-style UNet operating on NHWC images."
   },
   {
     "name": "UNetResBlock",
@@ -5936,7 +6036,8 @@
     "bindings": {
       "C_in": "in_ch",
       "C_out": "out_ch"
-    }
+    },
+    "description": "Diffusion-style residual block conditioned on a time embedding."
   },
   {
     "name": "UpsampleBlock",
@@ -5987,7 +6088,8 @@
     ],
     "bindings": {
       "C": "channels"
-    }
+    },
+    "description": "Restores spatial resolution via interp / transposed conv / pixel shuffle."
   },
   {
     "name": "classifier_free_guidance",
@@ -6035,7 +6137,8 @@
         "name": "out"
       }
     ],
-    "bindings": {}
+    "bindings": {},
+    "description": "``eps = eps_uncond + s * (eps_cond - eps_uncond)``."
   },
   {
     "name": "CLSToken",
@@ -6078,7 +6181,8 @@
     ],
     "bindings": {
       "D": "dim"
-    }
+    },
+    "description": "Learnable [CLS] token prepended to each sequence."
   },
   {
     "name": "PatchEmbedding",
@@ -6134,7 +6238,8 @@
     ],
     "bindings": {
       "D": "dim"
-    }
+    },
+    "description": "Image -> sequence of patch tokens via a strided conv."
   },
   {
     "name": "ShiftedWindowAttention",
@@ -6201,7 +6306,8 @@
     ],
     "bindings": {
       "D": "dim"
-    }
+    },
+    "description": "Cyclic-shift variant enabling cross-window communication (Swin)."
   },
   {
     "name": "SwinWindowAttention",
@@ -6265,6 +6371,7 @@
     ],
     "bindings": {
       "D": "dim"
-    }
+    },
+    "description": "Window attention with learned relative-position bias (used inside Swin)."
   }
 ]

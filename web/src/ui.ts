@@ -442,13 +442,25 @@ function buildInfoPanel(
   panel.className = 'tab-panel info-panel'
   panel.dataset.tab = 'info'
 
-  const info = blockInfo?.get?.(node.entry.name) ?? null
-  if (!info) {
+  // Curated diagram-repo entry (block_info.json) is preferred, but fall back to
+  // anything carried on the manifest entry itself - a block's docstring can ship
+  // a description and a fenced ```mermaid block (captured by build_manifest.py),
+  // so blocks with no repo diagram still get an Info tab.
+  const repoInfo = blockInfo?.get?.(node.entry.name) ?? null
+  const entry: any = node.entry ?? {}
+  const info: any = {
+    description: repoInfo?.description ?? entry.description ?? '',
+    shapes: repoInfo?.shapes ?? '',
+    source: repoInfo?.source ?? '',
+    mermaid: repoInfo?.mermaid ?? entry.mermaid ?? '',
+    sections: repoInfo?.sections ?? null,
+  }
+  if (!info.description && !info.mermaid && !info.shapes && !info.source) {
     const p = document.createElement('p')
     p.className = 'muted'
     p.innerHTML = `No reference diagram for <code>${escapeHtml(
       node.entry.name
-    )}</code>. Run <code>python tools/fetch_block_diagrams.py</code> to refresh.`
+    )}</code>. Add a <code>\`\`\`mermaid</code> block to its docstring, or run <code>python tools/fetch_block_diagrams.py</code>.`
     panel.appendChild(p)
     return panel
   }
@@ -864,6 +876,37 @@ export function wireCodeDialog(): void {
   document.getElementById('close-code-btn')!.addEventListener('click', () => dlg.close())
   document.getElementById('copy-code-btn')!.addEventListener('click', async () => {
     const txt = document.getElementById('codegen-output')!.textContent
+    try {
+      await navigator.clipboard.writeText(txt ?? '')
+    } catch {
+      /* ignore */
+    }
+  })
+}
+
+/**
+ * Render a Mermaid `definition` into the preview dialog (rendered SVG + raw
+ * source). Reuses {@link renderMermaidInto}; uses a fresh cache key each call so
+ * an edited graph re-renders instead of showing a stale cached SVG.
+ */
+export function showMermaid(definition: string): void {
+  const dlg = document.getElementById('mermaid-dialog') as HTMLDialogElement | null
+  const preview = document.getElementById('mermaid-preview')
+  const src = document.getElementById('mermaid-output')
+  if (!dlg || !preview || !src) return
+  src.textContent = definition
+  // Unique key per render so a changed graph isn't served a cached diagram.
+  renderMermaidInto(preview as HTMLElement, `__graph__${++_mermaidCounter}`, definition)
+  if (typeof dlg.showModal === 'function') dlg.showModal()
+  else dlg.setAttribute('open', '')
+}
+
+export function wireMermaidDialog(): void {
+  const dlg = document.getElementById('mermaid-dialog') as HTMLDialogElement | null
+  if (!dlg) return
+  document.getElementById('close-mermaid-btn')?.addEventListener('click', () => dlg.close())
+  document.getElementById('copy-mermaid-btn')?.addEventListener('click', async () => {
+    const txt = document.getElementById('mermaid-output')!.textContent
     try {
       await navigator.clipboard.writeText(txt ?? '')
     } catch {

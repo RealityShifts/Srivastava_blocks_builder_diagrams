@@ -65,6 +65,22 @@
             </button>
           </div>
         </div>
+
+        <div class="menu-item">
+          <button type="button" class="menu-trigger" aria-haspopup="true">Mermaid</button>
+          <div class="menu-dropdown" role="menu">
+            <button id="mermaid-export-btn" type="button" role="menuitem" title="Export the graph as a Mermaid flowchart using the current canvas colors">
+              Export graph as Mermaid
+            </button>
+            <button id="mermaid-preview-btn" type="button" role="menuitem" title="Render the graph as a Mermaid diagram in a dialog">
+              Preview graph diagram
+            </button>
+            <div class="menu-separator" role="separator"></div>
+            <button id="mermaid-codegen-btn" type="button" role="menuitem" class="menu-item-accent" title="Generate Python with each block's Mermaid embedded as a docstring">
+              Generate Python (with Mermaid)
+            </button>
+          </div>
+        </div>
       </nav>
 
       <label class="select">
@@ -112,6 +128,20 @@
         <button id="close-code-btn">Close</button>
       </header>
       <pre><code id="codegen-output"></code></pre>
+    </dialog>
+
+    <dialog id="mermaid-dialog">
+      <header>
+        <strong>Graph diagram (Mermaid)</strong>
+        <span class="grow"></span>
+        <button id="copy-mermaid-btn">Copy source</button>
+        <button id="close-mermaid-btn">Close</button>
+      </header>
+      <div id="mermaid-preview" class="mermaid-preview"></div>
+      <details class="mermaid-source-wrap">
+        <summary>Mermaid source</summary>
+        <pre><code id="mermaid-output"></code></pre>
+      </details>
     </dialog>
 
     <script type="module" src="/src/main.ts"></script>

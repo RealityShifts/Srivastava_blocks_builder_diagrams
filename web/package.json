@@ -14,6 +14,7 @@
     "test:info-tab": "node test-info-tab.ts",
     "test:runtime": "node test-runtime.ts",
     "test:subgraph-upto": "node test-subgraph-upto.ts",
+    "test:mermaid": "node test-mermaid.ts",
     "test:autosave": "node test-autosave.ts",
     "test:tags-clipboard": "node test-tags-clipboard.ts",
     "test:groups": "node test-groups.ts",

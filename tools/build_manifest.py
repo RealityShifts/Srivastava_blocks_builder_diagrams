@@ -44,6 +44,7 @@ import inspect
 import json
 import os
 import pkgutil
+import re
 import sys
 import typing
 from dataclasses import dataclass
@@ -51,6 +52,36 @@ from pathlib import Path
 from typing import Any
 
 _SEQUENCE_ORIGINS = (list, tuple, collections.abc.Sequence)
+
+# Pull a fenced ```mermaid ... ``` block out of a docstring so it can be shown
+# in the editor's Info tab even when the block has no entry in the fetched
+# diagram repo (block_info.json). Same fence convention as fetch_block_diagrams.
+_MERMAID_RE = re.compile(r"```mermaid\s*\n(.*?)\n```", re.DOTALL)
+
+
+def _doc_and_mermaid(obj: Any) -> tuple[str, str]:
+    """Return (description, mermaid) extracted from an object's docstring.
+
+    - mermaid: the contents of the first fenced ```mermaid block, or "".
+    - description: the docstring with any mermaid fence stripped out, collapsed
+      to its leading prose (first paragraph) so the Info tab stays compact.
+    """
+    doc = inspect.getdoc(obj) or ""
+    if not doc:
+        return "", ""
+    mermaid = ""
+    m = _MERMAID_RE.search(doc)
+    if m:
+        mermaid = m.group(1).strip()
+        doc = _MERMAID_RE.sub("", doc)
+    # First non-empty paragraph as the short description.
+    para: list[str] = []
+    for line in doc.strip().splitlines():
+        if line.strip() == "" and para:
+            break
+        if line.strip():
+            para.append(line.strip())
+    return " ".join(para).strip(), mermaid
 
 # Disable runtime checks during introspection so importing the packages
 # doesn't trip jaxtyped/beartype.
@@ -360,7 +391,7 @@ def _entry_for_callable(
     ctor_names = [p["name"] for p in (ctor or [])]
     bindings = infer_bindings(ctor_names, axes)
 
-    return {
+    entry: dict[str, Any] = {
         "name": name,
         "module": module_path,
         "framework": framework,
@@ -370,6 +401,15 @@ def _entry_for_callable(
         "outputs": outputs,
         "bindings": bindings,
     }
+    # Carry docstring prose + any fenced mermaid so the editor's Info tab can
+    # show them when the block isn't in the fetched diagram repo. Only emit the
+    # keys when present to keep the manifest tidy.
+    description, mermaid = _doc_and_mermaid(obj)
+    if description:
+        entry["description"] = description
+    if mermaid:
+        entry["mermaid"] = mermaid
+    return entry
 
 
 def _is_block_class(cls: type, base_names: tuple[str, ...]) -> bool:

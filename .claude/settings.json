@@ -22,10 +22,21 @@
       "Bash(node test-groups.ts)",
       "Bash(node _repro_nested_param.ts)",
       "Bash(node test-subgraph-upto.ts)",
-      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:5173/)"
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:5173/)",
+      "Bash(python3 -c ' *)",
+      "Bash(node test-mermaid.ts)",
+      "Bash(python3 -c \"import ast,sys; ast.parse\\(open\\('/tmp/gen_mmd.py'\\).read\\(\\)\\); print\\('PYTHON PARSE: OK'\\)\")",
+      "Bash(rm -f web/_dump_mmd.ts /tmp/gen_mmd.py)",
+      "Bash(node test-info-tab.ts)",
+      "Bash(URL=http://127.0.0.1:5173/ node test-info-tab.ts)",
+      "Bash(rm -f _smoke*.ts _dump*.ts && git status --short && echo \"=== final typecheck ===\" && npm run typecheck 2>&1 | tail -2)",
+      "Bash(git -C /Users/prakhar/Documents/GitHub/Srivastava_blocks_builder status --short)",
+      "Bash(timeout 120 python3 tools/build_manifest.py)",
+      "Bash(python3 tools/build_manifest.py)"
     ],
     "additionalDirectories": [
-      "/tmp"
+      "/tmp",
+      "/Users/prakhar/Documents/GitHub/Srivastava_blocks_builder/web"
     ]
   }
 }

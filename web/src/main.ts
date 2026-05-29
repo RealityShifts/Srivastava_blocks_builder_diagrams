@@ -66,8 +66,12 @@ import {
   renderDiagnostics,
   showCode,
   wireCodeDialog,
+  showMermaid,
+  wireMermaidDialog,
   updateRuntimePanel,
 } from './ui.ts'
+import { graphToMermaid } from './mermaid/graphMermaid.ts'
+import { generateWithMermaid } from './mermaid/codegenWithMermaid.ts'
 
 // --- state ---
 const state: any = {
@@ -885,6 +889,10 @@ async function bootstrap() {
 
   // Toolbar
   wireCodeDialog()
+  wireMermaidDialog()
+  document.getElementById('mermaid-export-btn')!.addEventListener('click', () => exportGraphMermaid())
+  document.getElementById('mermaid-preview-btn')!.addEventListener('click', () => previewGraphMermaid())
+  document.getElementById('mermaid-codegen-btn')!.addEventListener('click', () => runCodegenWithMermaid())
   document.getElementById('framework-select')!.addEventListener('change', async (e: any) => {
     state.framework = e.target.value
     state.runtimeShapes = null
@@ -3035,6 +3043,58 @@ function runCodegen(options: any = {}) {
     trace: !!options.trace,
     testCase,
   })
+  showCode(code)
+}
+
+// --- Mermaid features (graph export + Python-with-diagrams) ---
+
+/** A node's current display color, matching applyTagStyle's precedence
+ *  (group name > node tag), so the exported diagram reads like the canvas. */
+function nodeDisplayColor(node: any): string | null {
+  if (node?.entry?.kind === 'group') {
+    const g = state.groups.get(node.entry.groupId)
+    if (g?.name) return colorForTag(g.name)
+  } else if (node?.groupId) {
+    const g = state.groups.get(node.groupId)
+    if (g?.name) return colorForTag(g.name)
+  }
+  return colorForTag(node?.tag)
+}
+
+/** Resolve a block type's mermaid: curated diagram repo first, then the
+ *  manifest entry's docstring-embedded diagram. */
+function mermaidForBlock(blockName: string): string | null {
+  const repo = state.blockInfo?.get?.(blockName)
+  if (repo?.mermaid) return repo.mermaid
+  const entry = state.byName?.get?.(blockName)
+  if (entry?.mermaid) return entry.mermaid
+  return null
+}
+
+function buildGraphMermaid(): string {
+  return graphToMermaid(editor.getNodes(), editor.getConnections(), {
+    colorOf: nodeDisplayColor,
+  })
+}
+
+/** Export the graph as Mermaid text in the code dialog (copy-friendly). */
+function exportGraphMermaid() {
+  showCode(buildGraphMermaid())
+}
+
+/** Render the graph as a Mermaid diagram in the preview dialog. */
+function previewGraphMermaid() {
+  showMermaid(buildGraphMermaid())
+}
+
+/** Generate Python with each block's Mermaid embedded as a docstring. */
+function runCodegenWithMermaid() {
+  const code = generateWithMermaid(
+    editor.getNodes(),
+    editor.getConnections(),
+    state.framework,
+    { mermaidForBlock, graphMermaid: { colorOf: nodeDisplayColor } }
+  )
   showCode(code)
 }
 
