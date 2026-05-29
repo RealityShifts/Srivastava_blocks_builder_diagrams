@@ -1,5 +1,318 @@
 [
   {
+    "name": "Decoder",
+    "module": "custom.MutiScaleBlock",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "norm",
+        "type": "str",
+        "default": "layer",
+        "required": false
+      },
+      {
+        "name": "style_dim",
+        "type": "int",
+        "default": 256,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "C_in",
+          "H",
+          "W"
+        ],
+        "dtype": "any",
+        "optional": false,
+        "variadic": false,
+        "name": "in0"
+      },
+      {
+        "shape": [
+          "B",
+          "D_style"
+        ],
+        "dtype": "any",
+        "optional": false,
+        "variadic": false,
+        "name": "in1"
+      },
+      {
+        "shape": [
+          "B",
+          "D_style"
+        ],
+        "dtype": "any",
+        "optional": false,
+        "variadic": false,
+        "name": "in2"
+      },
+      {
+        "shape": [
+          "B",
+          "D_style"
+        ],
+        "dtype": "any",
+        "optional": false,
+        "variadic": false,
+        "name": "in3"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "C_out",
+          "H_out",
+          "W_out"
+        ],
+        "dtype": "any",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {},
+    "description": "Base class for all neural network modules."
+  },
+  {
+    "name": "Face_to_embedding",
+    "module": "custom.MutiScaleBlock",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "norm",
+        "type": "str",
+        "default": "layer",
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "C_in",
+          "H",
+          "W"
+        ],
+        "dtype": "any",
+        "optional": false,
+        "variadic": false,
+        "name": "in0"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "b",
+          "_",
+          "c"
+        ],
+        "dtype": "any",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {},
+    "description": "Base class for all neural network modules."
+  },
+  {
+    "name": "Self_attention_layerrs",
+    "module": "custom.MutiScaleBlock",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "Tq",
+          "D"
+        ],
+        "dtype": "any",
+        "optional": false,
+        "variadic": false,
+        "name": "in0"
+      },
+      {
+        "shape": [
+          "B",
+          "Tk",
+          "D"
+        ],
+        "dtype": "any",
+        "optional": false,
+        "variadic": false,
+        "name": "in1"
+      },
+      {
+        "shape": [
+          "B",
+          "Tk",
+          "D"
+        ],
+        "dtype": "any",
+        "optional": false,
+        "variadic": false,
+        "name": "in2"
+      },
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "any",
+        "optional": false,
+        "variadic": false,
+        "name": "in3"
+      },
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "any",
+        "optional": false,
+        "variadic": false,
+        "name": "in4"
+      },
+      {
+        "shape": [
+          "..."
+        ],
+        "dtype": "any",
+        "optional": false,
+        "variadic": false,
+        "name": "in5"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "b",
+          "_",
+          "c"
+        ],
+        "dtype": "any",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {},
+    "description": "Base class for all neural network modules."
+  },
+  {
+    "name": "Style",
+    "module": "custom.MutiScaleBlock",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "channels",
+        "type": "int",
+        "default": 256,
+        "required": false
+      },
+      {
+        "name": "in_ch",
+        "type": "int",
+        "default": 256,
+        "required": false
+      },
+      {
+        "name": "out_ch",
+        "type": "int",
+        "default": 256,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "C_in",
+          "H",
+          "W"
+        ],
+        "dtype": "any",
+        "optional": false,
+        "variadic": false,
+        "name": "in0"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "b",
+          "_"
+        ],
+        "dtype": "any",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C_in": "channels"
+    },
+    "description": "Base class for all neural network modules."
+  },
+  {
+    "name": "Upscaler",
+    "module": "custom.MutiScaleBlock",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [],
+    "inputs": [
+      {
+        "shape": [
+          "7",
+          "3",
+          "192",
+          "192"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "Image_face"
+      },
+      {
+        "shape": [
+          "7",
+          "3",
+          "192",
+          "192"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "Image_bg"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "C_out",
+          "H_out",
+          "W_out"
+        ],
+        "dtype": "any",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {},
+    "description": "Upscaler model.",
+    "mermaid": "flowchart TD\n    n_8ffdcc56520da835([\"Image_face\"])\n    n_c899b9bcd4005339([\"Image_bg\"])\n    n_54893d9d334bfe50[\"MultiHeadAttention\"]\n    n_ab74635a522acc63[\"Rearrange\"]\n    n_78ba337f89ab3f5c([\"y\"])\n    n_7a073cfc035d1bce[[\"Face_to_embedding\"]]\n    n_db8dd9d6a4346c08[[\"Face_to_embedding\"]]\n    n_a3488d9be4648906[[\"Face_to_embedding \u00b7 bg_ext\"]]\n    n_614b63cea3f0b4a7[[\"self_attention_layerrs \u00b7 facial_self_attn\"]]\n    n_256ebd706e8d3061[[\"self_attention_layerrs \u00b7 facial_self_attn\"]]\n    n_4ef73d42dbaa1b19[[\"self_attention_layerrs \u00b7 body_self_attn\"]]\n    n_3829ab89cec63a6f[[\"decoder \u00b7 hmenl\"]]\n    n_e440b70dd2b62cdf[[\"Style \u00b7 gwrhh\"]]\n    n_2e44d2f04f2662c8[[\"Style \u00b7 mxm33\"]]\n    n_54893d9d334bfe50 --> n_ab74635a522acc63\n    n_8ffdcc56520da835 --> n_7a073cfc035d1bce\n    n_c899b9bcd4005339 --> n_db8dd9d6a4346c08\n    n_c899b9bcd4005339 --> n_a3488d9be4648906\n    n_614b63cea3f0b4a7 --> n_54893d9d334bfe50\n    n_7a073cfc035d1bce --> n_614b63cea3f0b4a7\n    n_7a073cfc035d1bce --> n_614b63cea3f0b4a7\n    n_7a073cfc035d1bce --> n_614b63cea3f0b4a7\n    n_256ebd706e8d3061 --> n_54893d9d334bfe50\n    n_db8dd9d6a4346c08 --> n_256ebd706e8d3061\n    n_db8dd9d6a4346c08 --> n_256ebd706e8d3061\n    n_db8dd9d6a4346c08 --> n_256ebd706e8d3061\n    n_4ef73d42dbaa1b19 --> n_54893d9d334bfe50\n    n_a3488d9be4648906 --> n_4ef73d42dbaa1b19\n    n_a3488d9be4648906 --> n_4ef73d42dbaa1b19\n    n_a3488d9be4648906 --> n_4ef73d42dbaa1b19\n    n_e440b70dd2b62cdf --> n_3829ab89cec63a6f\n    n_e440b70dd2b62cdf --> n_3829ab89cec63a6f\n    n_2e44d2f04f2662c8 --> n_3829ab89cec63a6f\n    n_ab74635a522acc63 --> n_3829ab89cec63a6f\n    n_3829ab89cec63a6f --> n_78ba337f89ab3f5c\n    n_ab74635a522acc63 --> n_e440b70dd2b62cdf\n    n_ab74635a522acc63 --> n_2e44d2f04f2662c8\n    style n_8ffdcc56520da835 fill:#dd4b4b,stroke:#0b0e16,stroke-width:1px,color:#f5f6fa\n    style n_c899b9bcd4005339 fill:#dd4bb8,stroke:#0b0e16,stroke-width:1px,color:#f5f6fa\n    style n_78ba337f89ab3f5c fill:#e7665f,stroke:#0b0e16,stroke-width:1px,color:#f5f6fa\n    style n_7a073cfc035d1bce fill:#b465e2,stroke:#0b0e16,stroke-width:1px,color:#f5f6fa\n    style n_db8dd9d6a4346c08 fill:#b465e2,stroke:#0b0e16,stroke-width:1px,color:#f5f6fa\n    style n_a3488d9be4648906 fill:#b465e2,stroke:#0b0e16,stroke-width:1px,color:#f5f6fa\n    style n_614b63cea3f0b4a7 fill:#45e3b0,stroke:#0b0e16,stroke-width:1px,color:#10131f\n    style n_256ebd706e8d3061 fill:#45e3b0,stroke:#0b0e16,stroke-width:1px,color:#10131f\n    style n_4ef73d42dbaa1b19 fill:#45e3b0,stroke:#0b0e16,stroke-width:1px,color:#10131f\n    style n_3829ab89cec63a6f fill:#e85aed,stroke:#0b0e16,stroke-width:1px,color:#f5f6fa\n    style n_e440b70dd2b62cdf fill:#b7dd4b,stroke:#0b0e16,stroke-width:1px,color:#10131f\n    style n_2e44d2f04f2662c8 fill:#b7dd4b,stroke:#0b0e16,stroke-width:1px,color:#10131f"
+  },
+  {
     "name": "SampleLinearBlock",
     "module": "custom.sample_block",
     "framework": "pytorch",
@@ -387,8 +700,7 @@
     "bindings": {
       "D": "dim"
     },
-    "description": "Standard multi-head attention with optional causal masking.",
-    "mermaid": "flowchart LR\n  q[query] --> qkv[qkv proj]\n  k[key] --> qkv\n  v[value] --> qkv\n  qkv --> sdpa[scaled dot-product attention]\n  sdpa --> o[out proj] --> out"
+    "description": "Standard multi-head attention with optional causal masking."
   },
   {
     "name": "RelativePositionBias",

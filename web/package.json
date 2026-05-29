@@ -20,6 +20,7 @@
     "test:groups": "node test-groups.ts",
     "test:group-dup-param": "node test-group-dup-param.ts",
     "test:nested-groups": "node test-nested-groups.ts",
+    "test:bubble-params": "node test-bubble-params.ts",
     "test:nested-groups-e2e": "node test-nested-groups-e2e.ts",
     "test:group-copy-cycle": "node test-group-copy-cycle.ts",
     "test:history-paste-select": "node test-history-paste-select.ts",

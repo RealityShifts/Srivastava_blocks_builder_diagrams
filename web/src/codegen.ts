@@ -472,7 +472,7 @@ export function generate(
     'GeneratedModel',
     classNames,
     options,
-    { usedDtypes }
+    { usedDtypes, allById: byIdAll }
   )
   if (Array.isArray(options.testCase) && options.testCase.length > 0) {
     emitTestCase(lines, framework, 'GeneratedModel', options.testCase, !!options.trace)
@@ -700,6 +700,12 @@ function emitClassBody(
 
   const { initParams, paramRef } = analyzeConstWiring(nodes, connections, attrName)
   if (facade) mergeGroupFacadeInitParams(facade, ordered, initParams, paramRef, typing.allById)
+  // Bubble exposed params of CHILD group facades up into THIS class's __init__,
+  // so a group's exposed knob (e.g. Decoder's style_dim) becomes a parameter of
+  // the containing class and is threaded down - instead of being frozen at the
+  // group's default. Params already driven by a local Constant wire (present in
+  // paramRef) are left alone; same-named exposed params share one outer arg.
+  bubbleChildGroupParams(ordered, initParams, paramRef, typing.allById)
 
   const initSigParts: string[] = []
   if (framework === 'flax') initSigParts.push('*, rngs: nnx.Rngs')
@@ -1153,6 +1159,55 @@ function mergeGroupFacadeInitParams(
       used.add(initName)
     }
     paramRef.set(`${m.childNodeId}::${m.paramName}`, initName)
+  }
+}
+
+/**
+ * Bubble exposed params of child GROUP facades up into the containing class.
+ *
+ * For each group node in `ordered`, every entry in its `portMap.params` is an
+ * exposed knob. If it isn't already driven by a local Constant wire (i.e. no
+ * `paramRef[facade.id::paramName]` yet), we mint a shared `__init__` parameter
+ * on the containing class - one per paramName (same-named exposed params across
+ * sibling groups share a single outer arg) - and register the paramRef so
+ * `groupCtorArgs` threads it down as `paramName=<outerParam>`. Defaults resolve
+ * recursively through nested groups via `resolveExposedParamDefault`.
+ */
+function bubbleChildGroupParams(
+  ordered: NodeLike[],
+  initParams: any[],
+  paramRef: Map<string, string>,
+  allById?: Map<string, NodeLike>
+): void {
+  const used = new Set(initParams.map((p) => p.initName))
+  // Reuse one outer param per paramName so two groups exposing `out_ch` share it.
+  const sharedByName = new Map<string, string>()
+  for (const n of ordered) {
+    if (n.entry?.kind !== 'group') continue
+    const params = (n.entry as any)?.portMap?.params ?? []
+    for (const m of params) {
+      const key = `${n.id}::${m.paramName}`
+      if (paramRef.has(key)) continue // already wired by a local Constant
+      let initName = sharedByName.get(m.paramName)
+      if (!initName) {
+        initName = sanitizePyIdent(m.paramName, 'param')
+        // Avoid clobbering an unrelated existing init param of the same name.
+        let i = 2
+        while (used.has(initName)) initName = `${sanitizePyIdent(m.paramName, 'param')}${i++}`
+        used.add(initName)
+        sharedByName.set(m.paramName, initName)
+        const { raw, paramDef } = resolveExposedParamDefault(m.childNodeId, m.paramName, allById)
+        initParams.push({
+          initName,
+          pyType: pyTypeForParamDef(paramDef, m.paramType),
+          defaultLit:
+            raw === null || raw === undefined || raw === ''
+              ? pyRepr(coerce(0, m.paramType ?? 'int'))
+              : pyRepr(coerce(raw, paramDef?.type ?? m.paramType ?? 'int')),
+        })
+      }
+      paramRef.set(key, initName)
+    }
   }
 }
 
