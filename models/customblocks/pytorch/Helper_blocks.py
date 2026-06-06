@@ -16,8 +16,8 @@ class ResidualChain(nn.Module):
     def __init__(self,in_channels:int,out_channels:int,repeats:int =3):
         super().__init__()
         self.repeats = repeats
-        self.inital_conv = ResidualBlock(in_channels,out_channels)
-        self.res_chain = nn.ModuleList([ResidualBlock(out_channels ,out_channels) for _ in range(self.repeats)])
+        self.inital_conv = ResidualBlock(in_channels,out_channels,norm = "layer")
+        self.res_chain = nn.ModuleList([ResidualBlock(out_channels ,out_channels, norm = "layer") for _ in range(self.repeats)])
         
     
     def forward(self,x:Float[Tensor,"B C_in H W"])->Float[Tensor,"B C_out H W"]:
