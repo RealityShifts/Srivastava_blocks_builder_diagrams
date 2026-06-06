@@ -36,6 +36,8 @@ export interface RunPayload {
   code: string
   inputs: InputSpec[]
   batch_size: number
+  /** torchvista-only: initial module-collapse depth (0 = most collapsed). */
+  collapse_after_depth?: number
 }
 
 /** Parsed runner response surfaced to the UI. */
@@ -345,12 +347,14 @@ export async function runVista(
   editor: GraphEditor,
   framework: string,
   batchSize = 2,
-  stopAtNodeId?: string
+  stopAtNodeId?: string,
+  collapseAfterDepth = 0
 ): Promise<VistaResult> {
   if (framework !== 'pytorch') {
     throw new Error('TorchVista view is PyTorch-only for now.')
   }
   const payload = buildRunPayload(editor, framework, batchSize, stopAtNodeId, false)
+  payload.collapse_after_depth = Math.max(0, Math.trunc(collapseAfterDepth) || 0)
   let res: Response
   try {
     res = await fetch(VISTA_URL, {

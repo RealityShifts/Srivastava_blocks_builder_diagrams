@@ -196,6 +196,10 @@ def run_vista(payload: dict[str, Any]) -> dict[str, Any]:
     example_inputs = tuple(_spec_tensor(spec) for spec in inputs)
 
     height = int(payload.get("height", 700) or 700)
+    # 0 = collapse every module to a single node (most collapsed); the rendered
+    # graph is interactive, so the user expands modules by clicking. Higher
+    # values reveal more nesting up-front.
+    collapse_after_depth = max(int(payload.get("collapse_after_depth", 0) or 0), 0)
 
     with tempfile.TemporaryDirectory() as tmp:
         out_html = Path(tmp) / "torchvista_graph.html"
@@ -211,6 +215,7 @@ def run_vista(payload: dict[str, Any]) -> dict[str, Any]:
                     export_format="html",
                     export_path=str(out_html),
                     height=height,
+                    collapse_modules_after_depth=collapse_after_depth,
                 )
             except Exception as exc:  # noqa: BLE001 - surface as a partial render
                 trace_exc = exc

@@ -134,6 +134,10 @@
     <dialog id="vista-dialog">
       <header>
         <strong>Graph view (torchvista)</strong>
+        <label id="vista-depth-label" title="0 collapses every module to a single node — click a node in the graph to expand it. Higher values reveal more nesting up front.">
+          Collapse depth
+          <input id="vista-depth" type="number" min="0" step="1" value="0" />
+        </label>
         <span id="vista-status" class="muted"></span>
         <span class="grow"></span>
         <button id="close-vista-btn">Close</button>

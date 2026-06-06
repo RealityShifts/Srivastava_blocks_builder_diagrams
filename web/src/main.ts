@@ -985,6 +985,11 @@ async function bootstrap() {
     if (frame) frame.srcdoc = '' // release the large blob
     dlg?.close()
   })
+  // Re-render at the chosen collapse depth without leaving the dialog.
+  document.getElementById('vista-depth')!.addEventListener('change', () => {
+    const dlg = document.getElementById('vista-dialog') as HTMLDialogElement | null
+    if (dlg?.open) void runVistaView()
+  })
   document.getElementById('batch-size')!.addEventListener('input', (e: any) => {
     state.batchSize = Math.max(1, Math.trunc(Number(e.target.value) || 2))
     state.runtimeShapes = null
@@ -2845,12 +2850,15 @@ async function runVistaView() {
     status.textContent = 'Rendering…'
     status.className = 'muted'
   }
+  const depthInput = document.getElementById('vista-depth') as HTMLInputElement | null
+  const collapseAfterDepth = Math.max(0, Math.trunc(Number(depthInput?.value ?? 0)) || 0)
   try {
     const result = await runVista(
       editor,
       state.framework,
       state.batchSize,
-      state.selectedNodeId ?? undefined
+      state.selectedNodeId ?? undefined,
+      collapseAfterDepth
     )
     frame.srcdoc = result.html
     if (status) {

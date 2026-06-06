@@ -901,6 +901,22 @@ main {
 #vista-dialog header #vista-status {
   font-size: 12px;
 }
+#vista-dialog header #vista-depth-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted, #888);
+}
+#vista-dialog header #vista-depth {
+  width: 56px;
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 3px 6px;
+  font: inherit;
+}
 #vista-dialog header button {
   background: var(--panel-2);
   color: var(--text);
