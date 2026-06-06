@@ -9,12 +9,14 @@ import {
   RESHAPE_ENTRY,
   CONCAT_ENTRY,
   STACK_ENTRY,
+  UNBIND_ENTRY,
   POOL_ENTRY,
   UPSAMPLE_ENTRY,
   OUTPUT_ENTRY,
   CONST_ENTRY,
   LEARNABLE_TENSOR_ENTRY,
   makeGroupEntry,
+  makeNode,
   RearrangeNode,
   ReshapeNode,
   paletteGroup,
@@ -1506,6 +1508,76 @@ function inputEntryForPalette() {
     outputs: [],
     bindings: {},
   }
+}
+
+// --- Unbind: dynamic output ports ---
+console.log('unbind dynamic output ports')
+{
+  const u: any = makeNode(UNBIND_ENTRY)
+  check('unbind starts with default 2 outputs', u.entry.outputs.length === 2, u.entry.outputs.length)
+  check('unbind does NOT mutate the shared catalogue entry', UNBIND_ENTRY.outputs.length === 2)
+
+  u.values.count = 4
+  const grow = u.rebuildOutputs()
+  check('grow to 4 adds out2,out3', u.entry.outputs.length === 4 && grow.added.length === 2 && grow.removed.length === 0, grow)
+  check('grown ports are named out0..out3', u.entry.outputs.map((p: any) => p.name).join(',') === 'out0,out1,out2,out3')
+
+  u.values.count = 2
+  const shrink = u.rebuildOutputs()
+  check('shrink to 2 removes out2,out3', u.entry.outputs.length === 2 && shrink.removed.join(',') === 'out3,out2', shrink)
+
+  const noop = u.rebuildOutputs()
+  check('rebuildOutputs is idempotent', noop.added.length === 0 && noop.removed.length === 0)
+
+  u.values.count = 0
+  u.rebuildOutputs()
+  check('count<1 clamps to 1 output', u.entry.outputs.length === 1, u.entry.outputs.length)
+}
+
+// --- Unbind: codegen (both frameworks + count=1) ---
+console.log('unbind codegen')
+{
+  const inputEntry = {
+    name: 'Input', module: '__builtin__', framework: 'any', kind: 'input',
+    ctor: [{ name: 'name', type: 'str', default: 'x' }],
+    inputs: [], outputs: [{ name: 'out', shape: ['B', 'C', 'H', 'W'], dtype: 'float' }], bindings: {},
+  }
+  const sink = {
+    name: 'ConvBlock', module: 'pytorch_blocks.core_blocks', framework: 'pytorch', kind: 'module',
+    ctor: [], inputs: [{ name: 'x', shape: ['...'], dtype: 'float' }],
+    outputs: [{ name: 'out', shape: ['...'], dtype: 'float' }], bindings: {},
+  }
+  const mk = (id: any, entry: any, values: any = {}) => ({
+    id, entry, tag: '', name: '',
+    values: { ...Object.fromEntries(entry.ctor.map((p: any) => [p.name, p.default])), ...values },
+    groupId: null,
+  })
+  const unbindNode = (id: any, dim: number, count: number) => ({
+    id, tag: '', name: '', groupId: null, values: { dim, count },
+    entry: { ...UNBIND_ENTRY, outputs: Array.from({ length: count }, (_, i) => ({ name: `out${i}`, shape: ['...'], dtype: 'float', optional: false, variadic: false })) },
+  })
+  const build = (dim: number, count: number, fw: any) => {
+    const inp = mk('inp', inputEntry, { name: 'x' })
+    const u = unbindNode('u', dim, count)
+    const sinks = Array.from({ length: count }, (_, i) => mk('s' + i, sink))
+    const conns = [
+      { source: 'inp', sourceOutput: 'out', target: 'u', targetInput: 'x' },
+      ...sinks.map((s, i) => ({ source: 'u', sourceOutput: `out${i}`, target: s.id, targetInput: 'x' })),
+    ]
+    return generate([inp, u, ...sinks], conns, fw)
+  }
+
+  const pt = build(1, 3, 'pytorch')
+  check('unbind pytorch: tuple-unpacks torch.unbind into N vars',
+    /unbind_1_out0, unbind_1_out1, unbind_1_out2 = torch\.unbind\(x, dim=1\)/.test(pt), pt)
+
+  const fx = build(1, 3, 'flax')
+  check('unbind flax: tuple(jnp.moveaxis(...)) unpack',
+    /unbind_1_out0, unbind_1_out1, unbind_1_out2 = tuple\(jnp\.moveaxis\(x, 1, 0\)\)/.test(fx), fx)
+
+  const one = build(0, 1, 'pytorch')
+  check('unbind count=1: indexes [0] so a tensor (not a 1-tuple) is assigned',
+    /= torch\.unbind\(x, dim=0\)\[0\]/.test(one) && !/= torch\.unbind\(x, dim=0\)\n/.test(one), one)
 }
 
 console.log(`\n${pass} pass, ${fail} fail`)

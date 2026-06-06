@@ -873,3 +873,46 @@ main {
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+#vista-dialog {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 0;
+  width: 90vw;
+  max-width: 1400px;
+  height: 88vh;
+  box-shadow: var(--shadow);
+}
+#vista-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.5);
+}
+#vista-dialog header {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+}
+#vista-dialog header .grow {
+  flex: 1;
+}
+#vista-dialog header #vista-status {
+  font-size: 12px;
+}
+#vista-dialog header button {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font: inherit;
+}
+#vista-dialog #vista-frame {
+  width: 100%;
+  height: calc(100% - 52px);
+  border: 0;
+  background: #fff; /* torchvista renders for a light background */
+}

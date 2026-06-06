@@ -89,6 +89,27 @@ export interface GraphData {
 // ---------------------------------------------------------------------------
 
 /**
+ * Reconstruct an Unbind block's dynamic output ports from its `values.count`.
+ * The shared catalogue entry always carries the 2-output default, but a node
+ * may have grown/shrunk its ports; the count lives only in `values`. Returns a
+ * cloned entry with `out0..out{count-1}` so codegen unpacks the right arity.
+ */
+function withUnbindOutputs(entry: ManifestEntry, values: Record<string, unknown> | undefined): ManifestEntry {
+  const raw = Number((values ?? {}).count ?? entry.outputs.length)
+  const count = Number.isFinite(raw) && raw >= 1 ? Math.trunc(raw) : 1
+  return {
+    ...entry,
+    outputs: Array.from({ length: count }, (_, i) => ({
+      name: `out${i}`,
+      shape: ['...'],
+      dtype: 'float',
+      optional: false,
+      variadic: false,
+    })),
+  }
+}
+
+/**
  * Build the {@link BlockResolver} the signature/expand modules need, backed by
  * the manifest catalogue and a map of per-node exposed-param sets recovered
  * from the serialized specs.
@@ -440,7 +461,10 @@ export function forestToGenerateInput(
       if (!entry) continue
       nodes.push({
         id: node.id,
-        entry,
+        // Unbind has a dynamic output count that lives only in `values` (the
+        // shared catalogue entry always has the 2-output default). Rebuild the
+        // output ports from values.count so codegen unpacks the right arity.
+        entry: entry.kind === 'unbind' ? withUnbindOutputs(entry, node.values) : entry,
         name: node.instanceName ?? '',
         tag: node.tag ?? '',
         groupId: memberGidOf.get(node.id) ?? null,

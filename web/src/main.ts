@@ -47,6 +47,7 @@ import {
   RESHAPE_ENTRY,
   CONCAT_ENTRY,
   STACK_ENTRY,
+  UNBIND_ENTRY,
   POOL_ENTRY,
   UPSAMPLE_ENTRY,
   ELEMENTWISE_ENTRY,
@@ -62,7 +63,7 @@ import {
   graphDataToForest,
   forestToGenerateInput,
 } from './tree/adapter.ts'
-import { isFullyConcrete, runShapeCheck, resolveInputSpecs } from './runtime.ts'
+import { isFullyConcrete, runShapeCheck, resolveInputSpecs, runVista } from './runtime.ts'
 import { resolve } from './shape.ts'
 import {
   renderPalette,
@@ -637,6 +638,9 @@ async function pasteClipboard() {
     const node = await createNode(spec.name, pos)
     if (!node) continue
     if (spec.values) Object.assign(node.values, spec.values)
+    // Dynamic-output nodes must rebuild ports from the restored `count` before
+    // edges are reconnected, so the out0..outN targets exist.
+    ;(node as any).rebuildOutputs?.()
     for (const p of spec.exposedParams || []) {
       node.exposeParam?.(p)
     }
@@ -974,6 +978,13 @@ async function bootstrap() {
   document.getElementById('expand-all-btn')!.addEventListener('click', () => expandAllGroups())
   document.getElementById('run-shapes-btn')!.addEventListener('click', () => runRuntimeShapeCheck())
   document.getElementById('run-shapes-upto-btn')!.addEventListener('click', () => runRuntimeShapeCheckUpToSelected())
+  document.getElementById('vista-view-btn')!.addEventListener('click', () => runVistaView())
+  document.getElementById('close-vista-btn')!.addEventListener('click', () => {
+    const dlg = document.getElementById('vista-dialog') as HTMLDialogElement | null
+    const frame = document.getElementById('vista-frame') as HTMLIFrameElement | null
+    if (frame) frame.srcdoc = '' // release the large blob
+    dlg?.close()
+  })
   document.getElementById('batch-size')!.addEventListener('input', (e: any) => {
     state.batchSize = Math.max(1, Math.trunc(Number(e.target.value) || 2))
     state.runtimeShapes = null
@@ -1065,6 +1076,7 @@ async function loadManifest() {
     RESHAPE_ENTRY,
     CONCAT_ENTRY,
     STACK_ENTRY,
+    UNBIND_ENTRY,
     POOL_ENTRY,
     UPSAMPLE_ENTRY,
     ELEMENTWISE_ENTRY,
@@ -1168,6 +1180,9 @@ async function importGraph(data: any) {
     if (spec?.values && typeof spec.values === 'object') {
       Object.assign(node.values, spec.values)
     }
+    // Rebuild dynamic output ports (Unbind) from the restored `count` before
+    // connections are reconnected later in import.
+    ;(node as any).rebuildOutputs?.()
     for (const p of spec?.exposedParams || []) {
       node.exposeParam?.(p)
     }
@@ -1526,6 +1541,27 @@ function atlasNodeMember(id: any) {
  * Mutator: a node's ctor values changed via the inspector. Push the new
  * canonical values into the atlas and mirror them to every peer member.
  */
+/**
+ * Resize a dynamic-output node (Unbind) to match its `count`: rebuild the Rete
+ * ports, remove connections that pointed at deleted outputs, and re-render.
+ * No-op for nodes without `rebuildOutputs` or when the port count is unchanged.
+ */
+async function rebuildDynamicOutputs(n: any) {
+  if (typeof n?.rebuildOutputs !== 'function') return
+  const { added, removed } = n.rebuildOutputs()
+  if (!added.length && !removed.length) return
+  if (removed.length) {
+    const dropped = new Set(removed)
+    for (const c of [...editor.getConnections()]) {
+      if (c.source === n.id && dropped.has(c.sourceOutput)) {
+        await editor.removeConnection(c.id)
+      }
+    }
+  }
+  await area.update('node', n.id)
+  refreshInspector({ forceRebuild: true })
+}
+
 function syncNamedNodePeers(sourceNode: any) {
   if (!nodeNameKey(sourceNode)) return
   const peers = recordAllValues(state.tagAtlas, sourceNode)
@@ -2791,6 +2827,55 @@ async function runRuntimeShapeCheckUpToSelected() {
   await runRuntimeShapeCheck(state.selectedNodeId)
 }
 
+/** Render the current graph with torchvista (optional) into the graph-view
+ *  dialog. Degrades gracefully when torchvista isn't installed. */
+async function runVistaView() {
+  if (state.framework !== 'pytorch') {
+    flashDiagnostic('TorchVista view is PyTorch-only')
+    return
+  }
+  const dlg = document.getElementById('vista-dialog') as HTMLDialogElement | null
+  const frame = document.getElementById('vista-frame') as HTMLIFrameElement | null
+  const status = document.getElementById('vista-status')
+  const btn = document.getElementById('vista-view-btn') as HTMLButtonElement | null
+  if (!dlg || !frame) return
+
+  if (btn) btn.disabled = true
+  if (status) {
+    status.textContent = 'Rendering…'
+    status.className = 'muted'
+  }
+  try {
+    const result = await runVista(
+      editor,
+      state.framework,
+      state.batchSize,
+      state.selectedNodeId ?? undefined
+    )
+    frame.srcdoc = result.html
+    if (status) {
+      const parts: string[] = []
+      if (result.numParams != null) parts.push(`${result.numParams.toLocaleString()} parameter(s)`)
+      if (result.partial) parts.push(`partial graph — forward errored: ${result.warning ?? ''}`)
+      status.textContent = parts.join(' · ')
+      status.className = result.partial ? 'err' : 'muted'
+    }
+    if (!dlg.open) dlg.showModal()
+  } catch (e) {
+    const err = e as any
+    if (err?.vistaUnavailable) {
+      // Optional dependency missing: keep everything else usable, just tell the
+      // user how to enable the view.
+      flashDiagnostic('torchvista not installed — run: pip install torchvista')
+    } else {
+      flashDiagnostic(`Graph view failed: ${err?.message ?? String(e)}`)
+    }
+  } finally {
+    if (btn) btn.disabled = false
+    refreshRuntimePanel()
+  }
+}
+
 function refreshInspector(options: any = {}) {
   const node = state.selectedNodeId ? editor.getNode(state.selectedNodeId) : null
   renderInspector(
@@ -2799,7 +2884,13 @@ function refreshInspector(options: any = {}) {
     state.lastResult?.sub ?? new Map(),
     () => {
       const n = state.selectedNodeId ? editor.getNode(state.selectedNodeId) : null
-      if (n) syncNamedNodePeers(n)
+      if (n) {
+        // Dynamic-output nodes (Unbind) resize their ports when a ctor param
+        // like `count` changes: rebuild ports, drop edges to removed outputs,
+        // and re-render. rebuildOutputs is idempotent so unrelated edits no-op.
+        void rebuildDynamicOutputs(n)
+        syncNamedNodePeers(n)
+      }
       state.runtimeShapes = null
       state.runtimeNumParams = null
       state.runtimeError = null

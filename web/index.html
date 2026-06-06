@@ -115,6 +115,7 @@
           </label>
           <button id="run-shapes-btn" disabled title="Resolve every axis to a number, then run a real forward pass">Run shape check</button>
           <button id="run-shapes-upto-btn" disabled title="Run the forward pass only up to the selected node — handy for finding the last node that works before a runtime break">Run up to selected</button>
+          <button id="vista-view-btn" disabled title="Render the forward pass as an interactive graph with torchvista (optional: pip install torchvista)">Graph view (torchvista)</button>
           <p id="runtime-status" class="muted"></p>
         </div>
       </aside>
@@ -128,6 +129,16 @@
         <button id="close-code-btn">Close</button>
       </header>
       <pre><code id="codegen-output"></code></pre>
+    </dialog>
+
+    <dialog id="vista-dialog">
+      <header>
+        <strong>Graph view (torchvista)</strong>
+        <span id="vista-status" class="muted"></span>
+        <span class="grow"></span>
+        <button id="close-vista-btn">Close</button>
+      </header>
+      <iframe id="vista-frame" title="torchvista graph" sandbox="allow-scripts allow-downloads allow-popups"></iframe>
     </dialog>
 
     <dialog id="mermaid-dialog">

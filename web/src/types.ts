@@ -21,6 +21,7 @@ export type NodeKind =
   | 'learnable' // a learnable nn.Parameter / buffer
   | 'rearrange' // einops rearrange op
   | 'reshape' // tensor reshape op
+  | 'unbind' // split one tensor along an axis into N outputs (inverse of stack)
   | string // forward-compatible: unknown kinds from future manifests
 
 /** A constructor (init-time) parameter of a block, e.g. `out_ch: int = 64`. */

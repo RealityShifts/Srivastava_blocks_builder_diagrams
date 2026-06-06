@@ -13,6 +13,42 @@
  */
 
 import type { NodeLike, Connection, ManifestEntry } from './types.ts'
+import type { Substitution } from './shape.ts'
+import { resolve } from './shape.ts'
+import { unifyShape } from './unify.ts'
+
+/**
+ * Replay the validator's shape unification over the whole graph so codegen can
+ * read the *resolved* value of a ctor-bound axis (e.g. MultiHeadAttention's
+ * `D_val` -> `vdim`). Ctor params the user left blank but which are bound to an
+ * axis can then be auto-filled from the dim that actually flows into the port -
+ * otherwise the param would silently fall back to its default and the emitted
+ * model would mis-size that layer.
+ */
+function buildAxisSub(nodes: NodeLike[], connections: Connection[]): Substitution {
+  const sub: Substitution = new Map()
+  const byId = new Map<string, NodeLike>(nodes.map((n) => [n.id, n]))
+  for (const n of nodes) {
+    const fn = (n as any).applyParamBindings
+    if (typeof fn === 'function') fn.call(n, sub)
+  }
+  for (const c of connections) {
+    const src = byId.get(c.source) as any
+    const tgt = byId.get(c.target) as any
+    if (!src || !tgt) continue
+    if (typeof src.freshenedShape !== 'function' || typeof tgt.freshenedShape !== 'function') continue
+    const out = src.freshenedShape(c.sourceOutput, 'out')
+    const inp = tgt.freshenedShape(c.targetInput, 'in')
+    if (!out || !inp) continue
+    try {
+      unifyShape(out, inp, sub)
+    } catch {
+      // A genuine shape conflict surfaces in the validator; codegen just skips
+      // auto-fill for that edge rather than aborting the whole export.
+    }
+  }
+  return sub
+}
 
 /** The naming maps, wiring tables, and topo order returned by {@link planGraph}. */
 export interface PlanGraph {
@@ -379,6 +415,9 @@ export function generate(
   const isGroupedAway = (n: any) => Boolean(n?.groupId && facadesByGid.has(n.groupId))
   const topNodes = nodes.filter((n) => !isGroupedAway(n))
   const byIdAll = new Map<string, NodeLike>(nodes.map((n) => [n.id, n]))
+  // Resolved axis values (shared across all classes) so ctor params bound to an
+  // axis can be auto-filled from the dims that actually flow through the graph.
+  const axisSub = buildAxisSub(nodes, connections)
   const topConnections = connections.filter((c) => {
     const src = byIdAll.get(c.source)
     const tgt = byIdAll.get(c.target)
@@ -449,7 +488,7 @@ export function generate(
       cls,
       classNames,
       options,
-      { facade, usedDtypes, allById: byIdAll }
+      { facade, usedDtypes, allById: byIdAll, axisSub }
     )
     subClassSections.push(subLines.join('\n'))
   }
@@ -472,7 +511,7 @@ export function generate(
     'GeneratedModel',
     classNames,
     options,
-    { usedDtypes, allById: byIdAll }
+    { usedDtypes, allById: byIdAll, axisSub }
   )
   if (Array.isArray(options.testCase) && options.testCase.length > 0) {
     emitTestCase(lines, framework, 'GeneratedModel', options.testCase, !!options.trace)
@@ -740,7 +779,7 @@ function emitClassBody(
       if (framework === 'flax') args.push('rngs=rngs')
       lines.push(`        self.${attr} = ${sub}(${args.join(', ')})`)
     } else {
-      const args = ctorArgs(n, paramRef)
+      const args = ctorArgs(n, paramRef, typing.axisSub)
       if (framework === 'flax') args.push('rngs=rngs')
       lines.push(`        self.${attr} = ${n.entry.name}(${args.join(', ')})`)
     }
@@ -987,6 +1026,27 @@ function buildCallExpr(node: NodeLike, callArgs: string[], attrName: Map<string,
     const dim = parseAxisDim(node.values?.dim, 0)
     if (framework === 'pytorch') return `torch.stack(${tensors}, dim=${dim})`
     return `jnp.stack(${tensors}, axis=${dim})`
+  }
+  if (node.entry.kind === 'unbind') {
+    const xVar = positionalSource(callArgs, 'x')
+    const dim = parseAxisDim(node.values?.dim, 0)
+    // Count comes from values (the per-instance entry's outputs aren't visible
+    // on the catalogue entry codegen reconstructs). Clamp to >= 1.
+    const raw = Number(node.values?.count ?? node.entry.outputs.length)
+    const count = Number.isFinite(raw) && raw >= 1 ? Math.trunc(raw) : 1
+    // JAX has no unbind: moveaxis the split axis to front, then iterate (which
+    // drops it) — same ordering and rank-reduction as torch.unbind.
+    const tuple = framework === 'pytorch'
+      ? `torch.unbind(${xVar}, dim=${dim})`
+      : `tuple(jnp.moveaxis(${xVar}, ${dim}, 0))`
+    // count===1 takes codegen's single-output path (`v = <expr>`), which would
+    // assign the whole tuple; index element 0 so it's a tensor.
+    if (count === 1) {
+      return framework === 'pytorch'
+        ? `torch.unbind(${xVar}, dim=${dim})[0]`
+        : `jnp.moveaxis(${xVar}, ${dim}, 0)[0]`
+    }
+    return tuple
   }
   if (node.entry.kind === 'pool') {
     const xVar = positionalSource(callArgs, 'x')
@@ -1350,7 +1410,17 @@ function parsePoolParams(values: any = {}): { kernel: number; stride: number; pa
   return { kernel, stride, padding, mode }
 }
 
-function ctorArgs(node: NodeLike, paramRef: Map<string, string> = new Map()): string[] {
+function ctorArgs(
+  node: NodeLike,
+  paramRef: Map<string, string> = new Map(),
+  axisSub?: Substitution
+): string[] {
+  // paramName -> axis, for ctor params the manifest binds to a shape axis
+  // (e.g. {"D_val": "vdim"} yields vdim -> D_val).
+  const paramAxis = new Map<string, string>()
+  for (const [axis, pname] of Object.entries(node.entry.bindings || {})) {
+    paramAxis.set(pname, axis)
+  }
   const out: string[] = []
   for (const p of node.entry.ctor) {
     const wired = paramRef.get(`${node.id}::${p.name}`)
@@ -1359,10 +1429,26 @@ function ctorArgs(node: NodeLike, paramRef: Map<string, string> = new Map()): st
       continue
     }
     const v = (node.values as any)[p.name]
-    if (v === null || v === undefined || v === '') continue
-    // Skip if it equals the default to keep the output tidy.
-    if (deepEqual(v, p.default)) continue
-    out.push(`${p.name}=${pyRepr(coerce(v, p.type))}`)
+    if (v !== null && v !== undefined && v !== '') {
+      // Skip if it equals the default to keep the output tidy.
+      if (deepEqual(v, p.default)) continue
+      out.push(`${p.name}=${pyRepr(coerce(v, p.type))}`)
+      continue
+    }
+    // Unset: if this param is bound to an axis whose value the graph resolved,
+    // emit that concrete dim so the layer is sized to the data actually wired
+    // in (e.g. a 256-wide value stream -> vdim=256) instead of the default.
+    // Suppress it when it merely restates the model `dim`, so equal-width
+    // graphs emit exactly as before.
+    const axis = paramAxis.get(p.name)
+    if (axis && axisSub) {
+      const r = resolve(`${axis}#${node.id}`, axisSub)
+      const dimVal = Number((node.values as any)?.dim)
+      const redundant = Number.isFinite(dimVal) && r === dimVal
+      if (typeof r === 'number' && Number.isInteger(r) && !redundant) {
+        out.push(`${p.name}=${pyRepr(coerce(r, p.type))}`)
+      }
+    }
   }
   return out
 }

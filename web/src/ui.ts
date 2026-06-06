@@ -202,6 +202,7 @@ function describePorts(entry: ManifestEntry): string {
           entry.kind === 'stack' ||
           entry.kind === 'pool' ||
           entry.kind === 'upsample' ||
+          entry.kind === 'unbind' ||
           entry.kind === 'const'
         ? 'op'
         : entry.kind === 'learnable'
@@ -945,6 +946,7 @@ export function updateRuntimePanel({
 }: RuntimePanelState): void {
   const btn = document.getElementById('run-shapes-btn') as HTMLButtonElement | null
   const uptoBtn = document.getElementById('run-shapes-upto-btn') as HTMLButtonElement | null
+  const vistaBtn = document.getElementById('vista-view-btn') as HTMLButtonElement | null
   const status = document.getElementById('runtime-status')
   const batchInput = document.getElementById('batch-size') as HTMLInputElement | null
   if (!btn || !status) return
@@ -956,6 +958,7 @@ export function updateRuntimePanel({
   if (framework !== 'pytorch') {
     btn.disabled = true
     if (uptoBtn) uptoBtn.disabled = true
+    if (vistaBtn) vistaBtn.disabled = true
     status.textContent = 'Switch to pytorch_blocks to run shape checks.'
     status.className = 'muted'
     return
@@ -968,6 +971,8 @@ export function updateRuntimePanel({
   // "Run up to selected" follows the same runnability gate, but additionally
   // requires a selected node to act as the stop point.
   if (uptoBtn) uptoBtn.disabled = btn.disabled || !hasSelection
+  // The torchvista graph view needs the same runnable graph as a shape check.
+  if (vistaBtn) vistaBtn.disabled = btn.disabled
 
   if (running) {
     status.textContent = 'Running forward pass…'

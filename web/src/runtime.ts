@@ -13,6 +13,8 @@ import type { Substitution } from './shape.ts'
 import type { GraphEditor, NodeLike } from './types.ts'
 
 export const RUNNER_URL = 'http://127.0.0.1:8765/run'
+/** Optional torchvista graph-view endpoint on the same local runner. */
+export const VISTA_URL = 'http://127.0.0.1:8765/vista'
 
 /** Result of the {@link isFullyConcrete} readiness check. */
 export interface ConcreteCheck {
@@ -263,7 +265,8 @@ export function buildRunPayload(
   editor: GraphEditor,
   framework: string,
   batchSize = 2,
-  stopAtNodeId?: string
+  stopAtNodeId?: string,
+  trace = true
 ): RunPayload {
   const view = stopAtNodeId
     ? subgraphUpTo(editor, stopAtNodeId)
@@ -273,7 +276,10 @@ export function buildRunPayload(
   const inputs = resolveInputSpecs(editor, framework, batchSize).filter((spec) =>
     view.nodes.some((n) => n.id === spec.nodeId)
   )
-  const code = generate(view.nodes, view.connections, framework, { trace: true })
+  // `trace` wraps each node so forward() returns a runtime-shape dict (for the
+  // shape runner). The torchvista view needs the *plain* model - a real forward
+  // returning tensors - so it passes trace=false.
+  const code = generate(view.nodes, view.connections, framework, { trace })
   return { framework, code, inputs, batch_size: batchSize }
 }
 
@@ -308,4 +314,74 @@ export async function runShapeCheck(
       ? Math.trunc(body.num_params)
       : null
   return { shapes, numParams, payload }
+}
+
+/** Rendered torchvista graph, plus whether the forward pass only partly ran. */
+export interface VistaResult {
+  /** Self-contained HTML for the interactive graph (drop into an iframe). */
+  html: string
+  numParams: number | null
+  /** True when torchvista produced a partial graph because forward() errored. */
+  partial: boolean
+  /** The forward-pass error message, when `partial`. */
+  warning?: string
+}
+
+/** An error from {@link runVista} flagged when torchvista isn't installed. */
+export interface VistaError extends Error {
+  vistaUnavailable?: boolean
+  nodeId?: string
+}
+
+/**
+ * Render the current graph's forward pass with torchvista (optional dependency).
+ *
+ * Sends the *non-traced* model so torchvista can run its own instrumented
+ * forward. When torchvista isn't installed the runner replies with
+ * `vista_available: false`; this surfaces as a {@link VistaError} carrying
+ * `vistaUnavailable` so the UI can show an install hint instead of an error.
+ */
+export async function runVista(
+  editor: GraphEditor,
+  framework: string,
+  batchSize = 2,
+  stopAtNodeId?: string
+): Promise<VistaResult> {
+  if (framework !== 'pytorch') {
+    throw new Error('TorchVista view is PyTorch-only for now.')
+  }
+  const payload = buildRunPayload(editor, framework, batchSize, stopAtNodeId, false)
+  let res: Response
+  try {
+    res = await fetch(VISTA_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+  } catch (e) {
+    throw new Error(
+      `Could not reach the runner at ${VISTA_URL}. Start it with: python tools/shape_runner.py`
+    )
+  }
+  const body = await res.json().catch(() => ({}) as Record<string, unknown>)
+  if (body && (body as any).vista_available === false) {
+    const err: VistaError = new Error(String((body as any).error ?? 'torchvista is not installed.'))
+    err.vistaUnavailable = true
+    throw err
+  }
+  if (!res.ok || !(body as any)?.ok) {
+    const err: VistaError = new Error(String((body as any)?.error ?? `Runner HTTP ${res.status}`))
+    if ((body as any)?.node_id) err.nodeId = String((body as any).node_id)
+    throw err
+  }
+  const numParams =
+    typeof (body as any).num_params === 'number' && Number.isFinite((body as any).num_params)
+      ? Math.trunc((body as any).num_params)
+      : null
+  return {
+    html: String((body as any).html ?? ''),
+    numParams,
+    partial: Boolean((body as any).partial),
+    warning: (body as any).warning ? String((body as any).warning) : undefined,
+  }
 }

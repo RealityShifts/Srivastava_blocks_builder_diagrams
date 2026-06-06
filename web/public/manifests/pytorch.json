@@ -1,5 +1,64 @@
 [
   {
+    "name": "ResidualChain",
+    "module": "custom.Helper_blocks",
+    "framework": "pytorch",
+    "kind": "module",
+    "ctor": [
+      {
+        "name": "in_channels",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "out_channels",
+        "type": "int",
+        "default": null,
+        "required": true
+      },
+      {
+        "name": "repeats",
+        "type": "int",
+        "default": 3,
+        "required": false
+      }
+    ],
+    "inputs": [
+      {
+        "shape": [
+          "B",
+          "C_in",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "x"
+      }
+    ],
+    "outputs": [
+      {
+        "shape": [
+          "B",
+          "C_out",
+          "H",
+          "W"
+        ],
+        "dtype": "float",
+        "optional": false,
+        "variadic": false,
+        "name": "out"
+      }
+    ],
+    "bindings": {
+      "C_in": "in_channels",
+      "C_out": "out_channels"
+    },
+    "description": "Base class for all neural network modules."
+  },
+  {
     "name": "Decoder",
     "module": "custom.MutiScaleBlock",
     "framework": "pytorch",
@@ -638,6 +697,12 @@
         "type": "bool",
         "default": false,
         "required": false
+      },
+      {
+        "name": "vdim",
+        "type": "int",
+        "default": null,
+        "required": false
       }
     ],
     "inputs": [
@@ -667,7 +732,7 @@
         "shape": [
           "B",
           "Tk",
-          "D"
+          "D_val"
         ],
         "dtype": "float",
         "optional": true,
@@ -689,7 +754,7 @@
         "shape": [
           "B",
           "Tq",
-          "D"
+          "D_val"
         ],
         "dtype": "float",
         "optional": false,
@@ -950,7 +1015,7 @@
           "B",
           "H",
           "Tk",
-          "D"
+          "Dv"
         ],
         "dtype": "float",
         "optional": false,
@@ -973,7 +1038,7 @@
           "B",
           "H",
           "Tq",
-          "D"
+          "Dv"
         ],
         "dtype": "float",
         "optional": false,

@@ -589,6 +589,31 @@ export const UPSAMPLE_ENTRY: ManifestEntry = {
 }
 
 /**
+ * Split (unbind) one tensor along axis `dim` into `count` outputs — the inverse
+ * of Stack. Each output drops axis `dim` (rank = input rank − 1). The output
+ * port count is dynamic: changing `count` in the inspector grows/shrinks the
+ * out0..out{count-1} ports. Emits `out0, out1, ... = torch.unbind(x, dim=D)`.
+ */
+export const UNBIND_ENTRY: ManifestEntry = {
+  name: 'Unbind',
+  module: '__utility__',
+  framework: 'any',
+  kind: 'unbind',
+  ctor: [
+    { name: 'dim', type: 'int', default: 0, required: false },
+    { name: 'count', type: 'int', default: 2, required: false },
+  ],
+  inputs: [
+    { name: 'x', shape: ['...'], dtype: 'float', optional: false, variadic: false },
+  ],
+  outputs: [
+    { name: 'out0', shape: ['...'], dtype: 'float', optional: false, variadic: false },
+    { name: 'out1', shape: ['...'], dtype: 'float', optional: false, variadic: false },
+  ],
+  bindings: {},
+}
+
+/**
  * Elementwise combine of two or more tensors via `+` (add) or `*` (multiply).
  * Variadic like Concat/Stack: wire each operand into `xs[*]`. Relies on
  * PyTorch/JAX broadcasting, so operands need only be broadcast-compatible.
@@ -732,6 +757,65 @@ export class ReshapeNode extends BlockNode {
 }
 
 /**
+ * Unbind: one input, N outputs split along an axis. The output-port count is
+ * driven by the `count` ctor value, so it changes at runtime. We clone the
+ * shared catalogue entry (BlockNode aliases entry by reference) before mutating
+ * `entry.outputs`, then keep the Rete ports and `entry.outputs` in lockstep via
+ * {@link rebuildOutputs}.
+ */
+export class UnbindNode extends BlockNode {
+  constructor(entry: ManifestEntry) {
+    // Clone entry + outputs so per-instance port mutation never touches the
+    // shared catalogue object handed out by state.byName.
+    super({ ...entry, outputs: entry.outputs.map((p) => ({ ...p })) })
+    this.rebuildOutputs()
+  }
+
+  /** Desired output count from `values.count`, clamped to >= 1. */
+  private desiredOutputCount(): number {
+    const n = Number(this.values?.count)
+    return Number.isFinite(n) && n >= 1 ? Math.trunc(n) : 1
+  }
+
+  /**
+   * Sync the Rete output ports AND `this.entry.outputs` (+ `_outputShapes`) to
+   * the desired count. Grows with `addOutput`, shrinks from the highest index.
+   * Idempotent: a no-op when the count already matches. Returns the names of
+   * ports that were added/removed so the caller can drop dangling edges and
+   * decide whether to re-render.
+   */
+  rebuildOutputs(): { added: string[]; removed: string[] } {
+    const want = this.desiredOutputCount()
+    const have = this.entry.outputs.length
+    const added: string[] = []
+    const removed: string[] = []
+    for (let i = have; i < want; i++) {
+      const port: Port = { name: `out${i}`, shape: ['...'], dtype: 'float', optional: false, variadic: false }
+      this.entry.outputs.push(port)
+      this._outputShapes[port.name] = normalize(port.shape)
+      const output = new ClassicPreset.Output(tensorSocket, labelFor(port))
+      ;(output as any).portSpec = port
+      this.addOutput(port.name, output)
+      added.push(port.name)
+    }
+    for (let i = have - 1; i >= want; i--) {
+      const name = this.entry.outputs[i].name
+      this.removeOutput(name)
+      delete this._outputShapes[name]
+      removed.push(name)
+    }
+    this.entry.outputs.length = want
+    return { added, removed }
+  }
+
+  override freshenedShape(_portName: string, _side: 'in' | 'out'): Shape | null {
+    // unbind removes axis `dim`; rank-minus-one isn't expressible with the
+    // manifest token vocabulary, so input and every output stay `['...']`.
+    return freshen(normalize(['...']), this.id)
+  }
+}
+
+/**
  * Facade node for a collapsed group. Shape on each facade port is whatever
  * shape the underlying child port had at collapse time, so the validator sees
  * the same axes flowing through the group as if the children were inline.
@@ -840,6 +924,7 @@ export function makeNode(entry: ManifestEntry): BlockNode {
   if (entry.kind === 'output') return new OutputNode(entry)
   if (entry.kind === 'rearrange') return new RearrangeNode(entry)
   if (entry.kind === 'reshape') return new ReshapeNode(entry)
+  if (entry.kind === 'unbind') return new UnbindNode(entry)
   if (entry.kind === 'group') return new GroupNode(entry)
   return new BlockNode(entry)
 }
