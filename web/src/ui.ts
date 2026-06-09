@@ -964,10 +964,14 @@ export function updateRuntimePanel({
     return
   }
 
-  btn.disabled =
-    running ||
-    !(lastResult?.ok ?? false) ||
-    Boolean(lastResult && !isGraphRunnable(lastResult, batchSize))
+  // Only block on the structural prerequisites the Python runner genuinely
+  // needs (an Input node + every required param set/wired -> canRunShapes).
+  // Static validation errors/warnings do NOT disable the button: the whole
+  // point of a real forward pass is to let PyTorch be the arbiter when the
+  // static shape checker complains, so the user can always test.
+  const runnable = true
+  // const runnable = Boolean(lastResult && isGraphRunnable(lastResult, batchSize))
+  btn.disabled = running || !runnable
   // "Run up to selected" follows the same runnability gate, but additionally
   // requires a selected node to act as the stop point.
   if (uptoBtn) uptoBtn.disabled = btn.disabled || !hasSelection
@@ -985,14 +989,17 @@ export function updateRuntimePanel({
     const params = formatParamCount(runtimeNumParams)
     status.textContent = params != null ? `${ports} ${params} parameter(s).` : ports
     status.className = 'ok'
-  } else if (!(lastResult?.ok ?? false)) {
-    status.textContent = 'Fix graph errors before running.'
-    status.className = 'muted'
   } else if (lastResult && !isGraphRunnable(lastResult, batchSize)) {
+    // Structural prerequisites missing -> button is disabled, say why.
     status.textContent =
       lastResult.concreteReason ||
       'Set Input shape (literals or B) and wire all required inputs.'
     status.className = 'muted'
+  } else if (!(lastResult?.ok ?? false)) {
+    // Static errors remain, but the graph is runnable -> let the user test
+    // against a real forward pass; the runner will report any genuine failure.
+    status.textContent = 'Graph has shape warnings — run anyway to test against a real forward pass.'
+    status.className = 'err'
   } else {
     status.textContent = 'Ready — graph is valid (unresolved axes are back-solved at runtime).'
     status.className = 'ok'
