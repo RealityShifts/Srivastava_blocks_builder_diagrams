@@ -865,8 +865,9 @@ function emitClassBody(
       }
       continue
     }
-    // Constants are init-time only; wired ones feed ctor kwargs via __init__ params.
-    if (n.entry.kind === 'const') continue
+    // Constants and const-math are init-time only; wired ones feed ctor kwargs
+    // via __init__ params and emit no forward() code.
+    if (n.entry.kind === 'const' || n.entry.kind === 'constmath') continue
     if (n.entry.kind === 'output') {
       if (trace) {
         const key = `${n.id}/x`
@@ -1100,6 +1101,44 @@ function constLiteral(node: NodeLike): string {
   return type === 'int' ? String(Math.trunc(n)) : String(n)
 }
 
+/** Fold a ConstMath chain to a single JS number. Walks back through wired
+ *  Constant / ConstMath sources on the `x` input. An unwired input contributes
+ *  0; division/modulo by zero yields 0. Cycle-guarded. */
+function constMathValue(
+  node: NodeLike,
+  byId: Map<string, NodeLike>,
+  connections: Connection[],
+  seen: Set<string> = new Set()
+): number {
+  if (seen.has(node.id)) return 0
+  seen.add(node.id)
+  let base = 0
+  const inEdge = connections.find((c) => c.target === node.id && c.targetInput === 'x')
+  if (inEdge) {
+    const src = byId.get(inEdge.source)
+    if (src?.entry?.kind === 'const') base = Number(src.values?.value)
+    else if (src?.entry?.kind === 'constmath') base = constMathValue(src, byId, connections, seen)
+  }
+  if (!Number.isFinite(base)) base = 0
+  const operand = Number(node.values?.operand)
+  const rhs = Number.isFinite(operand) ? operand : 0
+  switch (String(node.values?.op ?? 'mul')) {
+    case 'add': return base + rhs
+    case 'sub': return base - rhs
+    case 'mul': return base * rhs
+    case 'div': return rhs === 0 ? 0 : base / rhs
+    case 'floordiv': return rhs === 0 ? 0 : Math.floor(base / rhs)
+    case 'pow': return base ** rhs
+    case 'mod': return rhs === 0 ? 0 : base % rhs
+    default: return base
+  }
+}
+
+/** Format a folded numeric value as a Python int/float literal. */
+function numLiteral(n: number): string {
+  return Number.isFinite(n) ? String(n) : '0'
+}
+
 /** Map every Constant node to an __init__ parameter defaulting to its UI
  *  value. Wired constants name the param after the target ctor slot; unwired
  *  ones use the codegen attr name (constant_0, …). Module ctors reference the
@@ -1126,30 +1165,47 @@ function analyzeConstWiring(nodes: NodeLike[], connections: Connection[], attrNa
     return 'int'
   }
 
+  // Constant nodes consumed purely as a ConstMath input are folded into the
+  // math result, so they must not also surface as their own __init__ param.
+  const consumedByMath = new Set<string>()
+  for (const c of connections) {
+    const tgt = byId.get(c.target)
+    if (tgt?.entry?.kind === 'constmath' && c.targetInput === 'x') consumedByMath.add(c.source)
+  }
+
   for (const c of connections) {
     const source = byId.get(c.source)
     const target = byId.get(c.target)
     if (!source || !target) continue
-    if (source.entry?.kind !== 'const') continue
+    const sk = source.entry?.kind
+    if (sk !== 'const' && sk !== 'constmath') continue
     const spec = (target.inputs as any)?.[c.targetInput]?.portSpec
     if (spec?.kind !== 'param') continue
     const paramName = spec.paramName
     const paramDef = (target.entry.ctor || []).find((p) => p.name === paramName)
 
     if (!constInitByNodeId.has(source.id)) {
-      constInitByNodeId.set(source.id, {
-        initName: allocInitName(paramName),
-        pyType: pyTypeForConst(source, paramDef),
-        defaultLit: constLiteral(source),
-      })
+      let defaultLit: string
+      let pyType: string
+      if (sk === 'constmath') {
+        const v = constMathValue(source, byId, connections)
+        defaultLit = numLiteral(v)
+        pyType = Number.isInteger(v) ? 'int' : 'float'
+      } else {
+        defaultLit = constLiteral(source)
+        pyType = pyTypeForConst(source, paramDef)
+      }
+      constInitByNodeId.set(source.id, { initName: allocInitName(paramName), pyType, defaultLit })
     }
     paramRef.set(`${target.id}::${paramName}`, constInitByNodeId.get(source.id).initName)
   }
 
-  // Every remaining Constant node becomes an __init__ param even if unwired.
+  // Every remaining Constant node becomes an __init__ param even if unwired -
+  // except those folded into a ConstMath result.
   for (const n of nodes) {
     if (n.entry?.kind !== 'const') continue
     if (constInitByNodeId.has(n.id)) continue
+    if (consumedByMath.has(n.id)) continue
     constInitByNodeId.set(n.id, {
       initName: allocInitName(attrName.get(n.id) || 'constant'),
       pyType: pyTypeForConst(n, null),

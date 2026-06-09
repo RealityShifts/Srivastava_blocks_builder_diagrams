@@ -81,7 +81,12 @@ export class BlockNode extends ClassicPreset.Node {
     }
     // Ctor parameters are init-time values (not runtime tensor flow). They are
     // hidden by default and can be explicitly exposed per-param from inspector.
-    if (entry.kind !== 'input' && entry.kind !== 'const' && entry.kind !== 'learnable') {
+    if (
+      entry.kind !== 'input' &&
+      entry.kind !== 'const' &&
+      entry.kind !== 'constmath' &&
+      entry.kind !== 'learnable'
+    ) {
       for (const p of entry.ctor) this._paramSpecs.set(p.name, p)
     }
     for (const p of entry.outputs) {
@@ -296,6 +301,42 @@ export const CONST_ENTRY: ManifestEntry = {
     { name: 'value', type: 'str', default: '1', required: true },
   ],
   inputs: [],
+  outputs: [
+    {
+      name: 'out',
+      shape: [],
+      dtype: 'any',
+      optional: false,
+      variadic: false,
+    },
+  ],
+  bindings: {},
+}
+
+/**
+ * Scalar arithmetic on a wired constant. Connect a `Constant` (or another
+ * `ConstMath`) into `x`, pick an `op` and a numeric `operand`, then wire `out`
+ * into a node's `🔴 <param>` input. The whole chain is folded to a single
+ * literal at codegen time, so the generated ctor kwarg shows the result.
+ */
+export const CONSTMATH_ENTRY: ManifestEntry = {
+  name: 'ConstMath',
+  module: '__builtin__',
+  framework: 'any',
+  kind: 'constmath',
+  ctor: [
+    {
+      name: 'op',
+      type: 'str',
+      default: 'mul',
+      required: false,
+      choices: ['add', 'sub', 'mul', 'div', 'floordiv', 'pow', 'mod'],
+    },
+    { name: 'operand', type: 'str', default: '2', required: true },
+  ],
+  inputs: [
+    { name: 'x', shape: [], dtype: 'any', optional: false, variadic: false },
+  ],
   outputs: [
     {
       name: 'out',

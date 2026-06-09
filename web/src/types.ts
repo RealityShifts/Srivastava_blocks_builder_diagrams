@@ -18,6 +18,7 @@ export type NodeKind =
   | 'input' // a synthetic graph source (forward() argument)
   | 'output' // an explicit graph sink (forward() return value)
   | 'const' // a scalar constant feeding an init-time param port
+  | 'constmath' // arithmetic on a wired scalar, feeding an init-time param port
   | 'learnable' // a learnable nn.Parameter / buffer
   | 'rearrange' // einops rearrange op
   | 'reshape' // tensor reshape op
