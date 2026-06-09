@@ -24,7 +24,7 @@
 import { normalize } from '../shape.ts'
 import type { ManifestEntry, NodeKind, NodeLike, Connection as FlatConnection } from '../types.ts'
 import type { Forest, Tree, TreeNode, NodeId } from './model.ts'
-import { emptyForest, makeConnection, boundaryRef } from './model.ts'
+import { emptyForest, makeConnection, connectionId, boundaryRef } from './model.ts'
 import type { BlockResolver, ResolvedBlock } from './signature.ts'
 import { getInputOutputParamsSignature } from './signature.ts'
 
@@ -181,6 +181,9 @@ export function graphDataToForest(data: GraphData): {
   groupClassName: Map<string, string>
   /** Original serialized node-id order, so codegen emission can match the editor. */
   nodeOrder: NodeId[]
+  /** `__param__` edges (const/const-math -> ctor param). Kept out of the tree
+   *  connection model but threaded to codegen so it can rebuild paramRef. */
+  paramConnections: FlatConnection[]
 } {
   const forest = emptyForest('main')
   const exposedByNode = new Map<NodeId, Set<string>>()
@@ -282,10 +285,21 @@ export function graphDataToForest(data: GraphData): {
   for (const name of Object.keys(forest.trees)) {
     for (const id of forest.trees[name]!.list_of_nodes) treeOf.set(id, name)
   }
+  const paramConnections: FlatConnection[] = []
   for (const c of data.connections) {
-    // Skip __param__ wires: those are the exposed-param plumbing, captured via
-    // exposedByNode instead of as graph edges.
-    if (String(c.targetInput).startsWith('__param__')) continue
+    // __param__ wires are the exposed-param plumbing - kept OUT of the tree
+    // connection model (they aren't tensor flow), but captured separately so
+    // codegen can rebuild const/const-math -> ctor param expressions.
+    if (String(c.targetInput).startsWith('__param__')) {
+      paramConnections.push({
+        id: connectionId(c.source, c.sourceOutput, c.target, c.targetInput),
+        source: c.source,
+        sourceOutput: c.sourceOutput,
+        target: c.target,
+        targetInput: c.targetInput,
+      })
+      continue
+    }
     const st = treeOf.get(c.source)
     const tt = treeOf.get(c.target)
     if (!st || !tt) continue
@@ -295,7 +309,7 @@ export function graphDataToForest(data: GraphData): {
   }
 
   const nodeOrder = data.nodes.map((n) => n.id)
-  return { forest, exposedByNode, facadeMeta, groupClassName, nodeOrder }
+  return { forest, exposedByNode, facadeMeta, groupClassName, nodeOrder, paramConnections }
 }
 
 // ---------------------------------------------------------------------------
@@ -388,7 +402,8 @@ export function forestToGenerateInput(
   exposedByNode: Map<NodeId, Set<string>> = new Map(),
   facadeMeta: Map<NodeId, FacadeMeta> = new Map(),
   groupClassName: Map<string, string> = new Map(),
-  nodeOrder: NodeId[] = []
+  nodeOrder: NodeId[] = [],
+  paramConnections: FlatConnection[] = []
 ): { nodes: NodeLike[]; connections: FlatConnection[] } {
   const isGroupTree = (name: string) => !catalogue[name] && Boolean(forest.trees[name])
   const nodes: NodeLike[] = []
@@ -481,6 +496,15 @@ export function forestToGenerateInput(
         targetInput: c.toInput,
       })
     }
+  }
+
+  // Re-attach __param__ edges whose endpoints both survive into the flat
+  // codegen input. They carry no tensor flow (the forward emitter ignores
+  // `__param__*` keys), but analyzeConstWiring reads them to rebuild
+  // const/const-math -> ctor param wiring as live init args / expressions.
+  const emittedIds = new Set(nodes.map((n) => n.id))
+  for (const pc of paramConnections) {
+    if (emittedIds.has(pc.source) && emittedIds.has(pc.target)) connections.push(pc)
   }
 
   // Emit nodes in the original serialized order so codegen's class/topo ordering

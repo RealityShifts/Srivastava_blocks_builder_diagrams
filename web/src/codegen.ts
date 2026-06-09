@@ -345,6 +345,7 @@ export function planGraph(nodes: NodeLike[], connections: Connection[]): PlanGra
     ;(incoming.get(key) as Connection[]).push(c)
   }
 
+  const byId = new Map<string, NodeLike>(nodes.map((n) => [n.id, n]))
   const outputVarFor = new Map<string, string>()
   for (const n of ordered) {
     if (n.entry.kind === 'input') {
@@ -353,6 +354,14 @@ export function planGraph(nodes: NodeLike[], connections: Connection[]): PlanGra
     }
     if (n.entry.kind === 'learnable') {
       outputVarFor.set(`${n.id}/out`, `self.${attrName.get(n.id)}`)
+      continue
+    }
+    // Constants / const-math emit no forward() assignment; when consumed by a
+    // forward-time sink (an explicit return or a module tensor input) they must
+    // inline their literal / arithmetic expression rather than reference an
+    // unassigned variable.
+    if (n.entry.kind === 'const' || n.entry.kind === 'constmath') {
+      outputVarFor.set(`${n.id}/out`, forwardScalarExpr(n, byId, incoming))
       continue
     }
     const multi = n.entry.outputs.length > 1
@@ -1101,42 +1110,43 @@ function constLiteral(node: NodeLike): string {
   return type === 'int' ? String(Math.trunc(n)) : String(n)
 }
 
-/** Fold a ConstMath chain to a single JS number. Walks back through wired
- *  Constant / ConstMath sources on the `x` input. An unwired input contributes
- *  0; division/modulo by zero yields 0. Cycle-guarded. */
-function constMathValue(
-  node: NodeLike,
-  byId: Map<string, NodeLike>,
-  connections: Connection[],
-  seen: Set<string> = new Set()
-): number {
-  if (seen.has(node.id)) return 0
-  seen.add(node.id)
-  let base = 0
-  const inEdge = connections.find((c) => c.target === node.id && c.targetInput === 'x')
-  if (inEdge) {
-    const src = byId.get(inEdge.source)
-    if (src?.entry?.kind === 'const') base = Number(src.values?.value)
-    else if (src?.entry?.kind === 'constmath') base = constMathValue(src, byId, connections, seen)
-  }
-  if (!Number.isFinite(base)) base = 0
-  const operand = Number(node.values?.operand)
-  const rhs = Number.isFinite(operand) ? operand : 0
-  switch (String(node.values?.op ?? 'mul')) {
-    case 'add': return base + rhs
-    case 'sub': return base - rhs
-    case 'mul': return base * rhs
-    case 'div': return rhs === 0 ? 0 : base / rhs
-    case 'floordiv': return rhs === 0 ? 0 : Math.floor(base / rhs)
-    case 'pow': return base ** rhs
-    case 'mod': return rhs === 0 ? 0 : base % rhs
-    default: return base
-  }
+/** Map a ConstMath op name to its Python binary operator. */
+const CONSTMATH_PYOP: Record<string, string> = {
+  add: '+',
+  sub: '-',
+  mul: '*',
+  div: '/',
+  floordiv: '//',
+  pow: '**',
+  mod: '%',
 }
 
-/** Format a folded numeric value as a Python int/float literal. */
+/** Format a numeric value as a Python int/float literal. */
 function numLiteral(n: number): string {
   return Number.isFinite(n) ? String(n) : '0'
+}
+
+/** Inline Python expression for a const / const-math output consumed in
+ *  forward() context (an explicit return, or a module's tensor input). Unlike
+ *  the init-time param expression, a Constant leaf resolves to its literal
+ *  value because no __init__ param is in scope inside forward(). Cycle-guarded. */
+function forwardScalarExpr(
+  node: NodeLike,
+  byId: Map<string, NodeLike>,
+  incoming: Map<string, Connection[]>,
+  seen: Set<string> = new Set()
+): string {
+  if (node.entry?.kind === 'const') return constLiteral(node)
+  if (node.entry?.kind !== 'constmath') return '0'
+  if (seen.has(node.id)) return '0'
+  seen.add(node.id)
+  const inEdges = incoming.get(`${node.id}/x`) ?? []
+  const src = inEdges[0] ? byId.get(inEdges[0].source) : undefined
+  const inner = src ? forwardScalarExpr(src, byId, incoming, seen) : '0'
+  const op = CONSTMATH_PYOP[String(node.values?.op ?? 'mul')] ?? '*'
+  const operandNum = Number(node.values?.operand)
+  const operand = Number.isFinite(operandNum) ? numLiteral(operandNum) : '0'
+  return `(${inner} ${op} ${operand})`
 }
 
 /** Map every Constant node to an __init__ parameter defaulting to its UI
@@ -1165,52 +1175,92 @@ function analyzeConstWiring(nodes: NodeLike[], connections: Connection[], attrNa
     return 'int'
   }
 
-  // Constant nodes consumed purely as a ConstMath input are folded into the
-  // math result, so they must not also surface as their own __init__ param.
-  const consumedByMath = new Set<string>()
-  for (const c of connections) {
-    const tgt = byId.get(c.target)
-    if (tgt?.entry?.kind === 'constmath' && c.targetInput === 'x') consumedByMath.add(c.source)
+  // Resolve a param edge to its ctor param. Live editor nodes carry a
+  // `portSpec.kind === 'param'` on the `__param__<name>` input; forest-rebuilt
+  // nodes have no `.inputs` map, so we fall back to parsing the `__param__`
+  // prefix off the target-input key.
+  const PARAM_PREFIX = '__param__'
+  const paramEdge = (target: NodeLike, targetInput: string): { paramName: string; paramDef: any } | null => {
+    const spec = (target.inputs as any)?.[targetInput]?.portSpec
+    let name: string | undefined = spec?.kind === 'param' ? spec.paramName : undefined
+    if (!name && typeof targetInput === 'string' && targetInput.startsWith(PARAM_PREFIX)) {
+      name = targetInput.slice(PARAM_PREFIX.length)
+    }
+    if (!name) return null
+    // paramDef may be undefined for a GROUP facade (empty ctor - its exposed
+    // params live in the portMap, not the ctor). That's fine: paramDef only
+    // refines the pyType, and groupCtorArgs reads the paramRef regardless.
+    const paramDef = (target.entry?.ctor || []).find((p) => p.name === name)
+    return { paramName: name, paramDef }
   }
 
+  // Register a Constant node as an __init__ param (idempotent per node id),
+  // returning the param name to reference it by. A constant the user named
+  // keeps that name (a readable knob like `Channels_Face_Encoder`); an unnamed
+  // one prefers the target ctor slot, falling back to `constant`/`constant_2`.
+  const registerConst = (constNode: NodeLike, paramDef?: any, preferredName?: string): string => {
+    const existing = constInitByNodeId.get(constNode.id)
+    if (existing) return existing.initName
+    const named = String((constNode as any).name ?? '').trim().length > 0
+    const base = named
+      ? attrName.get(constNode.id) || preferredName
+      : preferredName || attrName.get(constNode.id)
+    const initName = allocInitName(base || 'constant')
+    constInitByNodeId.set(constNode.id, {
+      initName,
+      pyType: pyTypeForConst(constNode, paramDef),
+      defaultLit: constLiteral(constNode),
+    })
+    return initName
+  }
+
+  // Build the Python expression a scalar source contributes to a ctor kwarg.
+  // A Constant resolves to its __init__ param name; a ConstMath wraps its input
+  // in a parenthesised binary op so the arithmetic survives into the generated
+  // code (e.g. `(constant // 2)`). Cycle-guarded; a missing input reads as 0.
+  const scalarExpr = (node: NodeLike | undefined, seen: Set<string> = new Set()): string => {
+    if (!node) return '0'
+    if (node.entry?.kind === 'const') return registerConst(node)
+    if (node.entry?.kind === 'constmath') {
+      if (seen.has(node.id)) return '0'
+      seen.add(node.id)
+      const inEdge = connections.find((c) => c.target === node.id && c.targetInput === 'x')
+      const inner = scalarExpr(inEdge ? byId.get(inEdge.source) : undefined, seen)
+      const op = CONSTMATH_PYOP[String(node.values?.op ?? 'mul')] ?? '*'
+      const operandNum = Number(node.values?.operand)
+      const operand = Number.isFinite(operandNum) ? numLiteral(operandNum) : '0'
+      return `(${inner} ${op} ${operand})`
+    }
+    return '0'
+  }
+
+  // Pass 1: constants wired straight into a ctor param slot. Done first so the
+  // init param takes the slot's name before any ConstMath expression that also
+  // references the same constant.
   for (const c of connections) {
     const source = byId.get(c.source)
     const target = byId.get(c.target)
-    if (!source || !target) continue
-    const sk = source.entry?.kind
-    if (sk !== 'const' && sk !== 'constmath') continue
-    const spec = (target.inputs as any)?.[c.targetInput]?.portSpec
-    if (spec?.kind !== 'param') continue
-    const paramName = spec.paramName
-    const paramDef = (target.entry.ctor || []).find((p) => p.name === paramName)
-
-    if (!constInitByNodeId.has(source.id)) {
-      let defaultLit: string
-      let pyType: string
-      if (sk === 'constmath') {
-        const v = constMathValue(source, byId, connections)
-        defaultLit = numLiteral(v)
-        pyType = Number.isInteger(v) ? 'int' : 'float'
-      } else {
-        defaultLit = constLiteral(source)
-        pyType = pyTypeForConst(source, paramDef)
-      }
-      constInitByNodeId.set(source.id, { initName: allocInitName(paramName), pyType, defaultLit })
-    }
-    paramRef.set(`${target.id}::${paramName}`, constInitByNodeId.get(source.id).initName)
+    if (!source || !target || source.entry?.kind !== 'const') continue
+    const pe = paramEdge(target, c.targetInput)
+    if (!pe) continue
+    paramRef.set(`${target.id}::${pe.paramName}`, registerConst(source, pe.paramDef, pe.paramName))
   }
 
-  // Every remaining Constant node becomes an __init__ param even if unwired -
-  // except those folded into a ConstMath result.
+  // Pass 2: ConstMath wired into a ctor param slot -> emit the arithmetic
+  // expression, registering any constants it walks through along the way.
+  for (const c of connections) {
+    const source = byId.get(c.source)
+    const target = byId.get(c.target)
+    if (!source || !target || source.entry?.kind !== 'constmath') continue
+    const pe = paramEdge(target, c.targetInput)
+    if (!pe) continue
+    paramRef.set(`${target.id}::${pe.paramName}`, scalarExpr(source))
+  }
+
+  // Every remaining Constant node becomes an __init__ param even if unwired.
   for (const n of nodes) {
     if (n.entry?.kind !== 'const') continue
-    if (constInitByNodeId.has(n.id)) continue
-    if (consumedByMath.has(n.id)) continue
-    constInitByNodeId.set(n.id, {
-      initName: allocInitName(attrName.get(n.id) || 'constant'),
-      pyType: pyTypeForConst(n, null),
-      defaultLit: constLiteral(n),
-    })
+    registerConst(n)
   }
 
   return { initParams: [...constInitByNodeId.values()], paramRef }

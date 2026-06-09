@@ -3104,16 +3104,16 @@ function applyRuntimeErrorHighlight() {
  * residual skips, exposed params - all handled by the unchanged emitter.
  */
 function codegenFromForest(options: any = {}): string {
-  const { forest, exposedByNode, facadeMeta, groupClassName, nodeOrder } = graphDataToForest(
-    getGraphData() as any
-  )
+  const { forest, exposedByNode, facadeMeta, groupClassName, nodeOrder, paramConnections } =
+    graphDataToForest(getGraphData() as any)
   const { nodes, connections } = forestToGenerateInput(
     forest,
     byNameCatalogue(),
     exposedByNode,
     facadeMeta,
     groupClassName,
-    nodeOrder
+    nodeOrder,
+    paramConnections
   )
   return generateCode(nodes as any, connections as any, state.framework, {
     trace: !!options.trace,

@@ -316,8 +316,9 @@ export const CONST_ENTRY: ManifestEntry = {
 /**
  * Scalar arithmetic on a wired constant. Connect a `Constant` (or another
  * `ConstMath`) into `x`, pick an `op` and a numeric `operand`, then wire `out`
- * into a node's `🔴 <param>` input. The whole chain is folded to a single
- * literal at codegen time, so the generated ctor kwarg shows the result.
+ * into a node's `🔴 <param>` input. The arithmetic is emitted as a live Python
+ * expression at codegen time (e.g. `out_ch=constant // 2`), so the base
+ * Constant stays an editable `__init__` argument.
  */
 export const CONSTMATH_ENTRY: ManifestEntry = {
   name: 'ConstMath',
