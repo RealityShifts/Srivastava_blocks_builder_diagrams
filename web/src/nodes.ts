@@ -885,13 +885,24 @@ export class GroupNode extends BlockNode {
     }
     // Expose __param__ ports for any external constant wiring that crosses
     // the group boundary. Constants stay outside; the facade proxies them.
+    // Ports are keyed by the portMap's facadePort (not paramName) so two
+    // children exposing the same param name each keep their own port.
     for (const m of portMap?.params ?? []) {
       this._paramSpecs.set(m.paramName, {
         name: m.paramName,
         type: m.paramType ?? 'int',
         required: true,
       })
-      this.exposeParam(m.paramName)
+      if ((this.inputs as any)[m.facadePort]) continue
+      const input = new ClassicPreset.Input(tensorSocket, `🔴 ${m.paramName}`, false)
+      input.multipleConnections = false
+      ;(input as any).portSpec = {
+        kind: 'param',
+        paramName: m.paramName,
+        required: true,
+        paramType: m.paramType ?? 'int',
+      }
+      this.addInput(m.facadePort, input)
     }
   }
 
@@ -899,6 +910,29 @@ export class GroupNode extends BlockNode {
     const shape = this._facadeShapes[side === 'in' ? 'in' : 'out']?.get(portName)
     return shape ?? null
   }
+}
+
+/**
+ * Assign each boundary param its own facade port. Two children exposing the
+ * same ctor param name (two blocks both exposing `in_ch`) would otherwise map
+ * onto one `__param__in_ch` port, and expand would reattach every edge to
+ * whichever child was last in the map — silently dropping the others.
+ * The first claimant keeps the bare name so existing graphs keep their wiring.
+ */
+function dedupeParamFacadePorts(params: any[]): any[] {
+  const used = new Set<string>()
+  return params.map((b: any) => {
+    let port = `__param__${b.paramName}`
+    for (let i = 2; used.has(port); i++) port = `__param__${b.paramName}__${i}`
+    used.add(port)
+    return {
+      facadePort: port,
+      childNodeId: b.childNodeId,
+      childPort: b.childPort,
+      paramName: b.paramName,
+      paramType: b.paramType ?? 'int',
+    }
+  })
 }
 
 /**
@@ -948,13 +982,7 @@ export function makeGroupEntry(groupId: string, name: string, boundary: any): Ma
         childPort: b.childPort,
         shape: b.shape,
       })),
-      params: (boundary.params || []).map((b: any) => ({
-        facadePort: `__param__${b.paramName}`,
-        childNodeId: b.childNodeId,
-        childPort: b.childPort,
-        paramName: b.paramName,
-        paramType: b.paramType ?? 'int',
-      })),
+      params: dedupeParamFacadePorts(boundary.params || []),
     },
   }
 }

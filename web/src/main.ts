@@ -2202,6 +2202,19 @@ function computeBoundary(childIds: any, sub?: any) {
       pushParamPort(child, portName, portSpec)
     }
 
+    // const/constmath ctor params are never exposed on the node itself (they are
+    // edited inline), so they would otherwise vanish behind a collapsed facade.
+    // Proxy them so a grouped constant can still be driven from outside.
+    if (child.entry?.kind === 'const' || child.entry?.kind === 'constmath') {
+      for (const ctorParam of child.entry?.ctor ?? []) {
+        pushParamPort(child, `__param__${ctorParam.name}`, {
+          kind: 'param',
+          paramName: ctorParam.name,
+          paramType: ctorParam.type ?? 'int',
+        })
+      }
+    }
+
     for (const port of child.entry?.outputs ?? []) {
       const key = `${id}/${port.name}`
       if (internalOut.has(key) || seenOut.has(key)) continue
